@@ -224,9 +224,17 @@ export default function App() {
   // ── auth ──
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session); setAuthLoading(false);
+      setSession(session);
+      setAuthLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        setSession(null);
+      } else if (session) {
+        setSession(session);
+      }
+      setAuthLoading(false);
+    });
     return () => subscription.unsubscribe();
   }, []);
 
