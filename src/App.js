@@ -255,10 +255,20 @@ export default function App() {
   // ── auth actions ──
   async function handleAuth() {
     setAuthBusy(true); setAuthError("");
-    const fn = authMode === "login" ? supabase.auth.signInWithPassword : supabase.auth.signUp;
-    const { error } = await fn({ email: authEmail, password: authPassword });
-    if (error) setAuthError(error.message);
-    else if (authMode === "signup") setAuthError("✅ Check your email to confirm your account!");
+    try {
+      if (authMode === "login") {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail.trim(), password: authPassword });
+        if (error) { setAuthError(error.message); setAuthBusy(false); return; }
+        if (data?.session) setSession(data.session);
+      } else {
+        const { error } = await supabase.auth.signUp({ email: authEmail.trim(), password: authPassword });
+        if (error) { setAuthError(error.message); setAuthBusy(false); return; }
+        setAuthError("✅ Account created! You can now sign in.");
+        setAuthMode("login");
+      }
+    } catch (e) {
+      setAuthError("Something went wrong. Please try again.");
+    }
     setAuthBusy(false);
   }
 
