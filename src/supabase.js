@@ -1,15 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storageKey: 'jnp-crm-auth',
-    storage: window.localStorage,
-    flowType: 'implicit',
+export const supabase = createClient(
+  process.env.REACT_APP_SUPABASE_URL,
+  process.env.REACT_APP_SUPABASE_ANON_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: true,
+      detectSessionInUrl: false,
+    }
   }
-});
+);
