@@ -8,6 +8,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    storageKey: 'jnp-crm-auth',
     storage: window.localStorage,
+    flowType: 'implicit',
   }
 });
