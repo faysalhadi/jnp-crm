@@ -223,17 +223,23 @@ export default function App() {
 
   // ── auth ──
   useEffect(() => {
+    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setAuthLoading(false);
     });
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT") {
-        setSession(null);
-      } else if (session) {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
         setSession(session);
+      } else if (event === "SIGNED_OUT") {
+        setSession(null);
+        setCustomers([]);
+        setView("list");
+        setActiveCustomerId(null);
+        setActiveDealId(null);
       }
-      setAuthLoading(false);
+      // Only set loading false after initial check
     });
     return () => subscription.unsubscribe();
   }, []);
