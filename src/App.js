@@ -37,6 +37,35 @@ const OUTREACH_REASONS = [
   "Custom message",
 ];
 
+const QUICK_TEMPLATES = [
+  { category: "First Reply", icon: "👋", color: "#6366F1", bg: "#EEF2FF", templates: [
+    { label: "Standard Greeting", text: "Hey! 👋 Welcome to *Laptop for Less*\n\nThanks for reaching out. To help you find the right device, could you share:\n\n1️⃣ What brand/model are you looking for?\n2️⃣ Preferred specs — RAM, storage?\n3️⃣ Your budget range (in AED)?\n4️⃣ New or used?" },
+    { label: "Referral Reply", text: "Hey! 👋 Thanks for reaching out to *Laptop for Less*\n\nGlad someone referred you! We deal in quality laptops — new and used — at the best prices in UAE.\n\nWhat are you looking for and what's your budget? 🚀" },
+  ]},
+  { category: "Follow Up", icon: "🔁", color: "#F59E0B", bg: "#FFFBEB", templates: [
+    { label: "Day 1 Nudge", text: "Hey [Name] 👋\n\nJust checking in — did you get a chance to look at the quote I sent?\n\nHappy to answer any questions or adjust based on your budget 😊\n\n— *Laptop for Less*" },
+    { label: "Day 3 Nudge", text: "Hi [Name],\n\nStill interested in the [Device]? 🖥️\n\nHeads up — stock moves fast. Let me know if you'd like to proceed!\n\n— *Laptop for Less*" },
+    { label: "Final Follow Up", text: "Hey [Name], last message from my side 😊\n\nIf you're still looking for a laptop, I'm here whenever you're ready. We always have fresh stock.\n\n— *Laptop for Less* 💻" },
+  ]},
+  { category: "Negotiation", icon: "💬", color: "#EC4899", bg: "#FDF2F8", templates: [
+    { label: "Hold Price", text: "This is already our best price for this spec and condition — we price fairly from the start. What I can do is make sure you get the charger included. Want me to confirm availability? 😊" },
+    { label: "Counter Offer", text: "I appreciate you being upfront! That price would be tough honestly. The closest I can go is AED [X]. If that works, we can close today 👌" },
+    { label: "Justify Price", text: "I get that — budget matters. The reason this one is priced here is [reason]. If you can stretch to AED [X], I'll make it work for you 😊" },
+  ]},
+  { category: "Deal Closed", icon: "✅", color: "#10B981", bg: "#ECFDF5", templates: [
+    { label: "Confirmation", text: "Thank you, [Name]! 🎉\n\nYour purchase is confirmed:\n📦 *Device:* [Brand + Model]\n💾 *Specs:* [RAM / Storage]\n💰 *Amount:* AED [Amount]\n📅 *Date:* [Date]\n\nReceipt coming shortly. Enjoy your new device! 💻✨" },
+    { label: "Post-Sale Check", text: "Hey [Name]! Hope you're enjoying your new [Device] 💻\n\nJust checking in — everything working well?\n\n— *Laptop for Less*" },
+  ]},
+  { category: "Re-engage", icon: "🔄", color: "#3B82F6", bg: "#EFF6FF", templates: [
+    { label: "New Stock", text: "Hey [Name]! 👋\n\nJust thought of you — we just got some fresh stock in. Still looking for a laptop? Prices are really good right now 👌\n\n— *Laptop for Less*" },
+    { label: "Price Drop", text: "Hey [Name] 💡\n\nGood news — the price on [Device] has dropped!\n\nWas: AED [Old]\nNow: AED [New]\n\nInterested? 😊\n\n— *Laptop for Less*" },
+  ]},
+  { category: "Complaint", icon: "🛠️", color: "#EF4444", bg: "#FEF2F2", templates: [
+    { label: "Acknowledge", text: "Hey [Name],\n\nI'm really sorry to hear that — this is not the experience we want for you 🙏\n\nCan you describe what's happening? A quick video or photo would help.\n\nI'll look into this right away.\n\n— *Laptop for Less*" },
+    { label: "Resolution", text: "Hey [Name],\n\nThanks for your patience 🙏\n\nHere's what we've agreed:\n✅ [Resolution]\n\nThis will be done by [Date].\n\nWe appreciate your trust!\n\n— *Laptop for Less*" },
+  ]},
+];
+
 const SYSTEM_PROMPT = `You are an AI assistant for "Laptop for Less", a UAE laptop reselling business run on WhatsApp.
 
 BUSINESS:
@@ -223,6 +252,10 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [activeTab, setActiveTab] = useState("customers"); // customers | tasks | calculator | templates
+  const [calcBuy, setCalcBuy] = useState("");
+  const [calcMargin, setCalcMargin] = useState("15");
+  const [templateCopied, setTemplateCopied] = useState(null);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -1104,6 +1137,18 @@ ${importText.slice(0, 8000)}`;
     );
   }
 
+  // ── Tasks view data ──
+  const tasks = customers.flatMap(c =>
+    (c.deals || [])
+      .filter(d => d.stage !== "closed" && d.stage !== "lost")
+      .map(d => ({
+        customer: c,
+        deal: d,
+        days: daysSince(c.last_active),
+        type: daysSince(c.last_active) >= 3 ? "overdue" : daysSince(c.last_active) >= 1 ? "followup" : "active",
+      }))
+  ).sort((a, b) => b.days - a.days);
+
   // list view
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }}>
@@ -1112,11 +1157,13 @@ ${importText.slice(0, 8000)}`;
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>Client CRM</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>
+              {activeTab === "customers" ? "Client CRM" : activeTab === "tasks" ? "Today's Tasks" : activeTab === "calculator" ? "Price Calc" : "Templates"}
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button onClick={() => setView("settings")} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>⚙️</button>
-            <button onClick={() => setView("add")} style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>+ Add</button>
+            {activeTab === "customers" && <button onClick={() => setView("add")} style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>+ Add</button>}
           </div>
         </div>
 
@@ -1155,70 +1202,216 @@ ${importText.slice(0, 8000)}`;
         </div>
       </div>
 
-      {/* list */}
-      <div style={{ flex: 1, padding: "10px 12px 24px", display: "flex", flexDirection: "column", gap: 8 }}>
-        {loading && <Spinner />}
+      {/* bottom nav tabs */}
+      <div style={{ display: "flex", borderTop: "1px solid #F1F5F9", background: "#fff" }}>
+        {[
+          { key: "customers", icon: "👥", label: "Clients" },
+          { key: "tasks", icon: "📋", label: "Tasks" },
+          { key: "calculator", icon: "🧮", label: "Calc" },
+          { key: "templates", icon: "💬", label: "Templates" },
+        ].map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            style={{ flex: 1, padding: "8px 4px 10px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, borderTop: `2px solid ${activeTab === t.key ? "#6366F1" : "transparent"}` }}>
+            <span style={{ fontSize: 18 }}>{t.icon}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
+          </button>
+        ))}
+      </div>
 
-        {!loading && filtered.length === 0 && (
-          <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>💼</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>
-              {search || filter !== "all" ? "No customers match" : "No customers yet"}
+      {/* ── CUSTOMERS TAB ── */}
+      {activeTab === "customers" && (
+        <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {loading && <Spinner />}
+          {!loading && filtered.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>💼</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>{search || filter !== "all" ? "No customers match" : "No customers yet"}</div>
+              <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>{!search && filter === "all" && "Tap + Add to get started"}</div>
             </div>
-            <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>
-              {!search && filter === "all" && "Tap + Add to get started"}
-            </div>
-          </div>
-        )}
-
-        {filtered.map(c => {
-          const tier = TIERS[c.tier] || TIERS.cold;
-          const openD = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
-          const latestDeal = openD[openD.length - 1] || (c.deals || [])[c.deals.length - 1];
-          const overdue = daysSince(c.last_active) >= 1 && openD.length > 0;
-          const totalValue = (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
-
-          return (
-            <div key={c.id} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(latestDeal?.id); setView("detail"); setPendingSuggestion(null); }}
-              style={{ background: "#fff", borderRadius: 18, padding: "14px 16px", border: `1.5px solid ${c.urgent ? "#FECACA" : "#F1F5F9"}`, cursor: "pointer", boxShadow: c.urgent ? "0 2px 16px rgba(239,68,68,0.08)" : "0 1px 4px rgba(0,0,0,0.05)", transition: "all 0.15s", position: "relative", overflow: "hidden" }}>
-              {c.urgent && <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: "#EF4444", borderRadius: "4px 0 0 4px" }} />}
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: c.urgent ? "#FEF2F2" : "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: c.urgent ? "#EF4444" : "#6366F1", flexShrink: 0, textTransform: "uppercase" }}>
-                    {c.name[0]}
-                  </div>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{c.name}</span>
-                      {c.urgent && <Badge color="#EF4444" bg="#FEF2F2" small>URGENT</Badge>}
+          )}
+          {filtered.map(c => {
+            const tier = TIERS[c.tier] || TIERS.cold;
+            const openD = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+            const latestDeal = openD[openD.length - 1] || (c.deals || [])[c.deals.length - 1];
+            const overdue = daysSince(c.last_active) >= 1 && openD.length > 0;
+            const totalValue = (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
+            return (
+              <div key={c.id} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(latestDeal?.id); setView("detail"); setPendingSuggestion(null); }}
+                style={{ background: "#fff", borderRadius: 18, padding: "14px 16px", border: `1.5px solid ${c.urgent ? "#FECACA" : "#F1F5F9"}`, cursor: "pointer", boxShadow: c.urgent ? "0 2px 16px rgba(239,68,68,0.08)" : "0 1px 4px rgba(0,0,0,0.05)", position: "relative", overflow: "hidden" }}>
+                {c.urgent && <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: "#EF4444" }} />}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: c.urgent ? "#FEF2F2" : "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: c.urgent ? "#EF4444" : "#6366F1", flexShrink: 0, textTransform: "uppercase" }}>{c.name[0]}</div>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{c.name}</span>
+                        {c.urgent && <Badge color="#EF4444" bg="#FEF2F2" small>URGENT</Badge>}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#94A3B8" }}>{c.number || "No number"} · {timeAgo(c.last_active)}</div>
                     </div>
-                    <div style={{ fontSize: 11, color: "#94A3B8" }}>{c.number || "No number"} · {timeAgo(c.last_active)}</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>
+                    {totalValue > 0 && <span style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>AED {totalValue.toLocaleString()}</span>}
                   </div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                  <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>
-                  {totalValue > 0 && <span style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>AED {totalValue.toLocaleString()}</span>}
+                {latestDeal && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: "#475569", fontWeight: 600, marginBottom: 4 }}>
+                      {[latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Device TBD"}
+                      {latestDeal.budget ? ` · AED ${Number(latestDeal.budget).toLocaleString()}` : ""}
+                    </div>
+                    <StageBar stageId={latestDeal.stage} />
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "#CBD5E1" }}>{(c.deals || []).length} deal{(c.deals || []).length !== 1 ? "s" : ""}</span>
+                  {overdue && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>⚠️ Follow up needed</span>}
                 </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {latestDeal && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 12, color: "#475569", fontWeight: 600, marginBottom: 4 }}>
-                    {[latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Device TBD"}
-                    {latestDeal.budget ? ` · AED ${Number(latestDeal.budget).toLocaleString()}` : ""}
+      {/* ── TASKS TAB ── */}
+      {activeTab === "tasks" && (
+        <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {tasks.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🎉</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>All caught up!</div>
+              <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>No open deals need attention</div>
+            </div>
+          )}
+          {tasks.map(({ customer: c, deal: d, days, type }) => (
+            <div key={d.id} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(d.id); setView("detail"); setPendingSuggestion(null); }}
+              style={{ background: "#fff", borderRadius: 16, padding: "14px 16px", border: `1.5px solid ${type === "overdue" ? "#FECACA" : type === "followup" ? "#FDE68A" : "#F1F5F9"}`, cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: type === "overdue" ? "#FEF2F2" : type === "followup" ? "#FFFBEB" : "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: type === "overdue" ? "#EF4444" : type === "followup" ? "#F59E0B" : "#6366F1", textTransform: "uppercase" }}>{c.name[0]}</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#0F172A" }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: "#94A3B8" }}>{[d.brand, d.model].filter(Boolean).join(" ") || "Device TBD"}</div>
                   </div>
-                  <StageBar stageId={latestDeal.stage} />
                 </div>
-              )}
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: type === "overdue" ? "#EF4444" : type === "followup" ? "#F59E0B" : "#10B981" }}>
+                    {type === "overdue" ? `🔴 ${days}d overdue` : type === "followup" ? `🟡 Follow up` : "🟢 Active"}
+                  </div>
+                  {c.number && (
+                    <a href={`https://wa.me/${c.number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, textDecoration: "none" }}>
+                      Open WhatsApp →
+                    </a>
+                  )}
+                </div>
+              </div>
+              <StageBar stageId={d.stage} />
+              {d.budget && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>Budget: AED {Number(d.budget).toLocaleString()}</div>}
+            </div>
+          ))}
+        </div>
+      )}
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: "#CBD5E1" }}>{(c.deals || []).length} deal{(c.deals || []).length !== 1 ? "s" : ""}</span>
-                {overdue && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>⚠️ Follow up needed</span>}
+      {/* ── CALCULATOR TAB ── */}
+      {activeTab === "calculator" && (
+        <div style={{ flex: 1, padding: "16px 12px 100px" }}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 16, letterSpacing: 0.5 }}>💰 MARGIN CALCULATOR</div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 5 }}>You bought for (AED)</div>
+              <input value={calcBuy} onChange={e => setCalcBuy(e.target.value)} type="number" placeholder="e.g. 2800"
+                style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 16, outline: "none", boxSizing: "border-box", fontWeight: 700 }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8 }}>Target margin: {calcMargin}%</div>
+              <input value={calcMargin} onChange={e => setCalcMargin(e.target.value)} type="range" min="5" max="50" step="1"
+                style={{ width: "100%", accentColor: "#6366F1" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#CBD5E1" }}>
+                <span>5%</span><span>50%</span>
               </div>
             </div>
-          );
-        })}
+            {calcBuy && (
+              <div style={{ background: "#EEF2FF", borderRadius: 14, padding: 16 }}>
+                {[
+                  { label: "Cost Price", value: Number(calcBuy), color: "#EF4444" },
+                  { label: `Sell at ${calcMargin}% margin`, value: Math.round(Number(calcBuy) * (1 + Number(calcMargin)/100)), color: "#6366F1" },
+                  { label: "Your profit", value: Math.round(Number(calcBuy) * Number(calcMargin)/100), color: "#10B981" },
+                ].map(r => (
+                  <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: "#475569" }}>{r.label}</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: r.color }}>AED {r.value.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: 20, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 12, letterSpacing: 0.5 }}>📊 QUICK REFERENCE</div>
+            {[5, 10, 15, 20, 25, 30].map(m => (
+              <div key={m} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>
+                <span style={{ fontSize: 13, color: "#64748B" }}>{m}% margin on AED {calcBuy || "X"}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#6366F1" }}>
+                  {calcBuy ? `AED ${Math.round(Number(calcBuy) * (1 + m/100)).toLocaleString()}` : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── TEMPLATES TAB ── */}
+      {activeTab === "templates" && (
+        <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {QUICK_TEMPLATES.map(section => (
+            <div key={section.category} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+              <div style={{ padding: "10px 14px", background: section.bg, display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${section.bg}` }}>
+                <span style={{ fontSize: 16 }}>{section.icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: section.color }}>{section.category}</span>
+              </div>
+              {section.templates.map((t, i) => {
+                const tid = `${section.category}-${i}`;
+                return (
+                  <div key={i} style={{ padding: "12px 14px", borderBottom: i < section.templates.length - 1 ? "1px solid #F8FAFC" : "none" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>{t.label}</span>
+                      <button onClick={() => { navigator.clipboard.writeText(t.text); setTemplateCopied(tid); setTimeout(() => setTemplateCopied(null), 2000); }}
+                        style={{ padding: "4px 12px", borderRadius: 8, border: "none", background: templateCopied === tid ? "#10B981" : section.color, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                        {templateCopied === tid ? "✓ Copied!" : "Copy"}
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#94A3B8", lineHeight: 1.5, whiteSpace: "pre-line", background: "#F8FAFC", padding: "8px 10px", borderRadius: 8, borderLeft: `3px solid ${section.color}` }}>
+                      {t.text.slice(0, 120)}{t.text.length > 120 ? "..." : ""}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* bottom tab bar */}
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
+        {[
+          { key: "customers", icon: "👥", label: "Clients" },
+          { key: "tasks", icon: "📋", label: "Tasks", badge: tasks.filter(t => t.type === "overdue").length },
+          { key: "calculator", icon: "🧮", label: "Calc" },
+          { key: "templates", icon: "💬", label: "Templates" },
+        ].map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            style={{ flex: 1, padding: "10px 4px 14px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative" }}>
+            {t.badge > 0 && (
+              <div style={{ position: "absolute", top: 6, right: "25%", width: 16, height: 16, borderRadius: "50%", background: "#EF4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{t.badge}</div>
+            )}
+            <span style={{ fontSize: 20 }}>{t.icon}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
+            {activeTab === t.key && <div style={{ position: "absolute", bottom: 0, width: 32, height: 3, background: "#6366F1", borderRadius: "3px 3px 0 0" }} />}
+          </button>
+        ))}
       </div>
     </div>
   );
