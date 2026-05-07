@@ -223,25 +223,20 @@ export default function App() {
 
   // ── auth ──
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        setSession(session);
-      } else if (event === "SIGNED_OUT") {
-        setSession(null);
-        setCustomers([]);
-        setView("list");
-        setActiveCustomerId(null);
-        setActiveDealId(null);
-      }
-      // Only set loading false after initial check
-    });
-    return () => subscription.unsubscribe();
+    // Check localStorage directly — no API call
+    const stored = localStorage.getItem('jnp_session');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed?.access_token) {
+          setSession(parsed);
+          setAuthLoading(false);
+          return;
+        }
+      } catch {}
+    }
+    setSession(null);
+    setAuthLoading(false);
   }, []);
 
   // ── load customers ──
@@ -271,11 +266,21 @@ export default function App() {
     setAuthBusy(true); setAuthError("");
     try {
       if (authMode === "login") {
-        const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail.trim(), password: authPassword });
+        const { data, error } = await supabase.auth.signInWithPassword({ 
+          email: authEmail.trim(), 
+          password: authPassword 
+        });
         if (error) { setAuthError(error.message); setAuthBusy(false); return; }
-        if (data?.session) setSession(data.session);
+        if (data?.session) {
+          // Store session in localStorage manually
+          localStorage.setItem('jnp_session', JSON.stringify(data.session));
+          setSession(data.session);
+        }
       } else {
-        const { error } = await supabase.auth.signUp({ email: authEmail.trim(), password: authPassword });
+        const { error } = await supabase.auth.signUp({ 
+          email: authEmail.trim(), 
+          password: authPassword 
+        });
         if (error) { setAuthError(error.message); setAuthBusy(false); return; }
         setAuthError("✅ Account created! You can now sign in.");
         setAuthMode("login");
@@ -287,7 +292,9 @@ export default function App() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    localStorage.removeItem('jnp_session');
+    await supabase.auth.signOut().catch(() => {});
+    setSession(null);
     setCustomers([]); setView("list"); setActiveCustomerId(null); setActiveDealId(null);
   }
 
