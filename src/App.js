@@ -256,6 +256,9 @@ export default function App() {
   const [calcBuy, setCalcBuy] = useState("");
   const [calcMargin, setCalcMargin] = useState("15");
   const [templateCopied, setTemplateCopied] = useState(null);
+  const [smartTasks, setSmartTasks] = useState(null);
+  const [smartLoading, setSmartLoading] = useState(false);
+  const [smartError, setSmartError] = useState("");
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -481,6 +484,102 @@ Return JSON with only a "reply" field containing the message.`;
   function copyMsg(text, id) {
     navigator.clipboard.writeText(text);
     setCopied(id); setTimeout(() => setCopied(null), 2000);
+  }
+
+  // ── smart task analysis ──
+  async function analyzeTasksWithClaude() {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    if (!tasks.length) { alert("No open deals to analyze."); return; }
+    setSmartLoading(true); setSmartError(""); setSmartTasks(null);
+
+    // Build context for each open deal
+    const dealContexts = await Promise.all(tasks.map(async ({ customer: c, deal: d }) => {
+      const { data: msgs } = await supabase
+        .from("messages")
+        .select("role, content, sent, ts")
+        .eq("deal_id", d.id)
+        .order("ts", { ascending: false })
+        .limit(5);
+
+      const lastMessages = (msgs || []).map(m => {
+        const text = m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content;
+        return `${m.role === "customer" ? c.name : "You"}: ${text}`;
+      }).reverse().join('\n');
+
+      return {
+        id: d.id,
+        customerId: c.id,
+        name: c.name,
+        number: c.number || "",
+        device: [d.brand, d.model].filter(Boolean).join(" ") || "Unknown device",
+        budget: d.budget ? `AED ${d.budget}` : "Unknown",
+        stage: d.stage,
+        daysSilent: daysSince(c.last_active),
+        lastMessages: lastMessages || "No messages yet",
+      };
+    }));
+
+    const prompt = `You are analyzing open sales deals for "Laptop for Less", a UAE laptop reselling business.
+
+For each deal below, analyze the conversation context and return your assessment.
+
+Return ONLY a JSON array — no markdown, no explanation:
+[
+  {
+    "dealId": "deal id here",
+    "priority": "urgent" | "high" | "medium" | "low" | "dead",
+    "priorityReason": "one sentence why",
+    "nextAction": "exact action to take",
+    "suggestedMessage": "ready to send WhatsApp message or empty string if no message needed",
+    "waitDays": 0
+  }
+]
+
+Priority definitions:
+- urgent: needs action TODAY — payment pending, confirmed buyer, hot lead
+- high: follow up within 24hrs — interested but went quiet
+- medium: follow up in 2-3 days — lukewarm interest
+- low: follow up next week — very early stage or said they'll come back
+- dead: likely lost — no response after multiple attempts, said not interested
+
+Deals to analyze:
+${JSON.stringify(dealContexts, null, 2)}`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await res.json();
+      const raw = data?.content?.[0]?.text || "[]";
+      const clean = raw.replace(/```json|```/g, "").trim();
+      let results;
+      try { results = JSON.parse(clean); } catch { throw new Error("Could not parse response"); }
+
+      // Merge with existing task data
+      const merged = results.map(r => {
+        const task = tasks.find(t => t.deal.id === r.dealId);
+        return task ? { ...task, smart: r } : null;
+      }).filter(Boolean);
+
+      // Sort by priority
+      const order = { urgent: 0, high: 1, medium: 2, low: 3, dead: 4 };
+      merged.sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
+      setSmartTasks(merged);
+    } catch (e) {
+      setSmartError("Analysis failed. Please try again.");
+    }
+    setSmartLoading(false);
   }
 
   // ── import whatsapp chat ──
@@ -1277,14 +1376,113 @@ ${importText.slice(0, 8000)}`;
       {/* ── TASKS TAB ── */}
       {activeTab === "tasks" && (
         <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 8 }}>
+
+          {/* Smart Analysis Button */}
+          <div style={{ background: "linear-gradient(135deg, #EEF2FF, #F5F3FF)", borderRadius: 16, padding: 16, border: "1.5px solid #C7D2FE" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: smartTasks ? 10 : 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#4338CA" }}>🤖 Smart Analysis</div>
+                <div style={{ fontSize: 11, color: "#818CF8", marginTop: 2 }}>Claude reads every conversation and ranks by real priority</div>
+              </div>
+              <button onClick={analyzeTasksWithClaude} disabled={smartLoading || !tasks.length}
+                style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: smartLoading ? "#C7D2FE" : "#6366F1", color: "#fff", fontSize: 12, fontWeight: 800, cursor: smartLoading || !tasks.length ? "not-allowed" : "pointer", flexShrink: 0, minWidth: 80 }}>
+                {smartLoading ? "Analysing..." : smartTasks ? "Re-analyse" : "Analyse →"}
+              </button>
+            </div>
+            {smartLoading && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, padding: "8px 12px", background: "#fff", borderRadius: 10 }}>
+                <div style={{ width: 16, height: 16, border: "2px solid #C7D2FE", borderTop: "2px solid #6366F1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                <span style={{ fontSize: 12, color: "#6366F1" }}>Reading all conversations...</span>
+                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+              </div>
+            )}
+            {smartError && <div style={{ fontSize: 12, color: "#EF4444", marginTop: 8, fontWeight: 600 }}>{smartError}</div>}
+            {smartTasks && (
+              <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, marginTop: 4 }}>
+                ✓ Analysed {smartTasks.length} deals · {smartTasks.filter(t => t.smart.priority === "urgent").length} urgent · {smartTasks.filter(t => t.smart.priority === "dead").length} dead leads
+              </div>
+            )}
+          </div>
+
           {tasks.length === 0 && (
-            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ textAlign: "center", padding: "40px 20px" }}>
               <div style={{ fontSize: 40, marginBottom: 10 }}>🎉</div>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>All caught up!</div>
               <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>No open deals need attention</div>
             </div>
           )}
-          {tasks.map(({ customer: c, deal: d, days, type }) => (
+
+          {/* Smart Tasks View */}
+          {smartTasks && smartTasks.map(({ customer: c, deal: d, smart }) => {
+            const PRIORITY_STYLES = {
+              urgent: { color: "#EF4444", bg: "#FEF2F2", border: "#FECACA", icon: "🔴", label: "URGENT" },
+              high:   { color: "#F59E0B", bg: "#FFFBEB", border: "#FDE68A", icon: "🟠", label: "HIGH" },
+              medium: { color: "#6366F1", bg: "#EEF2FF", border: "#C7D2FE", icon: "🟡", label: "MEDIUM" },
+              low:    { color: "#10B981", bg: "#ECFDF5", border: "#A7F3D0", icon: "🟢", label: "LOW" },
+              dead:   { color: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0", icon: "⚪", label: "DEAD LEAD" },
+            };
+            const ps = PRIORITY_STYLES[smart.priority] || PRIORITY_STYLES.medium;
+            const [msgCopied, setMsgCopied] = useState(false);
+            return (
+              <div key={d.id} style={{ background: "#fff", borderRadius: 16, border: `1.5px solid ${ps.border}`, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+                {/* Header */}
+                <div style={{ padding: "10px 14px", background: ps.bg, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                  onClick={() => { setActiveCustomerId(c.id); setActiveDealId(d.id); setView("detail"); setPendingSuggestion(null); }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: ps.color, textTransform: "uppercase", border: `1.5px solid ${ps.border}` }}>{c.name[0]}</div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: "#0F172A" }}>{c.name}</div>
+                      <div style={{ fontSize: 11, color: "#94A3B8" }}>{[d.brand, d.model].filter(Boolean).join(" ") || "Device TBD"}</div>
+                    </div>
+                  </div>
+                  <Badge color={ps.color} bg={ps.bg} small>{ps.icon} {ps.label}</Badge>
+                </div>
+
+                {/* AI Insight */}
+                <div style={{ padding: "10px 14px", borderBottom: "1px solid #F8FAFC" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>🤖 AI SAYS</div>
+                  <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5, marginBottom: 4 }}>{smart.priorityReason}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: ps.color }}>→ {smart.nextAction}</div>
+                </div>
+
+                {/* Suggested Message */}
+                {smart.suggestedMessage && (
+                  <div style={{ padding: "10px 14px", background: "#F8FAFC" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 6, letterSpacing: 0.5 }}>💬 SUGGESTED MESSAGE</div>
+                    <div style={{ fontSize: 12, color: "#334155", lineHeight: 1.6, whiteSpace: "pre-line", marginBottom: 8, padding: "8px 10px", background: "#fff", borderRadius: 8, border: "1px solid #E2E8F0", borderLeft: `3px solid ${ps.color}` }}>
+                      {smart.suggestedMessage}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => { navigator.clipboard.writeText(smart.suggestedMessage); setMsgCopied(true); setTimeout(() => setMsgCopied(false), 2000); }}
+                        style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: msgCopied ? "#10B981" : "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        {msgCopied ? "✓ Copied!" : "📋 Copy Message"}
+                      </button>
+                      {c.number && (
+                        <a href={`https://wa.me/${c.number.replace(/\D/g,"")}?text=${encodeURIComponent(smart.suggestedMessage)}`}
+                          target="_blank" rel="noreferrer"
+                          style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", textDecoration: "none", textAlign: "center" }}>
+                          📱 Open WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* No message — just WhatsApp link */}
+                {!smart.suggestedMessage && c.number && (
+                  <div style={{ padding: "8px 14px" }}>
+                    <a href={`https://wa.me/${c.number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                      style={{ display: "block", textAlign: "center", padding: "7px", borderRadius: 8, background: "#F1F5F9", color: "#6366F1", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                      Open WhatsApp →
+                    </a>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Simple Tasks View (when no smart analysis yet) */}
+          {!smartTasks && tasks.map(({ customer: c, deal: d, days, type }) => (
             <div key={d.id} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(d.id); setView("detail"); setPendingSuggestion(null); }}
               style={{ background: "#fff", borderRadius: 16, padding: "14px 16px", border: `1.5px solid ${type === "overdue" ? "#FECACA" : type === "followup" ? "#FDE68A" : "#F1F5F9"}`, cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
