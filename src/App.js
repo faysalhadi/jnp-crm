@@ -219,7 +219,12 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [newCustomer, setNewCustomer] = useState({ name: "", number: "", notes: "" });
   const [newDeal, setNewDeal] = useState({ brand: "", model: "", value: "" });
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const bottomRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // ── auth ──
   useEffect(() => {
@@ -445,6 +450,130 @@ Return JSON with only a "reply" field containing the message.`;
     setCopied(id); setTimeout(() => setCopied(null), 2000);
   }
 
+  // ── import whatsapp chat ──
+  async function importWhatsAppChat() {
+    if (!importText.trim() || !anthropicKey) return;
+    setImporting(true); setImportResult(null);
+
+    const prompt = `You are analyzing a WhatsApp chat export for a laptop reselling business in UAE called "Laptop for Less".
+
+Extract ALL customer/contact information from this chat. For each unique person (excluding the business owner):
+
+Return ONLY a JSON array like this:
+[
+  {
+    "name": "contact name or display name",
+    "number": "phone number if visible or empty string",
+    "intent": "buying or selling or unknown",
+    "brand": "MacBook or Lenovo or Dell or HP or Other or unknown",
+    "model": "specific model or empty string",
+    "ram": "e.g. 8GB or empty",
+    "storage": "e.g. 256GB or empty",
+    "condition": "New or Like New or Used or Refurbished or unknown",
+    "budget": null or number,
+    "urgent": false or true,
+    "notes": "any relevant context from the conversation",
+    "stage": "new_inquiry or requirement_noted or negotiation or closed or lost"
+  }
+]
+
+Rules:
+- Skip forwarded messages, news, memes
+- Skip the business owner's messages
+- Only include people who are clearly buying or selling laptops
+- If someone appears multiple times, merge into one entry
+- Return empty array [] if no relevant contacts found
+- Return ONLY the JSON array, nothing else
+
+WhatsApp Chat:
+${importText.slice(0, 8000)}`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
+      });
+      const data = await res.json();
+      const raw = data?.content?.[0]?.text || "[]";
+      const clean = raw.replace(/\`\`\`json|\`\`\`/g, "").trim();
+      let contacts;
+      try { contacts = JSON.parse(clean); } catch { contacts = []; }
+
+      if (!contacts.length) {
+        setImportResult({ success: false, message: "No relevant contacts found in this chat." });
+        setImporting(false); return;
+      }
+
+      // Create customers and deals in Supabase
+      let created = 0;
+      for (const c of contacts) {
+        if (!c.name) continue;
+        const { data: customer } = await supabase.from("customers").insert({
+          name: c.name, number: c.number || "", notes: c.notes || "",
+          tier: "cold", urgent: c.urgent || false,
+        }).select().single();
+        if (!customer) continue;
+        await supabase.from("deals").insert({
+          customer_id: customer.id,
+          brand: c.brand !== "unknown" ? c.brand : "",
+          model: c.model || "", ram: c.ram || "", storage: c.storage || "",
+          condition: c.condition !== "unknown" ? c.condition : "",
+          budget: c.budget || null, stage: c.stage || "new_inquiry",
+        });
+        created++;
+      }
+
+      await loadCustomers();
+      setImportResult({ success: true, message: `✅ Imported ${created} customer${created !== 1 ? "s" : ""} successfully!` });
+      setImportText("");
+    } catch (e) {
+      setImportResult({ success: false, message: "Error importing. Check your API key." });
+    }
+    setImporting(false);
+  }
+
+  // ── export data ──
+  async function exportData() {
+    setExporting(true);
+    try {
+      const { data: allCustomers } = await supabase.from("customers").select("*, deals(*)").order("last_active", { ascending: false });
+      const exportObj = {
+        exported_at: new Date().toISOString(),
+        business: "Laptop for Less",
+        total_customers: allCustomers?.length || 0,
+        customers: allCustomers || [],
+      };
+      const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `jnp-crm-export-${new Date().toISOString().slice(0,10)}.json`;
+      a.click(); URL.revokeObjectURL(url);
+
+      // Also export as CSV
+      const rows = [["Name", "Number", "Tier", "Urgent", "Brand", "Model", "Stage", "Budget (AED)", "Value (AED)", "Last Active", "Notes"]];
+      (allCustomers || []).forEach(c => {
+        const deal = (c.deals || [])[0] || {};
+        rows.push([
+          c.name, c.number || "", c.tier, c.urgent ? "Yes" : "No",
+          deal.brand || "", deal.model || "", deal.stage || "",
+          deal.budget || "", deal.value || "",
+          c.last_active ? new Date(c.last_active).toLocaleDateString() : "",
+          c.notes || "",
+        ]);
+      });
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+      const csvBlob = new Blob([csv], { type: "text/csv" });
+      const csvUrl = URL.createObjectURL(csvBlob);
+      const b = document.createElement("a");
+      b.href = csvUrl; b.download = `jnp-crm-export-${new Date().toISOString().slice(0,10)}.csv`;
+      setTimeout(() => { b.click(); URL.revokeObjectURL(csvUrl); }, 500);
+    } catch (e) {
+      alert("Export failed. Please try again.");
+    }
+    setExporting(false);
+  }
+
   // ── computed ──
   const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").length, 0);
   const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
@@ -549,6 +678,43 @@ Return JSON with only a "reply" field containing the message.`;
           <button onClick={() => { const k = keyInput || anthropicKey; saveAnthropicKey(k); setAnthropicKey(k); alert("Saved!"); }}
             style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
             Save Key
+          </button>
+        </div>
+
+        {/* Import WhatsApp Chat */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>📥 IMPORT WHATSAPP CHAT</div>
+          <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 10, lineHeight: 1.5 }}>
+            Paste your WhatsApp chat export — Claude will extract all customers automatically.
+          </div>
+          <textarea
+            value={importText}
+            onChange={e => setImportText(e.target.value)}
+            placeholder="Paste WhatsApp chat text here...&#10;&#10;How to export: WhatsApp → Open chat → ⋮ → More → Export chat → Without media → Copy text"
+            rows={6}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 10, lineHeight: 1.5 }}
+          />
+          {importResult && (
+            <div style={{ padding: "8px 12px", borderRadius: 8, background: importResult.success ? "#ECFDF5" : "#FEF2F2", color: importResult.success ? "#10B981" : "#EF4444", fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
+              {importResult.message}
+            </div>
+          )}
+          <button onClick={importWhatsAppChat} disabled={importing || !importText.trim() || !anthropicKey}
+            style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: importing || !importText.trim() || !anthropicKey ? "#E2E8F0" : "#6366F1", color: importing || !importText.trim() || !anthropicKey ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 13, cursor: importing || !importText.trim() || !anthropicKey ? "not-allowed" : "pointer" }}>
+            {importing ? "⏳ Importing..." : "Import Customers →"}
+          </button>
+          {!anthropicKey && <div style={{ fontSize: 11, color: "#EF4444", marginTop: 6, textAlign: "center" }}>Add Anthropic API key above first</div>}
+        </div>
+
+        {/* Export Data */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>📤 EXPORT DATA</div>
+          <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12, lineHeight: 1.5 }}>
+            Download all your customers and deals as JSON + CSV backup.
+          </div>
+          <button onClick={exportData} disabled={exporting}
+            style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: exporting ? "#E2E8F0" : "#10B981", color: exporting ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 13, cursor: exporting ? "not-allowed" : "pointer" }}>
+            {exporting ? "⏳ Exporting..." : "📥 Download Backup (JSON + CSV)"}
           </button>
         </div>
 
