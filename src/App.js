@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "./supabase";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -688,6 +688,18 @@ ${JSON.stringify(dealContexts, null, 2)}`;
   useEffect(() => {
     if (activeTab === "stock" && session) loadStock();
   }, [activeTab]);
+
+  // ── tasks (computed early so useEffects can use it) ──
+  const tasks = useMemo(() => customers.flatMap(c =>
+    (c.deals || [])
+      .filter(d => d.stage !== "closed" && d.stage !== "lost")
+      .map(d => ({
+        customer: c,
+        deal: d,
+        days: daysSince(c.last_active),
+        type: daysSince(c.last_active) >= 3 ? "overdue" : daysSince(c.last_active) >= 1 ? "followup" : "active",
+      }))
+  ).sort((a, b) => b.days - a.days), [customers]);
 
   // ── stock functions ──
   async function saveStock() {
@@ -1435,18 +1447,6 @@ ${importText.slice(0, 8000)}`;
       </div>
     );
   }
-
-  // ── Tasks view data ──
-  const tasks = customers.flatMap(c =>
-    (c.deals || [])
-      .filter(d => d.stage !== "closed" && d.stage !== "lost")
-      .map(d => ({
-        customer: c,
-        deal: d,
-        days: daysSince(c.last_active),
-        type: daysSince(c.last_active) >= 3 ? "overdue" : daysSince(c.last_active) >= 1 ? "followup" : "active",
-      }))
-  ).sort((a, b) => b.days - a.days);
 
   // list view
   return (
