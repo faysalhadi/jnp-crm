@@ -313,12 +313,7 @@ export default function App() {
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
 
-  // Load cached smart analysis when switching to tasks tab
-  useEffect(() => {
-    if (activeTab === "tasks" && tasks.length && !smartTasks) {
-      loadCachedSmartTasks();
-    }
-  }, [activeTab, tasks.length]);
+  // Note: tasks tab cache loading is handled after tasks is defined
 
   // ── load messages for active deal ──
   useEffect(() => {
@@ -516,6 +511,47 @@ Return JSON with only a "reply" field containing the message.`;
     setCopied(id); setTimeout(() => setCopied(null), 2000);
   }
 
+  // Load cached smart results on tasks tab open
+  // ── tasks (defined here so loadCachedSmartTasks can reference it) ──
+  const tasks = useMemo(() => customers.flatMap(c =>
+    (c.deals || [])
+      .filter(d => d.stage !== "closed" && d.stage !== "lost")
+      .map(d => ({
+        customer: c, deal: d,
+        days: daysSince(c.last_active),
+        type: daysSince(c.last_active) >= 3 ? "overdue" : daysSince(c.last_active) >= 1 ? "followup" : "active",
+      }))
+  ).sort((a, b) => b.days - a.days), [customers]);
+
+  async function loadCachedSmartTasks() {
+    if (!tasks.length) return;
+    const dealIds = tasks.map(t => t.deal.id);
+    const { data: cachedDeals } = await supabase
+      .from("deals")
+      .select("id, smart_priority, smart_reason, smart_action, smart_message")
+      .in("id", dealIds)
+      .not("smart_priority", "is", null);
+
+    if (!cachedDeals?.length) return;
+    const order = { urgent: 0, high: 1, medium: 2, low: 3, dead: 4 };
+    const merged = cachedDeals.map(cached => {
+      const task = tasks.find(t => t.deal.id === cached.id);
+      return task ? {
+        ...task,
+        smart: {
+          dealId: cached.id,
+          priority: cached.smart_priority,
+          priorityReason: cached.smart_reason,
+          nextAction: cached.smart_action,
+          suggestedMessage: cached.smart_message || "",
+        }
+      } : null;
+    }).filter(Boolean);
+
+    merged.sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
+    setSmartTasks(merged);
+  }
+
   // ── smart task analysis (with caching) ──
   async function analyzeTasksWithClaude(forceAll = false) {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
@@ -689,17 +725,7 @@ ${JSON.stringify(dealContexts, null, 2)}`;
     if (activeTab === "stock" && session) loadStock();
   }, [activeTab]);
 
-  // ── tasks (computed early so useEffects can use it) ──
-  const tasks = useMemo(() => customers.flatMap(c =>
-    (c.deals || [])
-      .filter(d => d.stage !== "closed" && d.stage !== "lost")
-      .map(d => ({
-        customer: c,
-        deal: d,
-        days: daysSince(c.last_active),
-        type: daysSince(c.last_active) >= 3 ? "overdue" : daysSince(c.last_active) >= 1 ? "followup" : "active",
-      }))
-  ).sort((a, b) => b.days - a.days), [customers]);
+
 
   // ── stock functions ──
   async function saveStock() {
@@ -764,35 +790,14 @@ ${JSON.stringify(dealContexts, null, 2)}`;
     return matches;
   }
 
-  // Load cached smart results on tasks tab open
-  async function loadCachedSmartTasks() {
-    if (!tasks.length) return;
-    const dealIds = tasks.map(t => t.deal.id);
-    const { data: cachedDeals } = await supabase
-      .from("deals")
-      .select("id, smart_priority, smart_reason, smart_action, smart_message")
-      .in("id", dealIds)
-      .not("smart_priority", "is", null);
 
-    if (!cachedDeals?.length) return;
-    const order = { urgent: 0, high: 1, medium: 2, low: 3, dead: 4 };
-    const merged = cachedDeals.map(cached => {
-      const task = tasks.find(t => t.deal.id === cached.id);
-      return task ? {
-        ...task,
-        smart: {
-          dealId: cached.id,
-          priority: cached.smart_priority,
-          priorityReason: cached.smart_reason,
-          nextAction: cached.smart_action,
-          suggestedMessage: cached.smart_message || "",
-        }
-      } : null;
-    }).filter(Boolean);
-
-    merged.sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
-    setSmartTasks(merged);
-  }
+  // ── load cached smart tasks when tab switches (safe here - tasks is defined above) ──
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeTab === "tasks" && tasks.length && !smartTasks) {
+      loadCachedSmartTasks();
+    }
+  }, [activeTab]);
 
   // ── import whatsapp chat ──
   async function importWhatsAppChat() {
