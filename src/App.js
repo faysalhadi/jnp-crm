@@ -259,6 +259,7 @@ export default function App() {
   const [smartTasks, setSmartTasks] = useState(null);
   const [smartLoading, setSmartLoading] = useState(false);
   const [smartError, setSmartError] = useState("");
+  const [smartMsgCopied, setSmartMsgCopied] = useState({});
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -1422,7 +1423,7 @@ ${importText.slice(0, 8000)}`;
               dead:   { color: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0", icon: "⚪", label: "DEAD LEAD" },
             };
             const ps = PRIORITY_STYLES[smart.priority] || PRIORITY_STYLES.medium;
-            const [msgCopied, setMsgCopied] = useState(false);
+            const isMsgCopied = smartMsgCopied[d.id];
             return (
               <div key={d.id} style={{ background: "#fff", borderRadius: 16, border: `1.5px solid ${ps.border}`, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
                 {/* Header */}
@@ -1453,9 +1454,9 @@ ${importText.slice(0, 8000)}`;
                       {smart.suggestedMessage}
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => { navigator.clipboard.writeText(smart.suggestedMessage); setMsgCopied(true); setTimeout(() => setMsgCopied(false), 2000); }}
-                        style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: msgCopied ? "#10B981" : "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        {msgCopied ? "✓ Copied!" : "📋 Copy Message"}
+                      <button onClick={() => { navigator.clipboard.writeText(smart.suggestedMessage); setSmartMsgCopied(p => ({...p, [d.id]: true})); setTimeout(() => setSmartMsgCopied(p => ({...p, [d.id]: false})), 2000); }}
+                        style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: isMsgCopied ? "#10B981" : "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        {isMsgCopied ? "✓ Copied!" : "📋 Copy Message"}
                       </button>
                       {c.number && (
                         <a href={`https://wa.me/${c.number.replace(/\D/g,"")}?text=${encodeURIComponent(smart.suggestedMessage)}`}
