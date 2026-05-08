@@ -8,31 +8,20 @@ export const supabase = createClient(
       autoRefreshToken: false,
       persistSession: false,
       detectSessionInUrl: false,
+    },
+    global: {
+      headers: (() => {
+        try {
+          const stored = localStorage.getItem('jnp_session');
+          if (stored) {
+            const session = JSON.parse(stored);
+            if (session?.access_token) {
+              return { Authorization: `Bearer ${session.access_token}` };
+            }
+          }
+        } catch {}
+        return {};
+      })(),
     }
   }
 );
-
-// Manually restore session from localStorage on every page load
-const stored = localStorage.getItem('jnp_session');
-if (stored) {
-  try {
-    const session = JSON.parse(stored);
-    if (session?.access_token) {
-      supabase.rest.headers['Authorization'] = `Bearer ${session.access_token}`;
-    }
-  } catch {}
-}
-
-// Helper to get auth headers using stored session
-export function getAuthHeaders() {
-  const stored = localStorage.getItem('jnp_session');
-  if (stored) {
-    try {
-      const session = JSON.parse(stored);
-      if (session?.access_token) {
-        return { Authorization: `Bearer ${session.access_token}` };
-      }
-    } catch {}
-  }
-  return {};
-}
