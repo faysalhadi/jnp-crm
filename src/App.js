@@ -291,6 +291,13 @@ export default function App() {
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
 
+  // Load cached smart analysis when switching to tasks tab
+  useEffect(() => {
+    if (activeTab === "tasks" && tasks.length && !smartTasks) {
+      loadCachedSmartTasks();
+    }
+  }, [activeTab, tasks.length]);
+
   // ── load messages for active deal ──
   useEffect(() => {
     if (!activeDealId) { setMessages([]); return; }
@@ -487,42 +494,92 @@ Return JSON with only a "reply" field containing the message.`;
     setCopied(id); setTimeout(() => setCopied(null), 2000);
   }
 
-  // ── smart task analysis ──
-  async function analyzeTasksWithClaude() {
+  // ── smart task analysis (with caching) ──
+  async function analyzeTasksWithClaude(forceAll = false) {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
     if (!tasks.length) { alert("No open deals to analyze."); return; }
-    setSmartLoading(true); setSmartError(""); setSmartTasks(null);
+    setSmartLoading(true); setSmartError("");
 
-    // Build context for each open deal
-    const dealContexts = await Promise.all(tasks.map(async ({ customer: c, deal: d }) => {
-      const { data: msgs } = await supabase
-        .from("messages")
-        .select("role, content, sent, ts")
-        .eq("deal_id", d.id)
-        .order("ts", { ascending: false })
-        .limit(5);
+    try {
+      // Step 1: Load cached results from Supabase for all deals
+      const dealIds = tasks.map(t => t.deal.id);
+      const { data: cachedDeals } = await supabase
+        .from("deals")
+        .select("id, smart_priority, smart_reason, smart_action, smart_message, smart_analysed_at")
+        .in("id", dealIds);
 
-      const lastMessages = (msgs || []).map(m => {
-        const text = m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content;
-        return `${m.role === "customer" ? c.name : "You"}: ${text}`;
-      }).reverse().join('\n');
+      const cachedMap = {};
+      (cachedDeals || []).forEach(d => { cachedMap[d.id] = d; });
 
-      return {
-        id: d.id,
-        customerId: c.id,
-        name: c.name,
-        number: c.number || "",
-        device: [d.brand, d.model].filter(Boolean).join(" ") || "Unknown device",
-        budget: d.budget ? `AED ${d.budget}` : "Unknown",
-        stage: d.stage,
-        daysSilent: daysSince(c.last_active),
-        lastMessages: lastMessages || "No messages yet",
-      };
-    }));
+      // Step 2: Figure out which deals need re-analysis
+      // A deal needs analysis if:
+      // - forceAll is true (user clicked Re-analyse)
+      // - never been analysed before
+      // - has new messages since last analysis
+      const dealsToAnalyze = [];
+      const dealsWithCache = [];
 
-    const prompt = `You are analyzing open sales deals for "Laptop for Less", a UAE laptop reselling business.
+      for (const task of tasks) {
+        const { deal: d, customer: c } = task;
+        const cached = cachedMap[d.id];
+        const lastAnalysed = cached?.smart_analysed_at ? new Date(cached.smart_analysed_at) : null;
+        const lastActive = c.last_active ? new Date(c.last_active) : null;
+        const hasNewMessages = !lastAnalysed || (lastActive && lastActive > lastAnalysed);
+        const hasCachedResult = cached?.smart_priority;
 
-For each deal below, analyze the conversation context and return your assessment.
+        if (forceAll || !hasCachedResult || hasNewMessages) {
+          dealsToAnalyze.push(task);
+        } else {
+          dealsWithCache.push({
+            ...task,
+            smart: {
+              dealId: d.id,
+              priority: cached.smart_priority,
+              priorityReason: cached.smart_reason,
+              nextAction: cached.smart_action,
+              suggestedMessage: cached.smart_message || "",
+            }
+          });
+        }
+      }
+
+      // Step 3: Show cached results immediately while analysing new ones
+      const order = { urgent: 0, high: 1, medium: 2, low: 3, dead: 4 };
+      if (dealsWithCache.length && dealsToAnalyze.length) {
+        const combined = [...dealsWithCache].sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
+        setSmartTasks(combined);
+      }
+
+      // Step 4: Analyse only new/changed deals
+      if (dealsToAnalyze.length > 0) {
+        const dealContexts = await Promise.all(dealsToAnalyze.map(async ({ customer: c, deal: d }) => {
+          const { data: msgs } = await supabase
+            .from("messages")
+            .select("role, content, sent, ts")
+            .eq("deal_id", d.id)
+            .order("ts", { ascending: false })
+            .limit(8);
+
+          const lastMessages = (msgs || []).map(m => {
+            const text = m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content;
+            return `${m.role === "customer" ? c.name : "You"}: ${text.slice(0, 200)}`;
+          }).reverse().join("\n");
+
+          return {
+            id: d.id,
+            name: c.name,
+            number: c.number || "",
+            device: [d.brand, d.model].filter(Boolean).join(" ") || "Unknown device",
+            budget: d.budget ? `AED ${d.budget}` : "Unknown",
+            stage: d.stage,
+            daysSilent: daysSince(c.last_active),
+            lastMessages: lastMessages || "No messages yet",
+          };
+        }));
+
+        const prompt = `You are analyzing open sales deals for "Laptop for Less", a UAE laptop reselling business.
+
+For each deal, analyze the conversation and return your assessment.
 
 Return ONLY a JSON array — no markdown, no explanation:
 [
@@ -531,56 +588,99 @@ Return ONLY a JSON array — no markdown, no explanation:
     "priority": "urgent" | "high" | "medium" | "low" | "dead",
     "priorityReason": "one sentence why",
     "nextAction": "exact action to take",
-    "suggestedMessage": "ready to send WhatsApp message or empty string if no message needed",
-    "waitDays": 0
+    "suggestedMessage": "ready to send WhatsApp message or empty string if no message needed"
   }
 ]
 
-Priority definitions:
-- urgent: needs action TODAY — payment pending, confirmed buyer, hot lead
-- high: follow up within 24hrs — interested but went quiet
-- medium: follow up in 2-3 days — lukewarm interest
-- low: follow up next week — very early stage or said they'll come back
-- dead: likely lost — no response after multiple attempts, said not interested
+Priority:
+- urgent: action TODAY — payment pending, confirmed buyer, hot lead
+- high: follow up within 24hrs — interested but quiet
+- medium: follow up in 2-3 days — lukewarm
+- low: follow up next week — early stage or said they'll come back
+- dead: likely lost — no response after multiple attempts
 
-Deals to analyze:
+Deals:
 ${JSON.stringify(dealContexts, null, 2)}`;
 
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      const data = await res.json();
-      const raw = data?.content?.[0]?.text || "[]";
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let results;
-      try { results = JSON.parse(clean); } catch { throw new Error("Could not parse response"); }
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true"
+          },
+          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2000, messages: [{ role: "user", content: prompt }] })
+        });
+        const data = await res.json();
+        const raw = data?.content?.[0]?.text || "[]";
+        const clean = raw.replace(/```json|```/g, "").trim();
+        let results;
+        try { results = JSON.parse(clean); } catch { throw new Error("Could not parse AI response"); }
 
-      // Merge with existing task data
-      const merged = results.map(r => {
-        const task = tasks.find(t => t.deal.id === r.dealId);
-        return task ? { ...task, smart: r } : null;
-      }).filter(Boolean);
+        // Step 5: Save results to Supabase
+        await Promise.all(results.map(r =>
+          supabase.from("deals").update({
+            smart_priority: r.priority,
+            smart_reason: r.priorityReason,
+            smart_action: r.nextAction,
+            smart_message: r.suggestedMessage || "",
+            smart_analysed_at: new Date().toISOString(),
+          }).eq("id", r.dealId)
+        ));
 
-      // Sort by priority
-      const order = { urgent: 0, high: 1, medium: 2, low: 3, dead: 4 };
-      merged.sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
-      setSmartTasks(merged);
+        // Step 6: Merge new results with cached ones
+        const newResults = results.map(r => {
+          const task = dealsToAnalyze.find(t => t.deal.id === r.dealId);
+          return task ? { ...task, smart: r } : null;
+        }).filter(Boolean);
+
+        const allResults = [...dealsWithCache, ...newResults];
+        allResults.sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
+        setSmartTasks(allResults);
+
+        // Reload customers to get updated deal data
+        await loadCustomers();
+      } else {
+        // All from cache — just sort and show
+        dealsWithCache.sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
+        setSmartTasks(dealsWithCache);
+      }
+
     } catch (e) {
       setSmartError("Analysis failed. Please try again.");
     }
     setSmartLoading(false);
+  }
+
+  // Load cached smart results on tasks tab open
+  async function loadCachedSmartTasks() {
+    if (!tasks.length) return;
+    const dealIds = tasks.map(t => t.deal.id);
+    const { data: cachedDeals } = await supabase
+      .from("deals")
+      .select("id, smart_priority, smart_reason, smart_action, smart_message")
+      .in("id", dealIds)
+      .not("smart_priority", "is", null);
+
+    if (!cachedDeals?.length) return;
+    const order = { urgent: 0, high: 1, medium: 2, low: 3, dead: 4 };
+    const merged = cachedDeals.map(cached => {
+      const task = tasks.find(t => t.deal.id === cached.id);
+      return task ? {
+        ...task,
+        smart: {
+          dealId: cached.id,
+          priority: cached.smart_priority,
+          priorityReason: cached.smart_reason,
+          nextAction: cached.smart_action,
+          suggestedMessage: cached.smart_message || "",
+        }
+      } : null;
+    }).filter(Boolean);
+
+    merged.sort((a, b) => (order[a.smart.priority] || 3) - (order[b.smart.priority] || 3));
+    setSmartTasks(merged);
   }
 
   // ── import whatsapp chat ──
