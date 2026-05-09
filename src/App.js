@@ -167,6 +167,13 @@ STAGE LOGIC:
 - closed: sale confirmed
 - lost: deal fell through`;
 
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning!";
+  if (h < 17) return "Good afternoon!";
+  return "Good evening!";
+}
+
 const EMPTY_STOCK = { brand: "", model: "", processor: "", ram: "", ssd: "", screen: "", condition: "", charger: "", box: "", activation_lock: "unknown", cost_price: "", min_price: "", max_price: "", serial_number: "", notes: "", photo_url: "", status: "available" };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -396,7 +403,7 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [exporting, setExporting] = useState(false);
-  const [activeTab, setActiveTab] = useState("customers"); // customers | tasks | templates
+  const [activeTab, setActiveTab] = useState("home");
   const [templateCopied, setTemplateCopied] = useState(null);
   const [smartTasks, setSmartTasks] = useState(null);
   const [smartLoading, setSmartLoading] = useState(false);
@@ -425,6 +432,38 @@ export default function App() {
   const [askInput, setAskInput] = useState("");
   const [askLoading, setAskLoading] = useState(false);
   const askBottomRef = useRef(null);
+
+  // ── traders ──
+  const [traderListings, setTraderListings] = useState([]);
+  const [traderListingsLoading, setTraderListingsLoading] = useState(false);
+  const [traderSection, setTraderSection] = useState("inventory");
+  const [traderSearch, setTraderSearch] = useState("");
+  const [traderFilter, setTraderFilter] = useState("all");
+  const [showImportTrader, setShowImportTrader] = useState(false);
+  const [traderGroup, setTraderGroup] = useState("");
+  const [traderChatText, setTraderChatText] = useState("");
+  const [traderImportLoading, setTraderImportLoading] = useState(false);
+  const [traderImportPreview, setTraderImportPreview] = useState(null);
+  const [savingTraderListings, setSavingTraderListings] = useState(false);
+  const [traderImportResult, setTraderImportResult] = useState(null);
+  const [showTraderMatches, setShowTraderMatches] = useState(false);
+  const [showCheckTraders, setShowCheckTraders] = useState(false);
+  const [checkTradersResults, setCheckTradersResults] = useState([]);
+  const [checkTradersLoading, setCheckTradersLoading] = useState(false);
+
+  // ── receipt ──
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptPaymentMethod, setReceiptPaymentMethod] = useState("Cash");
+
+  // ── broadcast ──
+  const [showBroadcast, setShowBroadcast] = useState(false);
+  const [broadcastItem, setBroadcastItem] = useState(null);
+  const [broadcastClients, setBroadcastClients] = useState([]);
+  const [broadcastSelected, setBroadcastSelected] = useState(new Set());
+  const [broadcastMessages, setBroadcastMessages] = useState([]);
+  const [broadcastLoading, setBroadcastLoading] = useState(false);
+  const [broadcastStep, setBroadcastStep] = useState("clients");
+  const [broadcastSent, setBroadcastSent] = useState(new Set());
 
   // ── auth ──
   useEffect(() => {
@@ -473,7 +512,7 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
-  useEffect(() => { if (session) refreshCachedStock(); }, [session, refreshCachedStock]);
+  useEffect(() => { if (session) { loadStock(); refreshCachedStock(); } }, [session, loadStock, refreshCachedStock]);
 
   // Note: tasks tab cache loading is handled after tasks is defined
 
@@ -1182,6 +1221,140 @@ ${importText.slice(0, 8000)}`;
     setAskLoading(false);
   }
 
+  // ── traders ──
+  const loadTraderListings = useCallback(async () => {
+    setTraderListingsLoading(true);
+    const { data } = await supabase.from("trader_inventory").select("*").order("created_at", { ascending: false });
+    setTraderListings(data || []);
+    setTraderListingsLoading(false);
+  }, []);
+
+  useEffect(() => { if (activeTab === "traders") loadTraderListings(); }, [activeTab, loadTraderListings]);
+
+  async function extractTraderListings() {
+    if (!traderChatText.trim() || !anthropicKey) return;
+    setTraderImportLoading(true); setTraderImportResult(null);
+    const system = `You are extracting trader listings from a WhatsApp group chat for a UAE laptop reselling business.
+Extract every buying and selling listing. Return ONLY a JSON array:
+[{"type":"selling or buying","category":"laptop or part","brand":"","model":"","processor":"","ram":"","storage":"","screen":"","condition":"","part_category":"Battery|RAM|SSD|Screen|Charger|Keyboard|Trackpad|Other or empty","part_compatible":"","part_specs":"","price":null,"currency":"AED","charger":"yes or no or empty","box":"yes or no or empty","notes":"","trader_name":"","trader_number":""}]
+Rules: Skip greetings, memes, irrelevant messages. Skip duplicates (same trader same device same day). For buying: type=buying, extract what they want and max budget as price. For parts: category=part and fill part fields. Extract trader name from message sender. Return empty array [] if no relevant listings found.`;
+    try {
+      const raw = await callClaude(anthropicKey, [{ role: "user", content: traderChatText.slice(0, 12000) }], system);
+      const clean = raw.replace(/```json|```/g, "").trim();
+      let listings; try { listings = JSON.parse(clean); } catch { listings = []; }
+      setTraderImportPreview(Array.isArray(listings) ? listings : []);
+    } catch { setTraderImportResult({ success: false, message: "Extraction failed. Check API key." }); }
+    setTraderImportLoading(false);
+  }
+
+  async function saveTraderListings() {
+    if (!traderImportPreview?.length) return;
+    setSavingTraderListings(true);
+    const rows = traderImportPreview.map(l => ({ ...l, source_group: traderGroup || "Other", status: "active" }));
+    const { error } = await supabase.from("trader_inventory").insert(rows);
+    if (!error) {
+      await loadTraderListings();
+      setTraderImportResult({ success: true, count: rows.length });
+      setTimeout(() => { setShowImportTrader(false); setTraderImportPreview(null); setTraderChatText(""); setTraderGroup(""); setTraderImportResult(null); }, 1800);
+    } else { setTraderImportResult({ success: false, message: error.message }); }
+    setSavingTraderListings(false);
+  }
+
+  async function checkTradersForDeal() {
+    setCheckTradersLoading(true);
+    if (!traderListings.length) {
+      const { data } = await supabase.from("trader_inventory").select("*").eq("type", "selling").eq("status", "active").order("created_at", { ascending: false });
+      const results = (data || []).filter(t => {
+        const brand = activeDeal?.brand || ""; const model = activeDeal?.model || "";
+        return (!brand || !t.brand || t.brand.toLowerCase().includes(brand.toLowerCase()) || brand.toLowerCase().includes((t.brand || "").toLowerCase()));
+      });
+      setCheckTradersResults(results);
+    } else {
+      const brand = activeDeal?.brand || ""; const model = activeDeal?.model || "";
+      setCheckTradersResults(traderListings.filter(t => t.type === "selling" && (!brand || !t.brand || t.brand.toLowerCase().includes(brand.toLowerCase()))));
+    }
+    setCheckTradersLoading(false); setShowCheckTraders(true);
+  }
+
+  // ── receipt ──
+  function buildReceiptText(paymentMethod) {
+    if (!activeDeal || !activeCustomer) return "";
+    const num = activeDeal.receipt_number || `LFL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    const payStatus = PAYMENT_STATUSES.find(p => p.id === activeDeal.payment_status)?.label || "Pending";
+    return `━━━━━━━━━━━━━━━━━━━━━━
+      LAPTOP FOR LESS
+      UAE | laptopforless.ae
+━━━━━━━━━━━━━━━━━━━━━━
+RECEIPT #: ${num}
+Date: ${date}
+
+SOLD TO:
+Name: ${activeCustomer.name}
+Contact: ${activeCustomer.number || "—"}
+
+DEVICE DETAILS:
+Brand & Model: ${[activeDeal.brand, activeDeal.model].filter(Boolean).join(" ") || "—"}
+${activeDeal.processor ? `Processor: ${activeDeal.processor}\n` : ""}RAM: ${activeDeal.ram || "—"}
+Storage: ${activeDeal.storage || activeDeal.ssd || "—"}
+Screen: ${activeDeal.screen || "—"}
+Condition: ${activeDeal.condition || "—"}
+${activeDeal.serial_number ? `Serial #: ${activeDeal.serial_number}\n` : ""}Charger Included: ${activeDeal.charger || "—"}
+Box Included: ${activeDeal.box || "—"}
+
+PAYMENT:
+Amount Paid: AED ${(activeDeal.value || 0).toLocaleString()}
+Payment Status: ${payStatus}
+Payment Method: ${paymentMethod}
+
+Thank you for your purchase! 🙏
+For any issues please contact us on WhatsApp.
+━━━━━━━━━━━━━━━━━━━━━━`;
+  }
+
+  async function saveReceiptNumber(num) {
+    if (activeDeal && !activeDeal.receipt_number) {
+      await supabase.from("deals").update({ receipt_number: num, receipt_date: new Date().toISOString(), payment_method: receiptPaymentMethod }).eq("id", activeDealId);
+      await loadCustomers();
+    }
+  }
+
+  // ── broadcast ──
+  function openBroadcast(item) {
+    const matches = customers.filter(c =>
+      (c.deals || []).some(d => {
+        if (d.stage === "closed" || d.stage === "lost") return false;
+        const brandMatch = !item.brand || !d.brand || d.brand.toLowerCase() === item.brand.toLowerCase();
+        const budgetOk = !item.min_price || !d.budget || Number(d.budget) >= Number(item.min_price);
+        return brandMatch || budgetOk;
+      })
+    );
+    setBroadcastItem(item);
+    setBroadcastClients(matches);
+    setBroadcastSelected(new Set(matches.map(c => c.id)));
+    setBroadcastMessages([]); setBroadcastStep("clients"); setBroadcastSent(new Set());
+    setShowBroadcast(true);
+  }
+
+  async function generateBroadcastMessages() {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setBroadcastLoading(true);
+    const selected = broadcastClients.filter(c => broadcastSelected.has(c.id));
+    const device = [broadcastItem?.brand, broadcastItem?.model].filter(Boolean).join(" ");
+    const specs = [broadcastItem?.ram, broadcastItem?.ssd, broadcastItem?.condition].filter(Boolean).join(", ");
+    const msgs = await Promise.all(selected.map(async c => {
+      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+      const prompt = `Write a short WhatsApp message to ${c.name} about: ${device} ${specs} AED ${broadcastItem?.max_price}. Their interest: ${deal?.brand || "laptop"} budget AED ${deal?.budget || "unknown"}. Personal, friendly, under 40 words, 1-2 emojis. Return message text only.`;
+      try {
+        const text = await callClaude(anthropicKey, [{ role: "user", content: prompt }], "You write short friendly WhatsApp messages for Laptop for Less UAE.");
+        return { client: c, message: text.trim(), deal };
+      } catch {
+        return { client: c, message: `Hey ${c.name}! 👋 Just got a ${device} — ${specs}. AED ${broadcastItem?.max_price}. Interested? 😊`, deal };
+      }
+    }));
+    setBroadcastMessages(msgs); setBroadcastStep("messages"); setBroadcastLoading(false);
+  }
+
   // ── computed ──
   const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").length, 0);
   const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
@@ -1463,7 +1636,7 @@ ${importText.slice(0, 8000)}`;
             {activeDeal.stage === "closed" && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 5, letterSpacing: 0.5 }}>PAYMENT</div>
-                <div style={{ display: "flex", gap: 5 }}>
+                <div style={{ display: "flex", gap: 5, marginBottom: 8 }}>
                   {PAYMENT_STATUSES.map(p => (
                     <button key={p.id} onClick={() => updateDeal({ payment_status: p.id })}
                       style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", background: activeDeal.payment_status === p.id ? p.color : p.bg, color: activeDeal.payment_status === p.id ? "#fff" : p.color, transition: "all 0.15s" }}>
@@ -1471,6 +1644,10 @@ ${importText.slice(0, 8000)}`;
                     </button>
                   ))}
                 </div>
+                <button onClick={() => { setReceiptPaymentMethod("Cash"); setShowReceipt(true); }}
+                  style={{ width: "100%", padding: "8px", borderRadius: 10, border: "1.5px solid #6366F1", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  🧾 Generate Receipt
+                </button>
               </div>
             )}
 
@@ -1495,6 +1672,16 @@ ${importText.slice(0, 8000)}`;
                     Ignore
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* check traders */}
+            {activeDeal && activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
+              <div style={{ marginTop: 8 }}>
+                <button onClick={checkTradersForDeal}
+                  style={{ width: "100%", padding: "7px", borderRadius: 10, border: "1.5px solid #10B981", background: "#ECFDF5", color: "#059669", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  🏪 Check Traders for This Device
+                </button>
               </div>
             )}
 
@@ -1782,19 +1969,134 @@ ${importText.slice(0, 8000)}`;
       {/* bottom nav tabs */}
       <div style={{ display: "flex", borderTop: "1px solid #F1F5F9", background: "#fff" }}>
         {[
+          { key: "home", icon: "🏠", label: "Home" },
           { key: "customers", icon: "👥", label: "Clients" },
           { key: "tasks", icon: "📋", label: "Tasks" },
           { key: "stock", icon: "📦", label: "Stock" },
+          { key: "traders", icon: "🏪", label: "Traders" },
           { key: "templates", icon: "💬", label: "Templates" },
           { key: "ask", icon: "🤖", label: "Ask" },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            style={{ flex: 1, padding: "8px 4px 10px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, borderTop: `2px solid ${activeTab === t.key ? "#6366F1" : "transparent"}` }}>
-            <span style={{ fontSize: 18 }}>{t.icon}</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
+            style={{ flex: 1, padding: "8px 2px 10px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, borderTop: `2px solid ${activeTab === t.key ? "#6366F1" : "transparent"}` }}>
+            <span style={{ fontSize: 16 }}>{t.icon}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
           </button>
         ))}
       </div>
+
+      {/* ── HOME / DASHBOARD TAB ── */}
+      {activeTab === "home" && (() => {
+        const followUpsDue = tasks.filter(t => t.days >= 1).length;
+        const urgentClients = customers.filter(c => c.urgent).length;
+        const overdueFollowUps = tasks.filter(t => t.days >= 1).length;
+        const slowStock = stock.filter(s => s.status === "available" && daysSince(s.created_at) >= 7).length;
+        const pendingPayments = customers.reduce((n, c) => n + (c.deals || []).filter(d => d.stage === "closed" && d.payment_status === "pending").length, 0);
+        const topFocus = [
+          ...tasks.filter(t => t.days >= 3).map(t => ({ ...t, priority: 3 })),
+          ...tasks.filter(t => t.days >= 1 && t.days < 3).map(t => ({ ...t, priority: 2 })),
+          ...customers.filter(c => c.urgent).flatMap(c => (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").map(d => ({ customer: c, deal: d, days: daysSince(c.last_active), type: "urgent", priority: 2 }))),
+        ].sort((a, b) => b.priority - a.priority || b.days - a.days).slice(0, 3);
+        const recentActivity = (() => {
+          const items = [];
+          [...customers].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 3).forEach(c => items.push({ icon: "👤", text: `New client: ${c.name}`, date: c.created_at }));
+          [...stock].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 3).forEach(s => {
+            const device = [s.brand, s.model].filter(Boolean).join(" ") || "Device";
+            items.push({ icon: s.status === "sold" ? "💸" : "📦", text: `${s.status === "sold" ? "Sold" : "Added"}: ${device}`, date: s.created_at });
+          });
+          customers.forEach(c => (c.deals || []).forEach(d => {
+            if (d.stage === "closed" && d.closed_at) items.push({ icon: "✅", text: `Deal closed: ${c.name}${d.value ? ` AED ${d.value}` : ""}`, date: d.closed_at });
+          }));
+          return items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 5);
+        })();
+
+        return (
+          <div style={{ flex: 1, padding: "16px 12px 100px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
+            {/* Greeting */}
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A" }}>{getGreeting()} 👋</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[
+                { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF", icon: "📋" },
+                { label: "Revenue MTD", value: `AED ${revenue >= 1000 ? (revenue/1000).toFixed(1)+"k" : revenue}`, color: "#10B981", bg: "#ECFDF5", icon: "💰" },
+                { label: "In Stock", value: stock.filter(s => s.status === "available").length, color: "#F59E0B", bg: "#FFFBEB", icon: "📦" },
+                { label: "Follow Ups", value: followUpsDue, color: "#EF4444", bg: "#FEF2F2", icon: "⏰" },
+              ].map(s => (
+                <div key={s.label} style={{ background: s.bg, borderRadius: 16, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 22, marginBottom: 4 }}>{s.icon}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.value}</div>
+                  <div style={{ fontSize: 11, color: s.color, fontWeight: 600, opacity: 0.8 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Alerts */}
+            {(urgentClients > 0 || overdueFollowUps > 0 || slowStock > 0 || pendingPayments > 0) && (
+              <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>⚡ ALERTS</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {urgentClients > 0 && <button onClick={() => { setFilter("urgent"); setActiveTab("customers"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF2F2", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#EF4444", fontWeight: 700 }}>🔴 {urgentClients} urgent client{urgentClients !== 1 ? "s" : ""}</span><span style={{ color: "#EF4444", fontSize: 13 }}>→</span></button>}
+                  {overdueFollowUps > 0 && <button onClick={() => setActiveTab("tasks")} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FFFBEB", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#F59E0B", fontWeight: 700 }}>⏰ {overdueFollowUps} overdue follow up{overdueFollowUps !== 1 ? "s" : ""}</span><span style={{ color: "#F59E0B", fontSize: 13 }}>→</span></button>}
+                  {slowStock > 0 && <button onClick={() => { setStockFilter("available"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF9C3", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#CA8A04", fontWeight: 700 }}>⚠️ {slowStock} device{slowStock !== 1 ? "s" : ""} unsold 7+ days</span><span style={{ color: "#CA8A04", fontSize: 13 }}>→</span></button>}
+                  {pendingPayments > 0 && <button onClick={() => { setFilter("all"); setActiveTab("customers"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#ECFDF5", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#10B981", fontWeight: 700 }}>💰 {pendingPayments} payment{pendingPayments !== 1 ? "s" : ""} pending</span><span style={{ color: "#10B981", fontSize: 13 }}>→</span></button>}
+                </div>
+              </div>
+            )}
+
+            {/* Today's focus */}
+            {topFocus.length > 0 && (
+              <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>🎯 TODAY'S FOCUS</div>
+                {topFocus.map((t, i) => {
+                  const c = t.customer; const d = t.deal;
+                  const device = [d?.brand, d?.model].filter(Boolean).join(" ") || "Open deal";
+                  const stage = STAGES.find(s => s.id === d?.stage)?.label || "";
+                  return (
+                    <div key={i} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(d?.id); setView("detail"); setPendingSuggestion(null); }}
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", marginBottom: i < topFocus.length - 1 ? 6 : 0, background: "#F8FAFC", borderRadius: 12, cursor: "pointer", border: "1px solid #F1F5F9" }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: "#94A3B8" }}>{device} · {stage}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.days >= 3 ? "#EF4444" : "#F59E0B" }}>{t.days}d silent</div>
+                        <span style={{ fontSize: 12, color: "#6366F1" }}>→</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Recent activity */}
+            {recentActivity.length > 0 && (
+              <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>🕐 RECENT ACTIVITY</div>
+                {recentActivity.map((a, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: i < recentActivity.length - 1 ? 8 : 0, marginBottom: i < recentActivity.length - 1 ? 8 : 0, borderBottom: i < recentActivity.length - 1 ? "1px solid #F8FAFC" : "none" }}>
+                    <span style={{ fontSize: 13, color: "#475569" }}>{a.icon} {a.text}</span>
+                    <span style={{ fontSize: 11, color: "#CBD5E1", flexShrink: 0, marginLeft: 8 }}>{timeAgo(a.date)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Quick actions */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setActiveTab("customers"); setView("add"); }}
+                style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ New Client</button>
+              <button onClick={() => { setActiveTab("stock"); setShowAddStock(true); setEditingStock(null); setStockForm(EMPTY_STOCK); }}
+                style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Stock</button>
+              <button onClick={() => { setActiveTab("customers"); setSearch(""); }}
+                style={{ flex: 1, padding: 12, borderRadius: 14, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🔍 Search</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── CUSTOMERS TAB ── */}
       {activeTab === "customers" && (
@@ -2077,6 +2379,12 @@ ${importText.slice(0, 8000)}`;
                         style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", background: isAvail ? "#ECFDF5" : "#F1F5F9", color: isAvail ? "#10B981" : "#94A3B8" }}>
                         {isAvail ? "✅ Available" : "🏷️ Sold"}
                       </button>
+                      {isAvail && (
+                        <button onClick={e => { e.stopPropagation(); openBroadcast(item); }}
+                          style={{ padding: "3px 8px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 10, cursor: "pointer", fontWeight: 700 }}>
+                          📢
+                        </button>
+                      )}
                       <button onClick={e => { e.stopPropagation(); if (window.confirm(`Delete ${[item.brand, item.model].filter(Boolean).join(" ") || "this item"}?`)) deleteStockItem(item.id); }}
                         style={{ padding: "3px 8px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
                         🗑
@@ -2421,6 +2729,260 @@ ${importText.slice(0, 8000)}`;
         </div>
       )}
 
+      {/* ── TRADERS TAB ── */}
+      {activeTab === "traders" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Section toggle */}
+          <div style={{ display: "flex", padding: "10px 12px 0", gap: 8, background: "#fff", borderBottom: "1px solid #F1F5F9" }}>
+            {[{ key: "inventory", label: "📋 Inventory" }, { key: "traders", label: "👤 Traders" }].map(s => (
+              <button key={s.key} onClick={() => setTraderSection(s.key)}
+                style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: traderSection === s.key ? "#6366F1" : "#F1F5F9", color: traderSection === s.key ? "#fff" : "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {traderSection === "inventory" && (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              {/* Search + filter + import */}
+              <div style={{ padding: "10px 12px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={traderSearch} onChange={e => setTraderSearch(e.target.value)} placeholder="🔍 Search brand, model, specs..."
+                    style={{ flex: 1, padding: "9px 13px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#F8FAFC", fontSize: 13, outline: "none" }} />
+                  <button onClick={() => setShowImportTrader(true)}
+                    style={{ padding: "0 14px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+                    Import
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
+                  {[{ key: "all", label: "All" }, { key: "selling", label: "🟢 Selling" }, { key: "buying", label: "🔵 Buying" }, { key: "parts", label: "🔧 Parts" }].map(f => (
+                    <button key={f.key} onClick={() => setTraderFilter(f.key)}
+                      style={{ padding: "5px 14px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0, background: traderFilter === f.key ? "#6366F1" : "#F1F5F9", color: traderFilter === f.key ? "#fff" : "#64748B" }}>
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Find Match button */}
+              <div style={{ padding: "0 12px 8px" }}>
+                <button onClick={() => setShowTraderMatches(true)}
+                  style={{ width: "100%", padding: 11, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  🔍 Find Match — My Stock vs Buying Requests
+                </button>
+              </div>
+
+              {/* Listings */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 100px" }}>
+                {traderListingsLoading && <Spinner />}
+                {!traderListingsLoading && (() => {
+                  const q = traderSearch.toLowerCase();
+                  const shown = traderListings.filter(t => {
+                    if (traderFilter === "selling" && t.type !== "selling") return false;
+                    if (traderFilter === "buying" && t.type !== "buying") return false;
+                    if (traderFilter === "parts" && t.category !== "part") return false;
+                    if (!q) return true;
+                    return [t.brand, t.model, t.processor, t.ram, t.storage, t.part_category, t.part_compatible, t.trader_name].some(v => (v || "").toLowerCase().includes(q));
+                  });
+                  if (!shown.length) return <div style={{ textAlign: "center", padding: "60px 20px" }}><div style={{ fontSize: 40, marginBottom: 10 }}>🏪</div><div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>{traderListings.length ? "No listings match" : "No listings yet"}</div><div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>Tap Import to add group chat listings</div></div>;
+                  return shown.map(item => {
+                    const isSelling = item.type === "selling";
+                    const isPart = item.category === "part";
+                    const isOld = daysSince(item.created_at) >= 3;
+                    const device = isPart
+                      ? [item.part_category, item.part_compatible, item.part_specs].filter(Boolean).join(" · ")
+                      : [item.brand, item.model, item.processor, item.ram, item.storage, item.screen, item.condition].filter(Boolean).join(" · ");
+                    return (
+                      <div key={item.id} style={{ background: "#fff", borderRadius: 16, padding: "12px 14px", marginBottom: 8, border: `1.5px solid ${isOld ? "#FEE2E2" : "#F1F5F9"}`, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <Badge color={isSelling ? "#10B981" : "#6366F1"} bg={isSelling ? "#ECFDF5" : "#EEF2FF"} small>{isSelling ? "🟢 SELLING" : "🔵 BUYING"}</Badge>
+                            <Badge color="#64748B" bg="#F1F5F9" small>{isPart ? "🔧 PART" : "💻 LAPTOP"}</Badge>
+                            {isOld && <Badge color="#EF4444" bg="#FEF2F2" small>⚠️ {daysSince(item.created_at)}d old</Badge>}
+                          </div>
+                          {item.price && <span style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>AED {Number(item.price).toLocaleString()}</span>}
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{device || "No specs"}</div>
+                        {item.notes && <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6 }}>{item.notes}</div>}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>👤 {item.trader_name || "Unknown"}{item.source_group ? ` · ${item.source_group}` : ""}</span>
+                          {item.trader_number && (
+                            <a href={`https://wa.me/${item.trader_number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                              style={{ padding: "4px 10px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                              WhatsApp
+                            </a>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 4 }}>{timeAgo(item.created_at)}</div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+
+          {traderSection === "traders" && (
+            <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 100px" }}>
+              {(() => {
+                const grouped = {};
+                traderListings.forEach(t => {
+                  const key = t.trader_name || "Unknown";
+                  if (!grouped[key]) grouped[key] = { name: key, number: t.trader_number, group: t.source_group, selling: 0, buying: 0, lastDate: t.created_at };
+                  if (t.type === "selling") grouped[key].selling++;
+                  else grouped[key].buying++;
+                  if (new Date(t.created_at) > new Date(grouped[key].lastDate)) grouped[key].lastDate = t.created_at;
+                });
+                const traders = Object.values(grouped).sort((a, b) => new Date(b.lastDate) - new Date(a.lastDate));
+                if (!traders.length) return <div style={{ textAlign: "center", padding: "60px 20px" }}><div style={{ fontSize: 40, marginBottom: 10 }}>👤</div><div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No traders yet</div><div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>Import a group chat to see traders</div></div>;
+                return traders.map((tr, i) => (
+                  <div key={i} style={{ background: "#fff", borderRadius: 16, padding: "14px 16px", marginBottom: 8, border: "1.5px solid #F1F5F9", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{tr.name}</div>
+                        {tr.group && <div style={{ fontSize: 11, color: "#94A3B8" }}>{tr.group}</div>}
+                      </div>
+                      {tr.number && <a href={`https://wa.me/${tr.number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{ padding: "5px 12px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>WhatsApp</a>}
+                    </div>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <span style={{ fontSize: 12, color: "#10B981", fontWeight: 700 }}>🟢 {tr.selling} selling</span>
+                      <span style={{ fontSize: 12, color: "#6366F1", fontWeight: 700 }}>🔵 {tr.buying} buying</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 4 }}>Last active: {timeAgo(tr.lastDate)}</div>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TRADERS: Import modal */}
+      {showImportTrader && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>Import Group Chat</span>
+                <button onClick={() => { setShowImportTrader(false); setTraderImportPreview(null); setTraderImportResult(null); setTraderChatText(""); }} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>SOURCE GROUP</div>
+                  <select value={traderGroup} onChange={e => setTraderGroup(e.target.value)} style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none" }}>
+                    <option value="">Select group...</option>
+                    {["JNP Market","Computer Mall JNP","JNP WITH AFAQ","JNP COMPUTERS SHARJAH","JNP MARKET","JNP","SSD and HDD JNP","ELECTRO JNP Market MNA","Mohamed Elshayb","Other"].map(g => <option key={g}>{g}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>PASTE CHAT EXPORT</div>
+                  <textarea value={traderChatText} onChange={e => setTraderChatText(e.target.value)} placeholder="Paste WhatsApp group chat export here..." rows={8}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+                <button onClick={extractTraderListings} disabled={traderImportLoading || !traderChatText.trim() || !anthropicKey}
+                  style={{ padding: 13, borderRadius: 12, border: "none", background: traderImportLoading || !traderChatText.trim() ? "#E2E8F0" : "#6366F1", color: traderImportLoading || !traderChatText.trim() ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                  {traderImportLoading ? "⏳ Extracting..." : "Extract Listings →"}
+                </button>
+                {traderImportPreview && (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 8 }}>PREVIEW — {traderImportPreview.length} listings found</div>
+                    <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #F1F5F9", marginBottom: 10 }}>
+                      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
+                        <thead><tr style={{ background: "#F8FAFC" }}>
+                          {["Type","Brand","Model","Price","Trader"].map(h => <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: "#94A3B8", fontWeight: 700, whiteSpace: "nowrap", borderBottom: "1px solid #F1F5F9" }}>{h}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          {traderImportPreview.slice(0, 5).map((r, i) => (
+                            <tr key={i} style={{ borderBottom: "1px solid #F8FAFC" }}>
+                              {[r.type, r.brand, r.model, r.price ? `AED ${r.price}` : "—", r.trader_name].map((v, j) => <td key={j} style={{ padding: "6px 10px", color: "#475569", whiteSpace: "nowrap" }}>{v || "—"}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {traderImportPreview.length > 5 && <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 8, textAlign: "center" }}>+{traderImportPreview.length - 5} more</div>}
+                    {traderImportResult && <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 8, background: traderImportResult.success ? "#ECFDF5" : "#FEF2F2", color: traderImportResult.success ? "#10B981" : "#EF4444", fontSize: 13, fontWeight: 700 }}>{traderImportResult.success ? `✅ Saved ${traderImportResult.count} listings!` : `❌ ${traderImportResult.message}`}</div>}
+                    <button onClick={saveTraderListings} disabled={savingTraderListings}
+                      style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: savingTraderListings ? "#E2E8F0" : "#10B981", color: savingTraderListings ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                      {savingTraderListings ? "Saving..." : `Save ${traderImportPreview.length} Listings →`}
+                    </button>
+                  </div>
+                )}
+                {!anthropicKey && <div style={{ fontSize: 12, color: "#EF4444", textAlign: "center" }}>Add Anthropic API key in Settings first</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRADERS: Find Match modal */}
+      {showTraderMatches && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🔍 Stock vs Buyer Matches</span>
+                <button onClick={() => setShowTraderMatches(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+              </div>
+              {(() => {
+                const buyingRequests = traderListings.filter(t => t.type === "buying");
+                const matches = [];
+                stock.filter(s => s.status === "available").forEach(s => {
+                  buyingRequests.forEach(b => {
+                    const brandMatch = !s.brand || !b.brand || s.brand.toLowerCase() === b.brand.toLowerCase();
+                    const priceOk = !b.price || !s.cost_price || Number(b.price) >= Number(s.cost_price);
+                    if (brandMatch && priceOk) {
+                      const profit = b.price && s.cost_price ? Number(b.price) - Number(s.cost_price) : null;
+                      matches.push({ stock: s, buyer: b, profit });
+                    }
+                  });
+                });
+                if (!matches.length) return <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}>No matches found between your stock and trader buying requests.</div>;
+                return matches.map((m, i) => (
+                  <div key={i} style={{ background: "#F8FAFC", borderRadius: 14, padding: 14, marginBottom: 10, border: "1px solid #E2E8F0" }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>
+                      {m.buyer.trader_name} wants to buy {[m.stock.brand, m.stock.model].filter(Boolean).join(" ")}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748B", marginBottom: 6 }}>
+                      Paying: AED {m.buyer.price?.toLocaleString() || "?"} · Your cost: AED {m.stock.cost_price?.toLocaleString() || "?"}
+                      {m.profit != null && <span style={{ color: "#10B981", fontWeight: 700 }}> · Profit: AED {m.profit.toLocaleString()}</span>}
+                    </div>
+                    {m.buyer.trader_number && <a href={`https://wa.me/${m.buyer.trader_number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{ display: "inline-block", padding: "5px 14px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>📱 WhatsApp {m.buyer.trader_name}</a>}
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRADERS: Check Traders modal (from client detail) */}
+      {showCheckTraders && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🏪 Trader Listings</span>
+                <button onClick={() => setShowCheckTraders(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+              </div>
+              {checkTradersLoading ? <Spinner /> : checkTradersResults.length === 0
+                ? <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}>No matching selling listings found in trader inventory.</div>
+                : checkTradersResults.map((t, i) => {
+                  const device = [t.brand, t.model, t.processor, t.ram, t.storage, t.condition].filter(Boolean).join(" · ");
+                  return (
+                    <div key={i} style={{ background: "#F8FAFC", borderRadius: 14, padding: 14, marginBottom: 8, border: "1px solid #E2E8F0" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{device || "Unknown device"}</div>
+                      {t.price && <div style={{ fontSize: 14, fontWeight: 800, color: "#6366F1", marginBottom: 4 }}>AED {Number(t.price).toLocaleString()}</div>}
+                      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 8 }}>👤 {t.trader_name} {t.source_group ? `· ${t.source_group}` : ""} · {timeAgo(t.created_at)}</div>
+                      {t.trader_number && <a href={`https://wa.me/${t.trader_number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{ display: "inline-block", padding: "5px 14px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>📱 WhatsApp Trader</a>}
+                    </div>
+                  );
+                })
+              }
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── TEMPLATES TAB ── */}
       {activeTab === "templates" && (
         <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2534,23 +3096,162 @@ ${importText.slice(0, 8000)}`;
         </div>
       )}
 
+      {/* ── RECEIPT MODAL ── */}
+      {showReceipt && activeDeal && activeCustomer && (() => {
+        const receiptText = buildReceiptText(receiptPaymentMethod);
+        const receiptNum = activeDeal.receipt_number || receiptText.match(/RECEIPT #: (LFL-\d+-\d+)/)?.[1] || "";
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
+            <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🧾 Receipt</span>
+                  <button onClick={() => setShowReceipt(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+                </div>
+                {/* Payment method */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 6, letterSpacing: 0.5 }}>PAYMENT METHOD</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {["Cash", "Bank Transfer"].map(m => (
+                      <button key={m} onClick={() => setReceiptPaymentMethod(m)}
+                        style={{ flex: 1, padding: "8px", borderRadius: 10, border: "none", background: receiptPaymentMethod === m ? "#6366F1" : "#F1F5F9", color: receiptPaymentMethod === m ? "#fff" : "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Receipt preview */}
+                <div style={{ background: "#F8FAFC", borderRadius: 14, padding: 16, fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#0F172A", whiteSpace: "pre-line", marginBottom: 16, border: "1px solid #E2E8F0" }}>
+                  {receiptText}
+                </div>
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => { navigator.clipboard.writeText(receiptText); saveReceiptNumber(receiptNum); }}
+                    style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                    📋 Copy Receipt
+                  </button>
+                  {activeCustomer.number && (
+                    <button onClick={() => { saveReceiptNumber(receiptNum); window.open(`https://wa.me/${activeCustomer.number.replace(/\D/g,"")}?text=${encodeURIComponent(receiptText)}`, "_blank"); }}
+                      style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                      📱 Send WhatsApp
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── BROADCAST MODAL ── */}
+      {showBroadcast && broadcastItem && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <span style={{ fontWeight: 800, fontSize: 17, color: "#0F172A" }}>📢 Broadcast</span>
+                <button onClick={() => setShowBroadcast(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+              </div>
+              {/* Device summary */}
+              <div style={{ background: "#EEF2FF", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "#4338CA" }}>{[broadcastItem.brand, broadcastItem.model].filter(Boolean).join(" ")}</div>
+                <div style={{ fontSize: 12, color: "#818CF8" }}>{[broadcastItem.ram, broadcastItem.ssd, broadcastItem.condition].filter(Boolean).join(" · ")} · AED {broadcastItem.max_price?.toLocaleString()}</div>
+              </div>
+
+              {broadcastStep === "clients" && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10 }}>
+                    Found {broadcastClients.length} potential buyer{broadcastClients.length !== 1 ? "s" : ""}
+                  </div>
+                  {broadcastClients.length === 0
+                    ? <div style={{ textAlign: "center", padding: 30, color: "#94A3B8" }}>No matching clients found.<br/>No open deals match this device's brand/price.</div>
+                    : (
+                      <>
+                        {broadcastClients.map(c => {
+                          const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+                          const isSelected = broadcastSelected.has(c.id);
+                          const brandMatch = !broadcastItem.brand || !deal?.brand || deal.brand.toLowerCase() === broadcastItem.brand.toLowerCase();
+                          const budgetMatch = !broadcastItem.min_price || !deal?.budget || Number(deal.budget) >= Number(broadcastItem.min_price);
+                          const strength = brandMatch && budgetMatch ? "✅ Strong" : "⚠️ Partial";
+                          return (
+                            <div key={c.id} onClick={() => setBroadcastSelected(prev => { const n = new Set(prev); isSelected ? n.delete(c.id) : n.add(c.id); return n; })}
+                              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", marginBottom: 6, borderRadius: 12, border: `1.5px solid ${isSelected ? "#6366F1" : "#F1F5F9"}`, background: isSelected ? "#EEF2FF" : "#fff", cursor: "pointer" }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{c.name}</div>
+                                <div style={{ fontSize: 11, color: "#94A3B8" }}>{[deal?.brand, deal?.model].filter(Boolean).join(" ") || "No spec"}{deal?.budget ? ` · AED ${deal.budget}` : ""} · {daysSince(c.last_active)}d ago</div>
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: brandMatch && budgetMatch ? "#10B981" : "#F59E0B" }}>{strength}</span>
+                                <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${isSelected ? "#6366F1" : "#E2E8F0"}`, background: isSelected ? "#6366F1" : "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                  {isSelected && <span style={{ color: "#fff", fontSize: 12, lineHeight: 1 }}>✓</span>}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <button onClick={generateBroadcastMessages} disabled={broadcastLoading || broadcastSelected.size === 0}
+                          style={{ width: "100%", marginTop: 8, padding: 13, borderRadius: 12, border: "none", background: broadcastSelected.size === 0 || broadcastLoading ? "#E2E8F0" : "#6366F1", color: broadcastSelected.size === 0 || broadcastLoading ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                          {broadcastLoading ? "⏳ Generating messages..." : `Generate Messages for ${broadcastSelected.size} Client${broadcastSelected.size !== 1 ? "s" : ""} →`}
+                        </button>
+                      </>
+                    )
+                  }
+                </>
+              )}
+
+              {broadcastStep === "messages" && (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8" }}>{broadcastMessages.length} messages ready</div>
+                    <button onClick={() => setBroadcastStep("clients")} style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 11, cursor: "pointer" }}>← Back</button>
+                  </div>
+                  {broadcastMessages.map((item, i) => (
+                    <div key={i} style={{ background: broadcastSent.has(i) ? "#F0FDF4" : "#F8FAFC", borderRadius: 14, padding: "12px 14px", marginBottom: 8, border: `1px solid ${broadcastSent.has(i) ? "#BBF7D0" : "#E2E8F0"}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{item.client.name}</span>
+                        {broadcastSent.has(i) && <span style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>✓ Sent</span>}
+                      </div>
+                      <textarea defaultValue={item.message} onChange={e => { broadcastMessages[i].message = e.target.value; }} rows={3}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box", lineHeight: 1.5, background: "#fff" }} />
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        <a href={`https://wa.me/${(item.client.number || "").replace(/\D/g,"")}?text=${encodeURIComponent(item.message)}`} target="_blank" rel="noreferrer"
+                          onClick={() => setBroadcastSent(prev => new Set([...prev, i]))}
+                          style={{ flex: 1, padding: "7px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+                          📱 Open WhatsApp
+                        </a>
+                        <button onClick={() => setBroadcastSent(prev => new Set([...prev, i]))}
+                          style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #BBF7D0", background: broadcastSent.has(i) ? "#ECFDF5" : "#fff", color: "#10B981", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                          ✓ Sent
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* bottom tab bar */}
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
         {[
+          { key: "home", icon: "🏠", label: "Home" },
           { key: "customers", icon: "👥", label: "Clients" },
           { key: "tasks", icon: "📋", label: "Tasks", badge: tasks.filter(t => t.type === "overdue").length },
           { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
+          { key: "traders", icon: "🏪", label: "Traders" },
           { key: "templates", icon: "💬", label: "Templates" },
           { key: "ask", icon: "🤖", label: "Ask" },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            style={{ flex: 1, padding: "10px 4px 14px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative" }}>
+            style={{ flex: 1, padding: "8px 2px 12px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position: "relative" }}>
             {t.badge > 0 && (
               <div style={{ position: "absolute", top: 6, right: "25%", width: 16, height: 16, borderRadius: "50%", background: "#EF4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{t.badge}</div>
             )}
-            <span style={{ fontSize: 20 }}>{t.icon}</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
-            {activeTab === t.key && <div style={{ position: "absolute", bottom: 0, width: 32, height: 3, background: "#6366F1", borderRadius: "3px 3px 0 0" }} />}
+            <span style={{ fontSize: 18 }}>{t.icon}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
+            {activeTab === t.key && <div style={{ position: "absolute", bottom: 0, width: 28, height: 3, background: "#6366F1", borderRadius: "3px 3px 0 0" }} />}
           </button>
         ))}
       </div>
