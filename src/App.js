@@ -126,14 +126,26 @@ NEGOTIATION RULES (STRICT):
 - Walk away politely if client keeps pushing below min_price
 - Leave door open: "If something changes I'll let you know"
 
-INVENTORY RULES (critical):
-- ALWAYS check CURRENT STOCK INVENTORY (appended below) before answering any availability question
-- If client asks "do you have X" → search the inventory list and answer accurately
-- If item IS in inventory → mention the exact specs and price from inventory in your reply
-- If item is NOT in inventory → say you don't currently have it but can source it — never pretend it's in stock
-- NEVER invent stock, models, or quantities that are not listed in the inventory
-- For negotiation: use the listed min price as your absolute floor, max price as your opening ask
-- If inventory is empty or not provided, say stock changes daily and you'll check
+INVENTORY RULES (strict — follow exactly):
+- ALWAYS check CURRENT STOCK INVENTORY before answering any availability question
+- "do you have X" → search inventory, give exact answer with specs and price
+- "how many X" → count matching items and list them all
+- "what do you have" → summarize inventory by brand
+- "under AED X" → filter inventory by max_price ≤ X and list matches
+- "best for [use case]" → recommend from actual inventory only
+- "compare X and Y" → use actual specs from inventory
+- "charger/box included" → check the exact Charger/Box fields
+- "activation lock" → check activation_lock field (MacBook only)
+- Price negotiation → never go below min_price, always start at max_price
+- Item NOT in stock → say "I can source that for you, what is your budget?" — never reveal it is not in stock
+- Never invent specs, prices or quantities not listed in inventory
+
+OWNER STOCK QUERIES (when owner asks about their own inventory):
+- "how many X do I have" → count and list matching items
+- "total stock value" → sum all max_price values
+- "total cost" → sum all cost_price values
+- "best margin" → calculate max_price minus cost_price, rank highest first
+- "sitting X days" → compare created_at to today, list items older than X days
 
 STAGE LOGIC:
 - new_inquiry: just reached out
@@ -196,30 +208,24 @@ async function callClaude(apiKey, messages, system) {
   return data?.content?.[0]?.text || "";
 }
 
-async function buildSystemPromptWithStock() {
-  try {
-    const { data: availableStock } = await supabase
-      .from("stock")
-      .select("brand, model, processor, ram, ssd, screen, condition, charger, max_price, min_price")
-      .eq("status", "available")
-      .order("brand");
-    if (!availableStock?.length) return SYSTEM_PROMPT + "\n\nCURRENT STOCK INVENTORY: (no items currently available)";
-    const lines = availableStock.map(s => {
-      const parts = [
-        [s.brand, s.model].filter(Boolean).join(" ") || "Unknown",
-        s.processor, s.ram, s.ssd,
-        s.screen ? `${s.screen}` : null,
-        s.condition,
-        s.max_price ? `AED ${Number(s.max_price).toLocaleString()}` : null,
-        s.min_price ? `(min AED ${Number(s.min_price).toLocaleString()})` : null,
-        s.charger === "yes" ? "Charger: yes" : null,
-      ].filter(Boolean);
-      return `- ${parts.join(" | ")}`;
-    }).join("\n");
-    return SYSTEM_PROMPT + `\n\nCURRENT STOCK INVENTORY (${availableStock.length} items available):\n${lines}`;
-  } catch {
-    return SYSTEM_PROMPT;
-  }
+function buildSystemPromptFromCache(cachedStock) {
+  if (!cachedStock?.length) return SYSTEM_PROMPT;
+  const cap = v => v ? v.charAt(0).toUpperCase() + v.slice(1) : null;
+  const lines = cachedStock.map((s, i) => {
+    const parts = [
+      [s.brand, s.model].filter(Boolean).join(" ") || "Unknown",
+      s.processor, s.ram, s.ssd, s.screen || null, s.condition,
+      s.charger ? `Charger: ${cap(s.charger)}` : null,
+      s.box ? `Box: ${cap(s.box)}` : null,
+      s.brand === "MacBook" && s.activation_lock && s.activation_lock !== "unknown"
+        ? `Activation Lock: ${s.activation_lock === "yes" ? "Yes" : "No"}` : null,
+      s.max_price
+        ? `AED ${Number(s.max_price).toLocaleString()}${s.min_price ? ` (min: AED ${Number(s.min_price).toLocaleString()})` : ""}`
+        : null,
+    ].filter(Boolean);
+    return `${i + 1}. ${parts.join(" | ")}`;
+  }).join("\n");
+  return SYSTEM_PROMPT + `\n\nCURRENT STOCK INVENTORY (${cachedStock.length} items available):\n${lines}`;
 }
 
 // ── small UI ──────────────────────────────────────────────────────────────────
@@ -318,6 +324,7 @@ export default function App() {
   const [importingStock, setImportingStock] = useState(false);
   const [importStockResult, setImportStockResult] = useState(null);
   const importStockFileRef = useRef(null);
+  const [cachedStock, setCachedStock] = useState([]);
 
   // ── auth ──
   useEffect(() => {
@@ -356,7 +363,17 @@ export default function App() {
     setStockLoading(false);
   }, []);
 
+  const refreshCachedStock = useCallback(async () => {
+    const { data } = await supabase
+      .from("stock")
+      .select("brand, model, processor, ram, ssd, screen, condition, charger, box, activation_lock, max_price, min_price, cost_price, created_at")
+      .eq("status", "available")
+      .order("brand");
+    setCachedStock(data || []);
+  }, []);
+
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
+  useEffect(() => { if (session) refreshCachedStock(); }, [session, refreshCachedStock]);
 
   // Note: tasks tab cache loading is handled after tasks is defined
 
@@ -478,7 +495,7 @@ export default function App() {
         content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
       }));
 
-      const systemPrompt = await buildSystemPromptWithStock();
+      const systemPrompt = buildSystemPromptFromCache(cachedStock);
       const raw = await callClaude(anthropicKey, history, systemPrompt);
       const clean = raw.replace(/```json|```/g, "").trim();
       let parsed;
@@ -526,7 +543,7 @@ Last stage: ${STAGES.find(s => s.id === activeDeal?.stage)?.label}
 Return JSON with only a "reply" field containing the message.`;
 
     try {
-      const systemPrompt = await buildSystemPromptWithStock();
+      const systemPrompt = buildSystemPromptFromCache(cachedStock);
       const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], systemPrompt);
       const clean = raw.replace(/```json|```/g, "").trim();
       let parsed;
@@ -759,7 +776,7 @@ ${JSON.stringify(dealContexts, null, 2)}`;
   }
 
   // ── stock ──
-  useEffect(() => { if (activeTab === "stock") loadStock(); }, [activeTab, loadStock]);
+  useEffect(() => { if (activeTab === "stock") { loadStock(); refreshCachedStock(); } }, [activeTab, loadStock, refreshCachedStock]);
 
   function getMatchingClients(item) {
     return customers.filter(c =>
@@ -806,6 +823,7 @@ ${JSON.stringify(dealContexts, null, 2)}`;
         await loadStock();
       }
     }
+    refreshCachedStock();
     setShowAddStock(false);
     setEditingStock(null);
     setStockForm(EMPTY_STOCK);
@@ -815,12 +833,14 @@ ${JSON.stringify(dealContexts, null, 2)}`;
     await supabase.from("stock").delete().eq("id", id);
     if (expandedStockId === id) setExpandedStockId(null);
     await loadStock();
+    refreshCachedStock();
   }
 
   async function toggleStockStatus(item) {
     const newStatus = item.status === "available" ? "sold" : "available";
     await supabase.from("stock").update({ status: newStatus }).eq("id", item.id);
     setStock(prev => prev.map(s => s.id === item.id ? { ...s, status: newStatus } : s));
+    refreshCachedStock();
   }
 
   async function uploadStockPhoto(file) {
@@ -1550,7 +1570,7 @@ ${importText.slice(0, 8000)}`;
               const lastMsg = messages[messages.length - 1];
               const context = `Generate a follow-up WhatsApp message for ${activeCustomer.name}. They were interested in ${activeDeal?.brand || "a laptop"} ${activeDeal?.model || ""}. Budget: ${activeDeal?.budget ? "AED " + activeDeal.budget : "unknown"}. Last stage: ${STAGES.find(s => s.id === activeDeal?.stage)?.label}. Days since last contact: ${daysSince(activeCustomer.last_active)}. Return JSON with only a "reply" field.`;
               try {
-                const systemPrompt = await buildSystemPromptWithStock();
+                const systemPrompt = buildSystemPromptFromCache(cachedStock);
                 const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], systemPrompt);
                 const clean = raw.replace(/```json|```/g, "").trim();
                 let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
