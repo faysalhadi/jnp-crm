@@ -126,10 +126,14 @@ NEGOTIATION RULES (STRICT):
 - Walk away politely if client keeps pushing below min_price
 - Leave door open: "If something changes I'll let you know"
 
-STOCK CONTEXT (if provided):
-- When stock details are given, use exact specs and price range in reply
-- Quote max_price as asking price
-- Never go below min_price in negotiation
+INVENTORY RULES (critical):
+- ALWAYS check CURRENT STOCK INVENTORY (appended below) before answering any availability question
+- If client asks "do you have X" → search the inventory list and answer accurately
+- If item IS in inventory → mention the exact specs and price from inventory in your reply
+- If item is NOT in inventory → say you don't currently have it but can source it — never pretend it's in stock
+- NEVER invent stock, models, or quantities that are not listed in the inventory
+- For negotiation: use the listed min price as your absolute floor, max price as your opening ask
+- If inventory is empty or not provided, say stock changes daily and you'll check
 
 STAGE LOGIC:
 - new_inquiry: just reached out
@@ -190,6 +194,32 @@ async function callClaude(apiKey, messages, system) {
   });
   const data = await res.json();
   return data?.content?.[0]?.text || "";
+}
+
+async function buildSystemPromptWithStock() {
+  try {
+    const { data: availableStock } = await supabase
+      .from("stock")
+      .select("brand, model, processor, ram, ssd, screen, condition, charger, max_price, min_price")
+      .eq("status", "available")
+      .order("brand");
+    if (!availableStock?.length) return SYSTEM_PROMPT + "\n\nCURRENT STOCK INVENTORY: (no items currently available)";
+    const lines = availableStock.map(s => {
+      const parts = [
+        [s.brand, s.model].filter(Boolean).join(" ") || "Unknown",
+        s.processor, s.ram, s.ssd,
+        s.screen ? `${s.screen}` : null,
+        s.condition,
+        s.max_price ? `AED ${Number(s.max_price).toLocaleString()}` : null,
+        s.min_price ? `(min AED ${Number(s.min_price).toLocaleString()})` : null,
+        s.charger === "yes" ? "Charger: yes" : null,
+      ].filter(Boolean);
+      return `- ${parts.join(" | ")}`;
+    }).join("\n");
+    return SYSTEM_PROMPT + `\n\nCURRENT STOCK INVENTORY (${availableStock.length} items available):\n${lines}`;
+  } catch {
+    return SYSTEM_PROMPT;
+  }
 }
 
 // ── small UI ──────────────────────────────────────────────────────────────────
@@ -448,7 +478,8 @@ export default function App() {
         content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
       }));
 
-      const raw = await callClaude(anthropicKey, history, SYSTEM_PROMPT);
+      const systemPrompt = await buildSystemPromptWithStock();
+      const raw = await callClaude(anthropicKey, history, systemPrompt);
       const clean = raw.replace(/```json|```/g, "").trim();
       let parsed;
       try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
@@ -495,7 +526,8 @@ Last stage: ${STAGES.find(s => s.id === activeDeal?.stage)?.label}
 Return JSON with only a "reply" field containing the message.`;
 
     try {
-      const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], SYSTEM_PROMPT);
+      const systemPrompt = await buildSystemPromptWithStock();
+      const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], systemPrompt);
       const clean = raw.replace(/```json|```/g, "").trim();
       let parsed;
       try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
@@ -1518,7 +1550,8 @@ ${importText.slice(0, 8000)}`;
               const lastMsg = messages[messages.length - 1];
               const context = `Generate a follow-up WhatsApp message for ${activeCustomer.name}. They were interested in ${activeDeal?.brand || "a laptop"} ${activeDeal?.model || ""}. Budget: ${activeDeal?.budget ? "AED " + activeDeal.budget : "unknown"}. Last stage: ${STAGES.find(s => s.id === activeDeal?.stage)?.label}. Days since last contact: ${daysSince(activeCustomer.last_active)}. Return JSON with only a "reply" field.`;
               try {
-                const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], SYSTEM_PROMPT);
+                const systemPrompt = await buildSystemPromptWithStock();
+                const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], systemPrompt);
                 const clean = raw.replace(/```json|```/g, "").trim();
                 let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
                 const { data: aiMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: parsed.reply || raw }).select().single();
