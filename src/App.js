@@ -713,7 +713,6 @@ ${JSON.stringify(dealContexts, null, 2)}`;
 
 
   // ── load cached smart tasks when tab switches (safe here - tasks is defined above) ──
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (activeTab === "tasks" && tasks.length && !smartTasks) {
       loadCachedSmartTasks();
