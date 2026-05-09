@@ -140,7 +140,7 @@ STAGE LOGIC:
 - closed: sale confirmed
 - lost: deal fell through`;
 
-const EMPTY_STOCK = { brand: "", model: "", processor: "", ram: "", ssd: "", screen_size: "", condition: "", charger: "", box: "", activation_lock: "unknown", cost_price: "", min_price: "", max_price: "", serial_number: "", notes: "", photo_url: "", status: "available" };
+const EMPTY_STOCK = { brand: "", model: "", processor: "", ram: "", ssd: "", screen: "", condition: "", charger: "", box: "", activation_lock: "unknown", cost_price: "", min_price: "", max_price: "", serial_number: "", notes: "", photo_url: "", status: "available" };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function timeAgo(ts) {
@@ -747,7 +747,7 @@ ${JSON.stringify(dealContexts, null, 2)}`;
       processor: stockForm.processor || null,
       ram: stockForm.ram || null,
       ssd: stockForm.ssd || null,
-      screen_size: stockForm.screen_size || null,
+      screen: stockForm.screen || null,
       condition: stockForm.condition || null,
       charger: stockForm.charger || null,
       box: stockForm.box || null,
@@ -766,8 +766,13 @@ ${JSON.stringify(dealContexts, null, 2)}`;
       setStock(prev => prev.map(s => s.id === editingStock.id ? { ...s, ...payload } : s));
     } else {
       const { data: newItem } = await supabase.from("stock").insert(payload).select().single();
-      // Immediate state update — new item appears at top instantly
-      if (newItem) setStock(prev => [newItem, ...prev]);
+      if (newItem) {
+        // Immediate update — item appears at top instantly
+        setStock(prev => [newItem, ...prev]);
+      } else {
+        // Fallback: re-fetch the full list
+        await loadStock();
+      }
     }
     setShowAddStock(false);
     setEditingStock(null);
@@ -829,7 +834,7 @@ ${JSON.stringify(dealContexts, null, 2)}`;
         processor: col(r, "Processor") || null,
         ram: col(r, "RAM", "Ram") || null,
         ssd: col(r, "SSD", "Ssd") || null,
-        screen_size: col(r, "Screen", "Screen Size") || null,
+        screen: col(r, "Screen", "Screen Size") || null,
         condition: col(r, "Condition") || null,
         charger: col(r, "Charger").toLowerCase() || null,
         box: col(r, "Box").toLowerCase() || null,
@@ -1882,13 +1887,19 @@ ${importText.slice(0, 8000)}`;
                         {[item.brand, item.model].filter(Boolean).join(" ") || "Unnamed item"}
                       </div>
                       <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-                        {[item.processor, item.ram, item.ssd, item.screen_size].filter(Boolean).join(" · ") || "No specs entered"}
+                        {[item.processor, item.ram, item.ssd, item.screen].filter(Boolean).join(" · ") || "No specs entered"}
                       </div>
                     </div>
-                    <button onClick={e => { e.stopPropagation(); toggleStockStatus(item); }}
-                      style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, ml: 8, background: isAvail ? "#ECFDF5" : "#F1F5F9", color: isAvail ? "#10B981" : "#94A3B8" }}>
-                      {isAvail ? "✅ Available" : "🏷️ Sold"}
-                    </button>
+                    <div style={{ display: "flex", gap: 4, alignItems: "flex-start", flexShrink: 0 }}>
+                      <button onClick={e => { e.stopPropagation(); toggleStockStatus(item); }}
+                        style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", background: isAvail ? "#ECFDF5" : "#F1F5F9", color: isAvail ? "#10B981" : "#94A3B8" }}>
+                        {isAvail ? "✅ Available" : "🏷️ Sold"}
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); if (window.confirm(`Delete ${[item.brand, item.model].filter(Boolean).join(" ") || "this item"}?`)) deleteStockItem(item.id); }}
+                        style={{ padding: "3px 8px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                        🗑
+                      </button>
+                    </div>
                   </div>
 
                   {/* Prices */}
@@ -1918,7 +1929,7 @@ ${importText.slice(0, 8000)}`;
                         { label: "Processor", value: item.processor },
                         { label: "RAM", value: item.ram },
                         { label: "SSD", value: item.ssd },
-                        { label: "Screen", value: item.screen_size },
+                        { label: "Screen", value: item.screen },
                         { label: "Condition", value: item.condition },
                         { label: "Charger", value: item.charger },
                         { label: "Box", value: item.box },
@@ -2038,7 +2049,7 @@ ${importText.slice(0, 8000)}`;
                     <div style={{ display: "flex", gap: 8 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>SCREEN SIZE</div>
-                        <input value={stockForm.screen_size} onChange={e => setStockForm(f => ({ ...f, screen_size: e.target.value }))} placeholder='e.g. 13.3"'
+                        <input value={stockForm.screen} onChange={e => setStockForm(f => ({ ...f, screen: e.target.value }))} placeholder='e.g. 13.3"'
                           style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
                       </div>
                       <div style={{ flex: 1 }}>
