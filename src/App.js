@@ -67,6 +67,17 @@ const QUICK_TEMPLATES = [
   ]},
 ];
 
+const QUICK_ACTIONS = [
+  { icon: "📦", label: "Stock Summary",     question: "Give me a full summary of my current stock by brand with total count and total value" },
+  { icon: "💰", label: "Best Margins",      question: "Which items in my stock have the best profit margin? Rank them" },
+  { icon: "⚠️", label: "Slow Moving",       question: "Which devices have been in stock for 7 or more days without selling?" },
+  { icon: "🔍", label: "Match Stock",       question: "Which of my current stock items match what my open clients are looking for?" },
+  { icon: "❄️", label: "Cold Clients",      question: "Which clients have not replied in 3 or more days and what were they looking for?" },
+  { icon: "📊", label: "Revenue",           question: "What is my total revenue this month and how many deals did I close?" },
+  { icon: "💵", label: "Stock Value",       question: "What is the total value of my current available stock at max price and at cost price?" },
+  { icon: "📋", label: "Follow Ups Due",    question: "Who do I need to follow up with today and what should I say to each one?" },
+];
+
 const SYSTEM_PROMPT = `You are an AI assistant for "Laptop for Less", a UAE laptop reselling business run on WhatsApp.
 
 BUSINESS:
@@ -228,6 +239,91 @@ function buildSystemPromptFromCache(cachedStock) {
   return SYSTEM_PROMPT + `\n\nCURRENT STOCK INVENTORY (${cachedStock.length} items available):\n${lines}`;
 }
 
+async function buildOwnerContext() {
+  const today = new Date();
+  const dateStr = today.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
+  const age = ts => ts ? Math.floor((Date.now() - new Date(ts).getTime()) / 86400000) : 0;
+
+  const [{ data: allStock }, { data: allCustomers }] = await Promise.all([
+    supabase.from("stock").select("*").order("created_at", { ascending: false }),
+    supabase.from("customers").select("*, deals(*)").order("last_active", { ascending: false }),
+  ]);
+  const stocks = allStock || [];
+  const custs = allCustomers || [];
+
+  const available = stocks.filter(s => s.status === "available");
+  const sold = stocks.filter(s => s.status === "sold");
+  const soldValue = sold.reduce((n, s) => n + (s.max_price || 0), 0);
+
+  const availLines = available.length
+    ? available.map((s, i) => {
+        const p = [[s.brand, s.model].filter(Boolean).join(" ") || "Unknown",
+          s.processor, s.ram, s.ssd, s.screen, s.condition,
+          s.cost_price != null ? `Cost: ${s.cost_price}` : null,
+          s.min_price != null ? `Min: ${s.min_price}` : null,
+          s.max_price != null ? `Max: ${s.max_price}` : null,
+          `Days in stock: ${age(s.created_at)}`].filter(Boolean);
+        return `${i + 1}. ${p.join(" | ")}`;
+      }).join("\n")
+    : "(none)";
+
+  const openDeals = custs.reduce((n, c) => n + (c.deals||[]).filter(d => d.stage!=="closed"&&d.stage!=="lost").length, 0);
+  const urgent = custs.filter(c => c.urgent).length;
+  const cold = custs.filter(c => age(c.last_active)>=3 && (c.deals||[]).some(d=>d.stage!=="closed"&&d.stage!=="lost")).length;
+
+  const stageCounts = Object.fromEntries(STAGES.map(s=>[s.id,0]));
+  custs.forEach(c=>(c.deals||[]).forEach(d=>{ if(stageCounts[d.stage]!==undefined) stageCounts[d.stage]++; }));
+
+  let monthRev = 0, closedThisMonth = 0;
+  custs.forEach(c=>(c.deals||[]).forEach(d=>{
+    if(d.stage==="closed"&&d.closed_at&&new Date(d.closed_at)>=new Date(monthStart)){
+      monthRev += (d.value||0); closedThisMonth++;
+    }
+  }));
+
+  const followUps = custs
+    .filter(c => age(c.last_active)>=1 && (c.deals||[]).some(d=>d.stage!=="closed"&&d.stage!=="lost"))
+    .sort((a,b) => age(b.last_active)-age(a.last_active))
+    .slice(0,15)
+    .map(c => {
+      const d = (c.deals||[]).find(deal=>deal.stage!=="closed"&&deal.stage!=="lost");
+      const device = d ? [d.brand,d.model].filter(Boolean).join(" ")||"Unknown" : "Unknown";
+      const stage = STAGES.find(s=>s.id===d?.stage)?.label || d?.stage || "";
+      return `- ${c.name} | ${device} | ${age(c.last_active)} days silent | ${stage}`;
+    }).join("\n");
+
+  return `OWNER DASHBOARD CONTEXT:
+Date: ${dateStr}
+
+STOCK INVENTORY:
+Available (${available.length} items):
+${availLines}
+Total sold: ${sold.length} items | Approx. value: AED ${soldValue.toLocaleString()}
+
+CLIENTS SUMMARY:
+Total clients: ${custs.length}
+Open deals: ${openDeals}
+Urgent: ${urgent}
+Cold (3+ days silent): ${cold}
+
+DEALS BY STAGE:
+New Inquiry: ${stageCounts["new_inquiry"]||0}
+Requirement Noted: ${stageCounts["requirement_noted"]||0}
+Searching: ${stageCounts["searching"]||0}
+Device Found: ${stageCounts["device_found"]||0}
+Negotiation: ${stageCounts["negotiation"]||0}
+Closed this month: ${closedThisMonth}
+Lost: ${stageCounts["lost"]||0}
+
+REVENUE:
+This month: AED ${monthRev.toLocaleString()}
+Closed deals this month: ${closedThisMonth}
+
+FOLLOW UPS DUE:
+${followUps||"(none due)"}`;
+}
+
 // ── small UI ──────────────────────────────────────────────────────────────────
 function Badge({ color, bg, children, small }) {
   return (
@@ -325,6 +421,10 @@ export default function App() {
   const [importStockResult, setImportStockResult] = useState(null);
   const importStockFileRef = useRef(null);
   const [cachedStock, setCachedStock] = useState([]);
+  const [askMessages, setAskMessages] = useState([]);
+  const [askInput, setAskInput] = useState("");
+  const [askLoading, setAskLoading] = useState(false);
+  const askBottomRef = useRef(null);
 
   // ── auth ──
   useEffect(() => {
@@ -385,6 +485,7 @@ export default function App() {
   }, [activeDealId]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { askBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [askMessages]);
 
   const activeCustomer = customers.find(c => c.id === activeCustomerId);
   const activeDeal = activeCustomer?.deals?.find(d => d.id === activeDealId);
@@ -1054,6 +1155,33 @@ ${importText.slice(0, 8000)}`;
     setExporting(false);
   }
 
+  // ── ask claude ──
+  async function sendAskMessage(msg) {
+    const trimmed = (msg || "").trim();
+    if (!trimmed || askLoading) return;
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setAskInput("");
+    setAskMessages(prev => [...prev, { role: "owner", content: trimmed }]);
+    setAskLoading(true);
+    try {
+      const context = await buildOwnerContext();
+      const system = `You are a business analyst assistant for "Laptop for Less", a UAE laptop reselling business. The owner is asking you questions about their business. Answer accurately using only the data provided in the context above. Be concise and direct. Format numbers with AED currency. Use emojis for readability. When recommending actions, be specific.\n\n${context}`;
+      const history = askMessages
+        .map(m => ({ role: m.role === "owner" ? "user" : "assistant", content: m.content }))
+        .concat([{ role: "user", content: trimmed }]);
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system, messages: history }),
+      });
+      const data = await res.json();
+      setAskMessages(prev => [...prev, { role: "claude", content: data?.content?.[0]?.text || "No response." }]);
+    } catch {
+      setAskMessages(prev => [...prev, { role: "claude", content: "⚠️ Error. Check your API key in Settings." }]);
+    }
+    setAskLoading(false);
+  }
+
   // ── computed ──
   const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").length, 0);
   const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
@@ -1658,6 +1786,7 @@ ${importText.slice(0, 8000)}`;
           { key: "tasks", icon: "📋", label: "Tasks" },
           { key: "stock", icon: "📦", label: "Stock" },
           { key: "templates", icon: "💬", label: "Templates" },
+          { key: "ask", icon: "🤖", label: "Ask" },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             style={{ flex: 1, padding: "8px 4px 10px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, borderTop: `2px solid ${activeTab === t.key ? "#6366F1" : "transparent"}` }}>
@@ -2323,6 +2452,88 @@ ${importText.slice(0, 8000)}`;
         </div>
       )}
 
+      {/* ── ASK CLAUDE TAB ── */}
+      {activeTab === "ask" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+
+          {/* Quick action grid — shown when chat is empty */}
+          {askMessages.length === 0 && (
+            <div style={{ padding: "16px 12px 0", overflowY: "auto" }}>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A" }}>🤖 Business Assistant</div>
+                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 3 }}>Ask anything about your stock, clients, or revenue</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {QUICK_ACTIONS.map(a => (
+                  <button key={a.label} onClick={() => sendAskMessage(a.question)} disabled={askLoading}
+                    style={{ padding: "14px 10px", borderRadius: 16, border: "1.5px solid #E2E8F0", background: "#fff", cursor: "pointer", textAlign: "left", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", opacity: askLoading ? 0.5 : 1 }}>
+                    <div style={{ fontSize: 22, marginBottom: 5 }}>{a.icon}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", lineHeight: 1.3 }}>{a.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Conversation area */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 4px" }}>
+            {askMessages.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                <button onClick={() => setAskMessages([])}
+                  style={{ padding: "4px 12px", borderRadius: 20, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                  🗑 Clear chat
+                </button>
+              </div>
+            )}
+            {askMessages.map((msg, i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "owner" ? "flex-end" : "flex-start", marginBottom: 14 }}>
+                <div style={{ fontSize: 10, color: "#CBD5E1", marginBottom: 3 }}>
+                  {msg.role === "owner" ? "You" : "🤖 Claude"}
+                </div>
+                <div style={{
+                  maxWidth: "88%", padding: "11px 14px", fontSize: 13.5, lineHeight: 1.65, whiteSpace: "pre-line",
+                  borderRadius: msg.role === "owner" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                  background: msg.role === "owner" ? "#DCFCE7" : "#F3E8FF",
+                  color: msg.role === "owner" ? "#14532D" : "#4C1D95",
+                  border: msg.role === "owner" ? "1px solid #BBF7D0" : "1px solid #DDD6FE",
+                }}>
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            {askLoading && (
+              <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14 }}>
+                <div style={{ padding: "10px 16px", borderRadius: "4px 16px 16px 16px", background: "#F3E8FF", border: "1px solid #DDD6FE", display: "flex", gap: 4, alignItems: "center" }}>
+                  {[0, 0.2, 0.4].map((d, i) => (
+                    <span key={i} style={{ fontSize: 14, color: "#7C3AED", animation: `pulse 1s ${d}s infinite` }}>●</span>
+                  ))}
+                  <style>{`@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}`}</style>
+                </div>
+              </div>
+            )}
+            <div ref={askBottomRef} />
+          </div>
+
+          {/* Input bar */}
+          <div style={{ padding: "10px 12px 100px", background: "#fff", borderTop: "1px solid #F1F5F9" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <textarea
+                value={askInput}
+                onChange={e => setAskInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAskMessage(askInput); } }}
+                placeholder="Ask anything about your business..."
+                rows={2}
+                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
+              />
+              <button onClick={() => sendAskMessage(askInput)} disabled={askLoading || !askInput.trim()}
+                style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: askLoading || !askInput.trim() ? "#E2E8F0" : "#7C3AED", color: askLoading || !askInput.trim() ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 20, cursor: askLoading || !askInput.trim() ? "not-allowed" : "pointer", flexShrink: 0 }}>
+                ↑
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* bottom tab bar */}
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
         {[
@@ -2330,6 +2541,7 @@ ${importText.slice(0, 8000)}`;
           { key: "tasks", icon: "📋", label: "Tasks", badge: tasks.filter(t => t.type === "overdue").length },
           { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
           { key: "templates", icon: "💬", label: "Templates" },
+          { key: "ask", icon: "🤖", label: "Ask" },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             style={{ flex: 1, padding: "10px 4px 14px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative" }}>
