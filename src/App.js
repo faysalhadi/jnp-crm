@@ -139,6 +139,8 @@ STAGE LOGIC:
 - closed: sale confirmed
 - lost: deal fell through`;
 
+const EMPTY_STOCK = { brand: "", model: "", processor: "", ram: "", ssd: "", screen_size: "", condition: "", charger: "", box: "", activation_lock: "unknown", cost_price: "", min_price: "", max_price: "", serial_number: "", notes: "", photo_url: "", status: "available" };
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function timeAgo(ts) {
   if (!ts) return "—";
@@ -269,6 +271,17 @@ export default function App() {
   const [smartMsgCopied, setSmartMsgCopied] = useState({});
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
+  const stockFileInputRef = useRef(null);
+
+  const [stock, setStock] = useState([]);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [showAddStock, setShowAddStock] = useState(false);
+  const [editingStock, setEditingStock] = useState(null);
+  const [stockFilter, setStockFilter] = useState("available");
+  const [stockSearch, setStockSearch] = useState("");
+  const [expandedStockId, setExpandedStockId] = useState(null);
+  const [stockPhotoUploading, setStockPhotoUploading] = useState(false);
+  const [stockForm, setStockForm] = useState(EMPTY_STOCK);
 
   // ── auth ──
   useEffect(() => {
@@ -298,6 +311,13 @@ export default function App() {
     const { data: custs } = await supabase.from("customers").select("*, deals(*)").order("last_active", { ascending: false });
     setCustomers(custs || []);
     setLoading(false);
+  }, []);
+
+  const loadStock = useCallback(async () => {
+    setStockLoading(true);
+    const { data } = await supabase.from("stock").select("*").order("created_at", { ascending: false });
+    setStock(data || []);
+    setStockLoading(false);
   }, []);
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
@@ -700,12 +720,77 @@ ${JSON.stringify(dealContexts, null, 2)}`;
     setSmartLoading(false);
   }
 
-  // ── load stock ──
+  // ── stock ──
+  useEffect(() => { if (activeTab === "stock") loadStock(); }, [activeTab, loadStock]);
 
+  function getMatchingClients(item) {
+    return customers.filter(c =>
+      (c.deals || []).some(d => {
+        if (d.stage === "closed" || d.stage === "lost") return false;
+        const brandMatch = !item.brand || !d.brand || d.brand.toLowerCase() === item.brand.toLowerCase();
+        const budgetOk = !item.min_price || !d.budget || Number(d.budget) >= Number(item.min_price);
+        return brandMatch && budgetOk;
+      })
+    );
+  }
 
+  async function saveStock() {
+    const payload = {
+      brand: stockForm.brand || null,
+      model: stockForm.model || null,
+      processor: stockForm.processor || null,
+      ram: stockForm.ram || null,
+      ssd: stockForm.ssd || null,
+      screen_size: stockForm.screen_size || null,
+      condition: stockForm.condition || null,
+      charger: stockForm.charger || null,
+      box: stockForm.box || null,
+      activation_lock: stockForm.activation_lock || null,
+      cost_price: stockForm.cost_price ? parseFloat(stockForm.cost_price) : null,
+      min_price: stockForm.min_price ? parseFloat(stockForm.min_price) : null,
+      max_price: stockForm.max_price ? parseFloat(stockForm.max_price) : null,
+      serial_number: stockForm.serial_number || null,
+      notes: stockForm.notes || null,
+      photo_url: stockForm.photo_url || null,
+      status: stockForm.status || "available",
+    };
+    if (editingStock) {
+      await supabase.from("stock").update(payload).eq("id", editingStock.id);
+    } else {
+      await supabase.from("stock").insert(payload);
+    }
+    await loadStock();
+    setShowAddStock(false);
+    setEditingStock(null);
+    setStockForm(EMPTY_STOCK);
+  }
 
+  async function deleteStockItem(id) {
+    await supabase.from("stock").delete().eq("id", id);
+    if (expandedStockId === id) setExpandedStockId(null);
+    await loadStock();
+  }
 
-  // ── stock functions ──
+  async function toggleStockStatus(item) {
+    const newStatus = item.status === "available" ? "sold" : "available";
+    await supabase.from("stock").update({ status: newStatus }).eq("id", item.id);
+    setStock(prev => prev.map(s => s.id === item.id ? { ...s, status: newStatus } : s));
+  }
+
+  async function uploadStockPhoto(file) {
+    if (!file) return;
+    setStockPhotoUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filename = `stock/${Date.now()}.${ext}`;
+      const { data: uploadData, error } = await supabase.storage.from("stock-photos").upload(filename, file, { upsert: true });
+      if (!error && uploadData) {
+        const { data: urlData } = supabase.storage.from("stock-photos").getPublicUrl(uploadData.path);
+        setStockForm(f => ({ ...f, photo_url: urlData.publicUrl }));
+      }
+    } catch {}
+    setStockPhotoUploading(false);
+  }
 
 
 
@@ -862,6 +947,19 @@ ${importText.slice(0, 8000)}`;
       if (!a.urgent && b.urgent) return 1;
       return new Date(b.last_active) - new Date(a.last_active);
     });
+
+  const filteredStock = stock.filter(item => {
+    if (stockSearch) {
+      const q = stockSearch.toLowerCase();
+      return (item.brand || "").toLowerCase().includes(q) ||
+             (item.model || "").toLowerCase().includes(q) ||
+             (item.processor || "").toLowerCase().includes(q) ||
+             (item.serial_number || "").toLowerCase().includes(q);
+    }
+    if (stockFilter === "available") return item.status === "available";
+    if (stockFilter === "sold") return item.status === "sold";
+    return true;
+  });
 
   // ── screens ──────────────────────────────────────────────────────────────────
 
@@ -1431,7 +1529,7 @@ ${importText.slice(0, 8000)}`;
         {[
           { key: "customers", icon: "👥", label: "Clients" },
           { key: "tasks", icon: "📋", label: "Tasks" },
-          { key: "calculator", icon: "🧮", label: "Calc" },
+          { key: "stock", icon: "📦", label: "Stock" },
           { key: "templates", icon: "💬", label: "Templates" },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
@@ -1638,6 +1736,342 @@ ${importText.slice(0, 8000)}`;
         </div>
       )}
 
+      {/* ── STOCK TAB ── */}
+      {activeTab === "stock" && (
+        <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* Stats */}
+          {stock.length > 0 && (
+            <div style={{ display: "flex", gap: 8 }}>
+              {[
+                { label: "Available", value: stock.filter(s => s.status === "available").length, color: "#10B981", bg: "#ECFDF5" },
+                { label: "Sold", value: stock.filter(s => s.status === "sold").length, color: "#6366F1", bg: "#EEF2FF" },
+                { label: "Total Items", value: stock.length, color: "#F59E0B", bg: "#FFFBEB" },
+              ].map(s => (
+                <div key={s.label} style={{ flex: 1, background: s.bg, borderRadius: 14, padding: "10px 8px", textAlign: "center" }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.value}</div>
+                  <div style={{ fontSize: 9, color: s.color, fontWeight: 700, opacity: 0.8 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Search + Add */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={stockSearch} onChange={e => setStockSearch(e.target.value)} placeholder="🔍  Search brand, model, serial..."
+              style={{ flex: 1, padding: "9px 13px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#F8FAFC", fontSize: 13, outline: "none" }} />
+            <button onClick={() => { setEditingStock(null); setStockForm(EMPTY_STOCK); setShowAddStock(true); }}
+              style={{ height: 38, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", flexShrink: 0 }}>
+              + Add
+            </button>
+          </div>
+
+          {/* Filters */}
+          <div style={{ display: "flex", gap: 6 }}>
+            {[{ key: "available", label: "✅ Available" }, { key: "sold", label: "🏷️ Sold" }, { key: "all", label: "All" }].map(f => (
+              <button key={f.key} onClick={() => setStockFilter(f.key)}
+                style={{ padding: "5px 14px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0, background: stockFilter === f.key ? "#6366F1" : "#F1F5F9", color: stockFilter === f.key ? "#fff" : "#64748B" }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {stockLoading && <Spinner />}
+
+          {/* Empty state */}
+          {!stockLoading && filteredStock.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>📦</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>
+                {stockSearch || stockFilter !== "available" ? "No items match" : "No available stock"}
+              </div>
+              <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>
+                {!stockSearch && stockFilter === "available" && "Tap + Add to list your first item"}
+              </div>
+            </div>
+          )}
+
+          {/* Stock cards */}
+          {filteredStock.map(item => {
+            const isExpanded = expandedStockId === item.id;
+            const matches = getMatchingClients(item);
+            const isAvail = item.status === "available";
+            return (
+              <div key={item.id} style={{ background: "#fff", borderRadius: 18, border: `1.5px solid ${isAvail ? "#E2E8F0" : "#F1F5F9"}`, boxShadow: "0 1px 6px rgba(0,0,0,0.05)", overflow: "hidden", opacity: isAvail ? 1 : 0.7 }}>
+                {item.photo_url && (
+                  <img src={item.photo_url} alt={item.model || "stock"} style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
+                )}
+                {/* Card summary row — tap to expand */}
+                <div onClick={() => setExpandedStockId(isExpanded ? null : item.id)} style={{ padding: "12px 14px", cursor: "pointer" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: "#0F172A" }}>
+                        {[item.brand, item.model].filter(Boolean).join(" ") || "Unnamed item"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
+                        {[item.processor, item.ram, item.ssd, item.screen_size].filter(Boolean).join(" · ") || "No specs entered"}
+                      </div>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); toggleStockStatus(item); }}
+                      style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, ml: 8, background: isAvail ? "#ECFDF5" : "#F1F5F9", color: isAvail ? "#10B981" : "#94A3B8" }}>
+                      {isAvail ? "✅ Available" : "🏷️ Sold"}
+                    </button>
+                  </div>
+
+                  {/* Prices */}
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+                    {item.max_price && <span style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>AED {Number(item.max_price).toLocaleString()}</span>}
+                    {item.min_price && <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, alignSelf: "center" }}>min AED {Number(item.min_price).toLocaleString()}</span>}
+                    {item.cost_price && <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, alignSelf: "center" }}>cost AED {Number(item.cost_price).toLocaleString()}</span>}
+                  </div>
+
+                  {/* Badges */}
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {item.condition && <Badge color="#6366F1" bg="#EEF2FF" small>{item.condition}</Badge>}
+                    {item.charger === "yes" && <Badge color="#10B981" bg="#ECFDF5" small>🔌 Charger</Badge>}
+                    {item.box === "yes" && <Badge color="#F59E0B" bg="#FFFBEB" small>📦 Box</Badge>}
+                    {item.brand === "MacBook" && item.activation_lock === "no" && <Badge color="#10B981" bg="#ECFDF5" small>🔓 Unlocked</Badge>}
+                    {item.brand === "MacBook" && item.activation_lock === "yes" && <Badge color="#EF4444" bg="#FEF2F2" small>🔒 Locked</Badge>}
+                    {matches.length > 0 && <Badge color="#F59E0B" bg="#FFFBEB" small>👥 {matches.length} match{matches.length !== 1 ? "es" : ""}</Badge>}
+                  </div>
+                </div>
+
+                {/* Expanded details */}
+                {isExpanded && (
+                  <div style={{ borderTop: "1px solid #F8FAFC", padding: "12px 14px" }}>
+                    {/* Spec table */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px", marginBottom: 10 }}>
+                      {[
+                        { label: "Processor", value: item.processor },
+                        { label: "RAM", value: item.ram },
+                        { label: "SSD", value: item.ssd },
+                        { label: "Screen", value: item.screen_size },
+                        { label: "Condition", value: item.condition },
+                        { label: "Charger", value: item.charger },
+                        { label: "Box", value: item.box },
+                        { label: "Activation Lock", value: item.brand === "MacBook" ? item.activation_lock : null },
+                        { label: "Serial No.", value: item.serial_number },
+                      ].filter(f => f.value && f.value !== "unknown").map(f => (
+                        <div key={f.label} style={{ display: "flex", flexDirection: "column" }}>
+                          <span style={{ fontSize: 10, color: "#CBD5E1", fontWeight: 700, letterSpacing: 0.3 }}>{f.label.toUpperCase()}</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>{f.value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {item.notes && (
+                      <div style={{ padding: "8px 10px", background: "#F8FAFC", borderRadius: 8, fontSize: 12, color: "#64748B", lineHeight: 1.5, marginBottom: 10 }}>
+                        {item.notes}
+                      </div>
+                    )}
+
+                    {/* Matching clients */}
+                    {matches.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 6, letterSpacing: 0.5 }}>👥 POTENTIAL BUYERS</div>
+                        {matches.map(c => {
+                          const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+                          return (
+                            <div key={c.id}
+                              onClick={() => { setActiveCustomerId(c.id); setActiveDealId(deal?.id); setView("detail"); setPendingSuggestion(null); }}
+                              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 10px", marginBottom: 4, background: "#F8FAFC", borderRadius: 10, cursor: "pointer", border: "1px solid #F1F5F9" }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{c.name}</div>
+                                <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                                  {deal?.brand ? `${deal.brand} ${deal.model || ""}`.trim() : "Open deal"}
+                                  {deal?.budget ? ` · AED ${Number(deal.budget).toLocaleString()}` : ""}
+                                </div>
+                              </div>
+                              <span style={{ fontSize: 13, color: "#6366F1", fontWeight: 700 }}>→</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => {
+                        setEditingStock(item);
+                        setStockForm({ ...EMPTY_STOCK, ...item, cost_price: item.cost_price ?? "", min_price: item.min_price ?? "", max_price: item.max_price ?? "" });
+                        setShowAddStock(true);
+                      }}
+                        style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                        ✏️ Edit
+                      </button>
+                      <button onClick={() => { if (window.confirm(`Delete ${[item.brand, item.model].filter(Boolean).join(" ") || "this item"}?`)) deleteStockItem(item.id); }}
+                        style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+                        🗑
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* ── ADD / EDIT MODAL ── */}
+          {showAddStock && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, overflowY: "auto" }}>
+              <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+                  {/* Header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                    <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>{editingStock ? "Edit Stock Item" : "Add Stock Item"}</span>
+                    <button onClick={() => { setShowAddStock(false); setEditingStock(null); setStockForm(EMPTY_STOCK); }}
+                      style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    {/* Brand + Model */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>BRAND</div>
+                        <select value={stockForm.brand} onChange={e => setStockForm(f => ({ ...f, brand: e.target.value }))}
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none" }}>
+                          <option value="">Select</option>
+                          {BRANDS.map(b => <option key={b}>{b}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ flex: 2 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>MODEL</div>
+                        <input value={stockForm.model} onChange={e => setStockForm(f => ({ ...f, model: e.target.value }))} placeholder="e.g. Air M2, ThinkPad X1"
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    </div>
+
+                    {/* Processor */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>PROCESSOR</div>
+                      <input value={stockForm.processor} onChange={e => setStockForm(f => ({ ...f, processor: e.target.value }))} placeholder="e.g. Apple M2, Core i7-1355U"
+                        style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+
+                    {/* RAM + SSD */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>RAM</div>
+                        <input value={stockForm.ram} onChange={e => setStockForm(f => ({ ...f, ram: e.target.value }))} placeholder="e.g. 16GB"
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>SSD</div>
+                        <input value={stockForm.ssd} onChange={e => setStockForm(f => ({ ...f, ssd: e.target.value }))} placeholder="e.g. 512GB"
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    </div>
+
+                    {/* Screen + Condition */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>SCREEN SIZE</div>
+                        <input value={stockForm.screen_size} onChange={e => setStockForm(f => ({ ...f, screen_size: e.target.value }))} placeholder='e.g. 13.3"'
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>CONDITION</div>
+                        <select value={stockForm.condition} onChange={e => setStockForm(f => ({ ...f, condition: e.target.value }))}
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none" }}>
+                          <option value="">Select</option>
+                          <option>New</option><option>Like New</option><option>Used</option><option>Refurbished</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Charger + Box */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>CHARGER</div>
+                        <select value={stockForm.charger} onChange={e => setStockForm(f => ({ ...f, charger: e.target.value }))}
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none" }}>
+                          <option value="">—</option><option value="yes">Yes</option><option value="no">No</option>
+                        </select>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>BOX</div>
+                        <select value={stockForm.box} onChange={e => setStockForm(f => ({ ...f, box: e.target.value }))}
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none" }}>
+                          <option value="">—</option><option value="yes">Yes</option><option value="no">No</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Activation lock — MacBook only */}
+                    {stockForm.brand === "MacBook" && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>ACTIVATION LOCK</div>
+                        <select value={stockForm.activation_lock} onChange={e => setStockForm(f => ({ ...f, activation_lock: e.target.value }))}
+                          style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none" }}>
+                          <option value="unknown">Unknown</option>
+                          <option value="no">No — Unlocked ✅</option>
+                          <option value="yes">Yes — Locked ⚠️</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Pricing */}
+                    <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 8, letterSpacing: 0.5 }}>PRICING (AED)</div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {[
+                          { key: "cost_price", label: "Cost" },
+                          { key: "min_price", label: "Min" },
+                          { key: "max_price", label: "Max / Ask" },
+                        ].map(p => (
+                          <div key={p.key} style={{ flex: 1 }}>
+                            <div style={{ fontSize: 10, color: "#94A3B8", marginBottom: 3, fontWeight: 600 }}>{p.label}</div>
+                            <input type="number" value={stockForm[p.key]} onChange={e => setStockForm(f => ({ ...f, [p.key]: e.target.value }))} placeholder="0"
+                              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Serial number */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>SERIAL / IMEI</div>
+                      <input value={stockForm.serial_number} onChange={e => setStockForm(f => ({ ...f, serial_number: e.target.value }))} placeholder="Optional"
+                        style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+
+                    {/* Notes */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>NOTES</div>
+                      <textarea value={stockForm.notes} onChange={e => setStockForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any details about this item..." rows={3}
+                        style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                    </div>
+
+                    {/* Photo */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 6, letterSpacing: 0.5 }}>PHOTO (optional)</div>
+                      {stockForm.photo_url && (
+                        <div style={{ position: "relative", marginBottom: 8 }}>
+                          <img src={stockForm.photo_url} alt="preview" style={{ width: "100%", height: 130, objectFit: "cover", borderRadius: 10 }} />
+                          <button onClick={() => setStockForm(f => ({ ...f, photo_url: "" }))}
+                            style={{ position: "absolute", top: 6, right: 6, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                        </div>
+                      )}
+                      <input type="file" accept="image/*" ref={stockFileInputRef} style={{ display: "none" }}
+                        onChange={e => e.target.files?.[0] && uploadStockPhoto(e.target.files[0])} />
+                      <button onClick={() => stockFileInputRef.current?.click()} disabled={stockPhotoUploading}
+                        style={{ width: "100%", padding: 10, borderRadius: 10, border: "1.5px dashed #E2E8F0", background: "#F8FAFC", color: "#64748B", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                        {stockPhotoUploading ? "⏳ Uploading..." : stockForm.photo_url ? "📷 Change Photo" : "📷 Add Photo"}
+                      </button>
+                    </div>
+
+                    {/* Save */}
+                    <button onClick={saveStock} disabled={!stockForm.brand && !stockForm.model}
+                      style={{ padding: 14, borderRadius: 12, border: "none", background: stockForm.brand || stockForm.model ? "#6366F1" : "#E2E8F0", color: stockForm.brand || stockForm.model ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 15, cursor: stockForm.brand || stockForm.model ? "pointer" : "not-allowed" }}>
+                      {editingStock ? "Save Changes" : "Add to Stock →"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── TEMPLATES TAB ── */}
       {activeTab === "templates" && (
         <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1674,7 +2108,7 @@ ${importText.slice(0, 8000)}`;
         {[
           { key: "customers", icon: "👥", label: "Clients" },
           { key: "tasks", icon: "📋", label: "Tasks", badge: tasks.filter(t => t.type === "overdue").length },
-
+          { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
           { key: "templates", icon: "💬", label: "Templates" },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
