@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
+import * as XLSX from "xlsx";
 
 // ── constants ────────────────────────────────────────────────────────────────
 const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
@@ -282,6 +283,11 @@ export default function App() {
   const [expandedStockId, setExpandedStockId] = useState(null);
   const [stockPhotoUploading, setStockPhotoUploading] = useState(false);
   const [stockForm, setStockForm] = useState(EMPTY_STOCK);
+  const [showImportStock, setShowImportStock] = useState(false);
+  const [importPreview, setImportPreview] = useState(null); // array of mapped rows
+  const [importingStock, setImportingStock] = useState(false);
+  const [importStockResult, setImportStockResult] = useState(null);
+  const importStockFileRef = useRef(null);
 
   // ── auth ──
   useEffect(() => {
@@ -756,10 +762,13 @@ ${JSON.stringify(dealContexts, null, 2)}`;
     };
     if (editingStock) {
       await supabase.from("stock").update(payload).eq("id", editingStock.id);
+      // Immediate state update — no reload needed
+      setStock(prev => prev.map(s => s.id === editingStock.id ? { ...s, ...payload } : s));
     } else {
-      await supabase.from("stock").insert(payload);
+      const { data: newItem } = await supabase.from("stock").insert(payload).select().single();
+      // Immediate state update — new item appears at top instantly
+      if (newItem) setStock(prev => [newItem, ...prev]);
     }
-    await loadStock();
     setShowAddStock(false);
     setEditingStock(null);
     setStockForm(EMPTY_STOCK);
@@ -790,6 +799,66 @@ ${JSON.stringify(dealContexts, null, 2)}`;
       }
     } catch {}
     setStockPhotoUploading(false);
+  }
+
+  function downloadStockTemplate() {
+    const headers = [["Brand","Model","Processor","RAM","SSD","Screen","Condition","Charger","Box","Activation Lock","Cost Price","Min Price","Max Price","Serial Number","Notes"]];
+    const ws = XLSX.utils.aoa_to_sheet(headers);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Stock");
+    XLSX.writeFile(wb, "stock-import-template.xlsx");
+  }
+
+  function handleStockFileSelect(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      const col = (row, ...keys) => {
+        for (const k of keys) {
+          const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()] ?? "";
+          if (String(v).trim()) return String(v).trim();
+        }
+        return "";
+      };
+      const mapped = rows.map(r => ({
+        brand: col(r, "Brand") || null,
+        model: col(r, "Model") || null,
+        processor: col(r, "Processor") || null,
+        ram: col(r, "RAM", "Ram") || null,
+        ssd: col(r, "SSD", "Ssd") || null,
+        screen_size: col(r, "Screen", "Screen Size") || null,
+        condition: col(r, "Condition") || null,
+        charger: col(r, "Charger").toLowerCase() || null,
+        box: col(r, "Box").toLowerCase() || null,
+        activation_lock: col(r, "Activation Lock").toLowerCase() || null,
+        cost_price: parseFloat(col(r, "Cost Price")) || null,
+        min_price: parseFloat(col(r, "Min Price")) || null,
+        max_price: parseFloat(col(r, "Max Price")) || null,
+        serial_number: col(r, "Serial Number", "Serial") || null,
+        notes: col(r, "Notes") || null,
+        status: "available",
+      })).filter(r => r.brand || r.model);
+      setImportPreview(mapped);
+      setImportStockResult(null);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function importStockItems() {
+    if (!importPreview?.length) return;
+    setImportingStock(true);
+    const { data: inserted, error } = await supabase.from("stock").insert(importPreview).select();
+    if (!error && inserted) {
+      setStock(prev => [...inserted, ...prev]);
+      setImportStockResult({ success: true, count: inserted.length });
+      setTimeout(() => { setShowImportStock(false); setImportPreview(null); setImportStockResult(null); }, 1800);
+    } else {
+      setImportStockResult({ success: false, message: error?.message || "Import failed" });
+    }
+    setImportingStock(false);
   }
 
 
@@ -1756,10 +1825,14 @@ ${importText.slice(0, 8000)}`;
             </div>
           )}
 
-          {/* Search + Add */}
+          {/* Search + Add + Import */}
           <div style={{ display: "flex", gap: 8 }}>
             <input value={stockSearch} onChange={e => setStockSearch(e.target.value)} placeholder="🔍  Search brand, model, serial..."
               style={{ flex: 1, padding: "9px 13px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#F8FAFC", fontSize: 13, outline: "none" }} />
+            <button onClick={() => { setShowImportStock(true); setImportPreview(null); setImportStockResult(null); }}
+              style={{ height: 38, padding: "0 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+              📥
+            </button>
             <button onClick={() => { setEditingStock(null); setStockForm(EMPTY_STOCK); setShowAddStock(true); }}
               style={{ height: 38, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", flexShrink: 0 }}>
               + Add
@@ -2065,6 +2138,89 @@ ${importText.slice(0, 8000)}`;
                       {editingStock ? "Save Changes" : "Add to Stock →"}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── IMPORT MODAL ── */}
+          {showImportStock && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, overflowY: "auto" }}>
+              <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+                  {/* Header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                    <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>Import from Excel / CSV</span>
+                    <button onClick={() => { setShowImportStock(false); setImportPreview(null); setImportStockResult(null); }}
+                      style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+                  </div>
+
+                  {/* Download template */}
+                  <div style={{ background: "#EEF2FF", borderRadius: 12, padding: "12px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#4338CA" }}>📋 Download Template</div>
+                      <div style={{ fontSize: 11, color: "#818CF8", marginTop: 2 }}>Pre-filled columns ready for Excel</div>
+                    </div>
+                    <button onClick={downloadStockTemplate}
+                      style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                      Download
+                    </button>
+                  </div>
+
+                  {/* File picker */}
+                  <input type="file" accept=".xlsx,.xls,.csv" ref={importStockFileRef} style={{ display: "none" }}
+                    onChange={e => { if (e.target.files?.[0]) handleStockFileSelect(e.target.files[0]); e.target.value = ""; }} />
+                  <button onClick={() => importStockFileRef.current?.click()}
+                    style={{ width: "100%", padding: 14, borderRadius: 12, border: "2px dashed #C7D2FE", background: "#F8FAFC", color: importPreview ? "#6366F1" : "#94A3B8", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>
+                    {importPreview ? `✅ ${importPreview.length} row${importPreview.length !== 1 ? "s" : ""} loaded — tap to change file` : "📂 Select .xlsx / .csv file"}
+                  </button>
+
+                  {/* Preview table */}
+                  {importPreview && importPreview.length > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 6, letterSpacing: 0.5 }}>
+                        PREVIEW — FIRST {Math.min(5, importPreview.length)} OF {importPreview.length} ROWS
+                      </div>
+                      <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #F1F5F9" }}>
+                        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
+                          <thead>
+                            <tr style={{ background: "#F8FAFC" }}>
+                              {["Brand","Model","RAM","SSD","Condition","Max Price"].map(h => (
+                                <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: "#94A3B8", fontWeight: 700, whiteSpace: "nowrap", borderBottom: "1px solid #F1F5F9" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importPreview.slice(0, 5).map((row, i) => (
+                              <tr key={i} style={{ borderBottom: "1px solid #F8FAFC" }}>
+                                {[row.brand, row.model, row.ram, row.ssd, row.condition, row.max_price ? `AED ${row.max_price}` : "—"].map((v, j) => (
+                                  <td key={j} style={{ padding: "6px 10px", color: "#475569", whiteSpace: "nowrap" }}>{v || "—"}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {importPreview.length > 5 && (
+                        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4, textAlign: "center" }}>
+                          + {importPreview.length - 5} more rows not shown
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Result */}
+                  {importStockResult && (
+                    <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 12, background: importStockResult.success ? "#ECFDF5" : "#FEF2F2", color: importStockResult.success ? "#10B981" : "#EF4444", fontSize: 13, fontWeight: 700 }}>
+                      {importStockResult.success ? `✅ Imported ${importStockResult.count} item${importStockResult.count !== 1 ? "s" : ""} successfully!` : `❌ ${importStockResult.message}`}
+                    </div>
+                  )}
+
+                  {/* Import button */}
+                  <button onClick={importStockItems} disabled={!importPreview?.length || importingStock}
+                    style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: importPreview?.length && !importingStock ? "#6366F1" : "#E2E8F0", color: importPreview?.length && !importingStock ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 15, cursor: importPreview?.length && !importingStock ? "pointer" : "not-allowed" }}>
+                    {importingStock ? "⏳ Importing..." : importPreview?.length ? `Import ${importPreview.length} item${importPreview.length !== 1 ? "s" : ""} →` : "Select a file first"}
+                  </button>
                 </div>
               </div>
             </div>
