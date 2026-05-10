@@ -331,12 +331,25 @@ FOLLOW UPS DUE:
 ${followUps||"(none due)"}`;
 }
 
+function cleanWhatsAppText(text) {
+  if (!text) return '';
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const cp = text.charCodeAt(i);
+    if (cp === 0x202F || cp === 0x00A0) { out += ' '; continue; }
+    if (cp === 0x200E || cp === 0x200F || cp === 0x000D) continue;
+    out += text[i];
+  }
+  return out;
+}
+
+
 async function saveImportedMessages(dealId, rawChatText) {
   if (!dealId || !rawChatText) return 0;
 
   const messages = [];
   const lines = rawChatText.split('\n');
-  const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm))\]\s*~?([^:]+):\s*(.*)/;
+  const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]\s*~?([^:]+):\s*(.*)/;
 
   const skipPhrases = [
     'omitted', 'end-to-end encrypted', 'deleted',
@@ -1168,7 +1181,7 @@ ${JSON.stringify(dealContexts, null, 2)}`;
 
   // ── import whatsapp chat ──
   async function importChatFile(file) {
-    const text = await file.text();
+    const text = cleanWhatsAppText(await file.text());
 
     // Extract name + phone from filename
     let filename = file.name.replace(/\.txt$/i, "").replace(/^WhatsApp\s*(Chat\s*)?(with\s*)?[-–]?\s*/i, "").trim();
@@ -1328,7 +1341,7 @@ CRITICAL RULES:
 - Return ONLY the JSON array
 
 WhatsApp Chat:
-${importText.slice(0, 12000)}`;
+${cleanWhatsAppText(importText).slice(0, 12000)}`;
 
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1367,7 +1380,7 @@ ${importText.slice(0, 12000)}`;
           budget: c.budget || null,
           stage: c.stage || "new_inquiry",
         }).select().single();
-        if (deal) await saveImportedMessages(deal.id, importText);
+        if (deal) await saveImportedMessages(deal.id, cleanWhatsAppText(importText));
         created++;
       }
 
@@ -1461,8 +1474,9 @@ ${importText.slice(0, 12000)}`;
   async function extractTraderListings() {
     if (!traderChatText.trim() || !anthropicKey) return;
     setTraderImportLoading(true); setTraderImportResult(null);
-    console.log('Chat text length:', traderChatText.length);
-    console.log('First 200 chars:', traderChatText.slice(0, 200));
+    const cleanedTraderText = cleanWhatsAppText(traderChatText);
+    console.log('Chat text length:', cleanedTraderText.length);
+    console.log('First 200 chars:', cleanedTraderText.slice(0, 200));
     const simpleSystem = "You are extracting laptop inventory listings from WhatsApp messages for a UAE laptop reseller.";
     const userMessage = `Extract every laptop listing from this WhatsApp chat. Return ONLY a JSON array, no markdown, no explanation.
 
@@ -1510,7 +1524,7 @@ Return format (JSON array ONLY, absolutely no text before or after):
 }]
 
 Chat:
-${traderChatText.slice(0, 15000)}`;
+${cleanedTraderText.slice(0, 15000)}`;
 
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
