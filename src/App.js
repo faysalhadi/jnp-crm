@@ -331,32 +331,17 @@ FOLLOW UPS DUE:
 ${followUps||"(none due)"}`;
 }
 
-function convertTo24Hour(timeStr) {
-  const clean = timeStr.trim();
-  const isPM = clean.toLowerCase().includes('pm');
-  const isAM = clean.toLowerCase().includes('am');
-  const timePart = clean.replace(/\s*(am|pm)/i, '').trim();
-  const parts = timePart.split(':');
-  let hours = parseInt(parts[0]);
-  const minutes = parts[1] || '00';
-  const seconds = parts[2] || '00';
-  if (isPM && hours !== 12) hours += 12;
-  if (isAM && hours === 12) hours = 0;
-  return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`;
-}
-
 async function saveImportedMessages(dealId, rawChatText) {
   if (!dealId || !rawChatText) return 0;
 
   const messages = [];
   const lines = rawChatText.split('\n');
-  // Handles 1 or 2 digit day/month, optional seconds, case-insensitive AM/PM
   const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm))\]\s*~?([^:]+):\s*(.*)/;
+
   const skipPhrases = [
     'omitted', 'end-to-end encrypted', 'deleted',
     'Voice call', 'No answer', 'is a contact',
-    'This business is now using', 'Messages and calls are',
-    '<This message was edited>'
+    'This business is now using', 'Messages and calls are'
   ];
 
   let currentMsg = null;
@@ -368,7 +353,9 @@ async function saveImportedMessages(dealId, rawChatText) {
     const match = trimmed.match(lineRegex);
 
     if (match) {
-      if (currentMsg && currentMsg.content.trim()) messages.push(currentMsg);
+      if (currentMsg && currentMsg.content.trim()) {
+        messages.push(currentMsg);
+      }
 
       const [, date, time, rawSender, content] = match;
       const sender = rawSender.replace(/^~/, '').trim();
@@ -382,7 +369,14 @@ async function saveImportedMessages(dealId, rawChatText) {
       const [day, month, year] = date.split('/');
       let ts;
       try {
-        ts = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${convertTo24Hour(time)}`).toISOString();
+        const isPM = time.toLowerCase().includes('pm');
+        const isAM = time.toLowerCase().includes('am');
+        const timePart = time.replace(/\s*(am|pm)/gi, '').trim();
+        const [h, m, s] = timePart.split(':');
+        let hours = parseInt(h);
+        if (isPM && hours !== 12) hours += 12;
+        if (isAM && hours === 12) hours = 0;
+        ts = new Date(`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}T${String(hours).padStart(2,'0')}:${m || '00'}:${s || '00'}`).toISOString();
       } catch {
         ts = new Date().toISOString();
       }
@@ -395,8 +389,9 @@ async function saveImportedMessages(dealId, rawChatText) {
         content: cleanContent,
         sent: isOwner ? cleanContent : null,
         is_voice: false,
-        ts,
+        ts: ts
       };
+
     } else if (currentMsg) {
       if (!skipPhrases.some(p => trimmed.includes(p))) {
         currentMsg.content += '\n' + trimmed;
@@ -405,20 +400,25 @@ async function saveImportedMessages(dealId, rawChatText) {
     }
   }
 
-  if (currentMsg && currentMsg.content.trim()) messages.push(currentMsg);
+  if (currentMsg && currentMsg.content.trim()) {
+    messages.push(currentMsg);
+  }
 
   const validMessages = messages.filter(m =>
-    m.content && m.content.length > 1 && !skipPhrases.some(p => m.content.includes(p))
+    m.content &&
+    m.content.length > 1 &&
+    !skipPhrases.some(p => m.content.includes(p))
   );
 
   if (validMessages.length === 0) return 0;
 
   const chunkSize = 50;
   for (let i = 0; i < validMessages.length; i += chunkSize) {
-    const { error } = await supabase.from('messages').insert(validMessages.slice(i, i + chunkSize));
-    if (error) console.error('Message insert error:', error);
+    const chunk = validMessages.slice(i, i + chunkSize);
+    await supabase.from('messages').insert(chunk);
   }
 
+  console.log('Saved messages:', validMessages.length);
   return validMessages.length;
 }
 
@@ -1461,6 +1461,8 @@ ${importText.slice(0, 12000)}`;
   async function extractTraderListings() {
     if (!traderChatText.trim() || !anthropicKey) return;
     setTraderImportLoading(true); setTraderImportResult(null);
+    console.log('Chat text length:', traderChatText.length);
+    console.log('First 200 chars:', traderChatText.slice(0, 200));
     const simpleSystem = "You are extracting laptop inventory listings from WhatsApp messages for a UAE laptop reseller.";
     const userMessage = `Extract every laptop listing from this WhatsApp chat. Return ONLY a JSON array, no markdown, no explanation.
 
@@ -1527,8 +1529,9 @@ ${traderChatText.slice(0, 15000)}`;
         }),
       });
       const data = await res.json();
+      if (data.error) console.error('[Trader extraction] API error:', data.error);
       const raw = data?.content?.[0]?.text || "[]";
-      console.log("[Trader extraction] raw:", raw.slice(0, 300));
+      console.log('Claude raw response:', raw);
       const jsonMatch = raw.match(/\[[\s\S]*\]/);
       const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
       let listings;
@@ -1537,7 +1540,7 @@ ${traderChatText.slice(0, 15000)}`;
         listings = [];
       }
       const result = Array.isArray(listings) ? listings : [];
-      console.log("[Trader extraction] extracted", result.length, "listings");
+      console.log('Parsed results:', result);
       setTraderImportPreview(result);
       if (result.length === 0) setTraderImportResult({ success: false, message: "No listings extracted. Check chat format or try pasting a simpler section." });
     } catch (e) {
@@ -2100,8 +2103,8 @@ For any issues please contact us on WhatsApp.
         <div style={{ flex: 1, padding: "12px", display: "flex", flexDirection: "column", gap: 10, paddingBottom: 4 }}>
           {/* Imported from WhatsApp banner */}
           {messages.length > 0 && messages[0]?.ts && (Date.now() - new Date(messages[0].ts).getTime()) > 3600000 && (
-            <div style={{ textAlign: "center", padding: "6px 12px", borderRadius: 10, background: "#F0FDF4", border: "1px solid #BBF7D0", fontSize: 11, color: "#16A34A", fontWeight: 600 }}>
-              📱 Conversation imported from WhatsApp · {new Date(messages[0].ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+            <div style={{ textAlign: "center", padding: "5px 12px", borderRadius: 8, background: "#F1F5F9", fontSize: 11, color: "#94A3B8", fontWeight: 500 }}>
+              📱 Imported from WhatsApp
             </div>
           )}
           {messages.length === 0 && !outreachMode && (
