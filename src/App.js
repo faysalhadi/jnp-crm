@@ -402,6 +402,11 @@ export default function App() {
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importingMultiple, setImportingMultiple] = useState(false);
+  const [importMultipleProgress, setImportMultipleProgress] = useState({ current: 0, total: 0 });
+  const [importMultipleResult, setImportMultipleResult] = useState(null);
+  const chatFileInputRef = useRef(null);
+  const chatFilesInputRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
   const [templateCopied, setTemplateCopied] = useState(null);
@@ -1071,6 +1076,113 @@ ${JSON.stringify(dealContexts, null, 2)}`;
   }, [activeTab]);
 
   // ── import whatsapp chat ──
+  async function importChatFile(file) {
+    const text = await file.text();
+
+    // Extract name + phone from filename
+    let filename = file.name.replace(/\.txt$/i, "").replace(/^WhatsApp\s*(Chat\s*)?(with\s*)?[-–]?\s*/i, "").trim();
+    let numberFromFile = "";
+    const phoneMatch = filename.match(/\+?\d[\d\s\-()]{7,}/);
+    if (phoneMatch) {
+      numberFromFile = phoneMatch[0].replace(/\s/g, "");
+      filename = filename.replace(phoneMatch[0], "").replace(/[-_]/g, " ").trim();
+    }
+
+    // Find first non-owner sender in chat
+    let senderFromChat = "";
+    for (const line of text.split("\n")) {
+      const m = line.match(/\[\d{1,2}\/\d{1,2}\/\d{4}[^\]]+\]\s+~?([^:]+):/);
+      if (m) {
+        const s = m[1].replace(/^~/, "").trim();
+        if (!s.toLowerCase().includes("laptop for less")) { senderFromChat = s; break; }
+      }
+    }
+
+    const customerName = (filename || senderFromChat || "Unknown Customer").trim();
+
+    const chatPrompt = `Analyze this WhatsApp chat between 'Laptop For Less' (a UAE laptop reseller) and a customer.
+
+PARSING:
+- 'Laptop For Less' = the owner/seller (ignore for customer profile, read for context)
+- All other senders = the customer
+- Strip ~ from sender names
+- English + Urdu/Arabic mix is normal
+
+EXTRACT:
+- intent: 'buying' or 'selling'
+- brand: MacBook/Dell/HP/Lenovo/Other/Unknown
+- model: specific model (e.g. 'Dell 5420', 'MacBook Air M1') or empty
+- processor: e.g. 'Core i5 11th Gen' / 'Apple M1' or empty
+- ram: e.g. '8GB' or empty
+- storage: e.g. '256GB' or empty
+- condition: New/Like New/Used/Unknown
+- quantity: units wanted (default 1)
+- budget: price in AED if mentioned (number only, null if not)
+- urgency: true if said urgent/today/asap/need now
+- stage: 'new_inquiry'|'requirement_noted'|'negotiation'|'closed'|'lost'
+- notes: important context
+
+SHORTHAND: '8/256'=8GB RAM/256GB SSD. '16/512'=16GB/512GB. 'i5 11th'=Core i5 11th Gen. '750aed'=AED 750.
+
+Return ONLY valid JSON (no markdown):
+{"intent":"buying","brand":"Unknown","model":"","processor":"","ram":"","storage":"","condition":"Unknown","quantity":1,"budget":null,"urgency":false,"stage":"new_inquiry","notes":""}
+
+Chat:
+${text.slice(0, 12000)}`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 800, messages: [{ role: "user", content: chatPrompt }] }),
+      });
+      const data = await res.json();
+      const raw = (data?.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
+      let info; try { info = JSON.parse(raw); } catch { info = {}; }
+
+      const { data: customer } = await supabase.from("customers").insert({
+        name: customerName, number: numberFromFile || "", notes: info.notes || "",
+        tier: "cold", urgent: info.urgency || false,
+      }).select().single();
+      if (!customer) return null;
+
+      await supabase.from("deals").insert({
+        customer_id: customer.id,
+        brand: info.brand && info.brand !== "Unknown" ? info.brand : "",
+        model: info.model || "", processor: info.processor || "",
+        ram: info.ram || "", storage: info.storage || "",
+        condition: info.condition && info.condition !== "Unknown" ? info.condition : "",
+        budget: info.budget || null, stage: info.stage || "new_inquiry",
+      });
+      return customer;
+    } catch { return null; }
+  }
+
+  async function importSingleChatFile(file) {
+    if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
+    setImporting(true); setImportResult(null);
+    const customer = await importChatFile(file);
+    await loadCustomers();
+    if (customer) setImportResult({ success: true, message: `✅ Imported ${customer.name} successfully!` });
+    else setImportResult({ success: false, message: "❌ Import failed. Check your API key." });
+    setImporting(false);
+  }
+
+  async function importMultipleChatFiles(files) {
+    if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
+    setImportingMultiple(true); setImportMultipleResult(null);
+    let created = 0; let failed = 0;
+    for (let i = 0; i < files.length; i++) {
+      setImportMultipleProgress({ current: i + 1, total: files.length });
+      const result = await importChatFile(files[i]);
+      if (result) created++; else failed++;
+    }
+    await loadCustomers();
+    setImportMultipleResult({ created, failed, total: files.length });
+    setImportingMultiple(false);
+    setImportMultipleProgress({ current: 0, total: 0 });
+  }
+
   async function importWhatsAppChat() {
     if (!importText.trim() || !anthropicKey) return;
     setImporting(true); setImportResult(null);
@@ -1256,41 +1368,46 @@ ${importText.slice(0, 12000)}`;
   async function extractTraderListings() {
     if (!traderChatText.trim() || !anthropicKey) return;
     setTraderImportLoading(true); setTraderImportResult(null);
-    const system = `You are parsing a WhatsApp group chat export from a UAE laptop/computer trading group. Extract ALL buying and selling listings.
+    const system = `You are analyzing WhatsApp chat exports between a UAE laptop reseller (Laptop For Less) and their suppliers/traders.
 
-WHATSAPP FORMAT:
-Each line: [DD/MM/YYYY, H:MM:SS AM/PM] SenderName: message text
-- Strip ~ from sender names
-- Combine consecutive lines from same sender into one message
-- Skip: "image omitted", "video omitted", "audio omitted", "document omitted", end-to-end encryption notices
-- Skip messages from "Laptop For Less" (the owner)
-- Questions like "Dell 5430 available?" without a price = ignore (buyer asking, not seller listing)
+Extract ALL laptop listings mentioned. A listing is any device with at least a model/brand AND a price mentioned in the same conversation thread.
 
-LISTING TYPE:
-- SELLING: WTS, "selling", "available", "have", "for sale", "i have" + device + price = selling listing
-- BUYING: WTB, "looking for", "need", "want to buy", "wanted" = buying listing
-- PARTS: battery, screen replacement, RAM upgrade, SSD, charger, keyboard, trackpad = category=part
+PARSING RULES:
+- Format: [date, time] SenderName: message
+- Owner messages are from 'Laptop For Less' - these are the buyer asking about prices
+- All other senders are traders/suppliers - these are sellers
+- ~ prefix on names should be removed
+- Combine context from nearby messages to understand full listing
+- Skip: 'image omitted', 'video omitted', 'audio omitted', 'document omitted', 'Messages and calls are end-to-end encrypted', 'This message was deleted', 'Voice call', 'No answer'
+- Pure Urdu/Arabic messages with no device info can be skipped
 
-SHORTHAND SPECS — parse these:
-- "8/256" = RAM:8GB, SSD:256GB  |  "16/512" = RAM:16GB, SSD:512GB
-- "8/256/i5" = RAM:8GB, SSD:256GB, Processor:Core i5
-- "i5 12th" or "i5/12gen" or "core i5 12" = Processor: Core i5 12th Gen
-- "i7 11th" = Core i7 11th Gen  |  "i3 10th" = Core i3 10th Gen
-- "ryzen 5" or "r5" = Ryzen 5  |  "ryzen 7" or "r7" = Ryzen 7
-- "m1" = Apple M1  |  "m2" = Apple M2  |  "m3" = Apple M3
-- "750", "750 aed", "AED 750", "750$" = price (USD prices multiply by 3.67 for AED)
+SHORTHAND DECODER:
+- '16/512' or '16gb/512gb' = RAM: 16GB, Storage: 512GB
+- '8/256' = RAM: 8GB, Storage: 256GB
+- '750aed' or '750 aed' or 'aed750' or '750$' or '750 usd' = Price: 750
+- 'i5 11th' or 'i5/11gen' or 'core i5 11' = Processor: Core i5 11th Gen
+- 'i7 12th' or 'i7/12gen' = Processor: Core i7 12th Gen
+- 'ryzen 7' or 'r7' = Processor: Ryzen 7
+- 'ryzen 5' or 'r5' = Processor: Ryzen 5
+- 'm1' or 'm2' or 'm3' = Apple Silicon
+- 'g7' 'g8' 'g6' after HP model = Generation (HP EliteBook 840 G7)
+- 'painted' or 'paint' = Condition: Refurbished/Painted
+- 'not paint' or 'original' = Condition: Original/Used
 
-LAPTOP MODELS:
-- "5430","5440","5530","5540","7490","7480" = Dell Latitude [model]
-- "840 g8","845 g8","850 g8","840g8" = HP EliteBook [model]
-- "elitebook" = HP EliteBook  |  "probook" = HP ProBook
-- "x1 carbon","thinkpad x1","t14","t15" = Lenovo ThinkPad [model]
-- "macbook air","mba" = MacBook Air  |  "macbook pro","mbp" = MacBook Pro
-- "macbook neo" = MacBook  |  "hp 840","hp 850" = HP EliteBook
+LISTING DETECTION - extract if you find:
+- A device model (Dell 5420, HP 840 G7, MacBook Air M1, etc)
+- AND a price in AED or USD anywhere in the conversation thread
+- Look across multiple messages from same sender to build complete picture
 
-Return ONLY a JSON array — no markdown, no explanation:
-[{"type":"selling or buying","category":"laptop or part","brand":"Dell|HP|MacBook|Lenovo|Other or empty","model":"","processor":"","ram":"","storage":"","screen":"","condition":"New|Used|Refurbished or empty","part_category":"Battery|RAM|SSD|Screen|Charger|Keyboard|Trackpad|Other or empty","part_compatible":"","part_specs":"","price":null,"currency":"AED","charger":"yes or no or empty","box":"yes or no or empty","notes":"","trader_name":"sender name without ~","trader_number":""}]
-Return [] only if there are truly zero valid listings.`;
+DETERMINE TYPE:
+- SELLING: trader mentions device + price, or responds to owner's inquiry with a price
+- BUYING: trader says WTB, looking for, need, want to buy
+
+LAPTOP MODELS: 5420/5430/5440/5530/5540 = Dell Latitude, 840g7/840g8/845g8 = HP EliteBook, elitebook = HP EliteBook, probook = HP ProBook, thinkpad/x1 carbon/t14 = Lenovo, macbook air/mba = MacBook Air, macbook pro/mbp = MacBook Pro
+
+Return ONLY valid JSON array — no markdown, no explanation:
+[{"type":"selling or buying","category":"laptop or part","brand":"MacBook|Dell|HP|Lenovo|Other","model":"","processor":"","ram":"","storage":"","condition":"New|Like New|Used|Refurbished|Painted|Unknown","price":null,"currency":"AED","charger":"yes|no|unknown","notes":"","trader_name":"name without ~","trader_number":""}]
+If no listings found, return [].`;
     try {
       const raw = await callClaude(anthropicKey, [{ role: "user", content: traderChatText.slice(0, 12000) }], system);
       const clean = raw.replace(/```json|```/g, "").trim();
@@ -1530,27 +1647,72 @@ For any issues please contact us on WhatsApp.
 
         {/* Import WhatsApp Chat */}
         <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>📥 IMPORT WHATSAPP CHAT</div>
-          <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 10, lineHeight: 1.5 }}>
-            Paste your WhatsApp chat export — Claude will extract all customers automatically.
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>📥 IMPORT WHATSAPP CHATS</div>
+          <div style={{ fontSize: 12, color: "#64748B", marginBottom: 12, lineHeight: 1.6 }}>
+            Export each chat as a .txt file (WhatsApp → Chat → ⋮ → More → Export → Without media).<br/>
+            Each file = one customer. Claude extracts specs, stage, budget automatically.
           </div>
-          <textarea
-            value={importText}
-            onChange={e => setImportText(e.target.value)}
-            placeholder="Paste WhatsApp chat text here...&#10;&#10;How to export: WhatsApp → Open chat → ⋮ → More → Export chat → Without media → Copy text"
-            rows={6}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 10, lineHeight: 1.5 }}
-          />
+
+          {/* Hidden file inputs */}
+          <input type="file" accept=".txt" ref={chatFileInputRef} style={{ display: "none" }}
+            onChange={e => { if (e.target.files?.[0]) importSingleChatFile(e.target.files[0]); e.target.value = ""; }} />
+          <input type="file" accept=".txt" multiple ref={chatFilesInputRef} style={{ display: "none" }}
+            onChange={e => { if (e.target.files?.length) importMultipleChatFiles(Array.from(e.target.files)); e.target.value = ""; }} />
+
+          {/* Progress bar for multiple import */}
+          {importingMultiple && (
+            <div style={{ padding: "10px 14px", borderRadius: 10, background: "#EEF2FF", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: "#6366F1", fontWeight: 700, marginBottom: 6 }}>
+                Processing {importMultipleProgress.current} of {importMultipleProgress.total} chats...
+              </div>
+              <div style={{ height: 4, borderRadius: 4, background: "#C7D2FE" }}>
+                <div style={{ height: "100%", borderRadius: 4, background: "#6366F1", width: `${importMultipleProgress.total ? (importMultipleProgress.current / importMultipleProgress.total) * 100 : 0}%`, transition: "width 0.3s" }} />
+              </div>
+            </div>
+          )}
+
+          {/* Multiple import result */}
+          {importMultipleResult && (
+            <div style={{ padding: "10px 14px", borderRadius: 10, background: "#ECFDF5", marginBottom: 10, fontSize: 13, fontWeight: 700, color: "#10B981" }}>
+              ✅ {importMultipleResult.created}/{importMultipleResult.total} chats imported{importMultipleResult.failed > 0 ? ` (${importMultipleResult.failed} failed)` : ""}
+            </div>
+          )}
+
+          {/* Single import result */}
           {importResult && (
             <div style={{ padding: "8px 12px", borderRadius: 8, background: importResult.success ? "#ECFDF5" : "#FEF2F2", color: importResult.success ? "#10B981" : "#EF4444", fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
               {importResult.message}
             </div>
           )}
-          <button onClick={importWhatsAppChat} disabled={importing || !importText.trim() || !anthropicKey}
-            style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: importing || !importText.trim() || !anthropicKey ? "#E2E8F0" : "#6366F1", color: importing || !importText.trim() || !anthropicKey ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 13, cursor: importing || !importText.trim() || !anthropicKey ? "not-allowed" : "pointer" }}>
-            {importing ? "⏳ Importing..." : "Import Customers →"}
-          </button>
-          {!anthropicKey && <div style={{ fontSize: 11, color: "#EF4444", marginTop: 6, textAlign: "center" }}>Add Anthropic API key above first</div>}
+
+          {/* File import buttons */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button onClick={() => { setImportResult(null); chatFileInputRef.current?.click(); }}
+              disabled={importing || importingMultiple || !anthropicKey}
+              style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: importing || importingMultiple || !anthropicKey ? "#E2E8F0" : "#6366F1", color: importing || importingMultiple || !anthropicKey ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              {importing ? "⏳ Importing..." : "📄 One Chat File"}
+            </button>
+            <button onClick={() => { setImportMultipleResult(null); chatFilesInputRef.current?.click(); }}
+              disabled={importing || importingMultiple || !anthropicKey}
+              style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: importing || importingMultiple || !anthropicKey ? "#E2E8F0" : "#10B981", color: importing || importingMultiple || !anthropicKey ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              {importingMultiple ? "⏳ Processing..." : "📂 Multiple Files"}
+            </button>
+          </div>
+
+          {/* Paste fallback */}
+          <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#CBD5E1", marginBottom: 8, letterSpacing: 0.5 }}>OR PASTE CHAT TEXT (FALLBACK)</div>
+            <textarea value={importText} onChange={e => setImportText(e.target.value)}
+              placeholder="Paste WhatsApp chat text here..."
+              rows={4}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8, lineHeight: 1.5 }} />
+            <button onClick={importWhatsAppChat} disabled={importing || !importText.trim() || !anthropicKey}
+              style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: importing || !importText.trim() || !anthropicKey ? "#E2E8F0" : "#6366F1", color: importing || !importText.trim() || !anthropicKey ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              {importing ? "⏳ Importing..." : "Import from Pasted Text →"}
+            </button>
+          </div>
+
+          {!anthropicKey && <div style={{ fontSize: 11, color: "#EF4444", marginTop: 8, textAlign: "center" }}>Add Anthropic API key above first</div>}
         </div>
 
         {/* Export Data */}
