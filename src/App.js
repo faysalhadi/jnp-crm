@@ -1256,7 +1256,7 @@ ${text.slice(0, 12000)}`;
       const { data: deal } = await supabase.from("deals").insert({
         customer_id: customer.id,
         brand: info.brand && info.brand !== "Unknown" ? info.brand : "",
-        model: info.model || "", processor: info.processor || "",
+        model: info.model || "",
         ram: info.ram || "", storage: info.storage || "",
         condition: info.condition && info.condition !== "Unknown" ? info.condition : "",
         budget: info.budget || null, stage: info.stage || "new_inquiry",
@@ -1376,7 +1376,6 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
           customer_id: customer.id,
           brand: c.brand && c.brand !== "unknown" ? c.brand : "",
           model: c.model || "",
-          processor: c.processor || "",
           ram: c.ram || "",
           storage: c.storage || "",
           condition: c.condition && c.condition !== "unknown" ? c.condition : "",
