@@ -361,6 +361,9 @@ async function saveImportedMessages(dealId, rawChatText) {
 
   for (const line of lines) {
     const trimmed = line.trim();
+
+    // Don't skip blank lines — they separate listing items inside a message
+    // Only skip if we have no current message context
     if (!trimmed) continue;
 
     const match = trimmed.match(lineRegex);
@@ -1477,6 +1480,23 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
     const cleanedTraderText = cleanWhatsAppText(traderChatText);
     console.log('Chat text length:', cleanedTraderText.length);
     console.log('First 200 chars:', cleanedTraderText.slice(0, 200));
+    
+    // Pre-process: join multi-line messages so Claude sees complete listings
+    // WhatsApp puts each line of a multi-line message on its own line
+    // We need to detect timestamp lines and join non-timestamp lines to previous message
+    const lineRegexForMerge = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/;
+    const rawLines = cleanedTraderText.split('\n');
+    const mergedLines = [];
+    for (const line of rawLines) {
+      if (lineRegexForMerge.test(line.trim())) {
+        mergedLines.push(line);
+      } else if (line.trim() && mergedLines.length > 0) {
+        // Append to previous message line
+        mergedLines[mergedLines.length - 1] += ' | ' + line.trim();
+      }
+    }
+    const processedText = mergedLines.join('\n');
+    console.log('Processed text (first 500):', processedText.slice(0, 500));
     const simpleSystem = "You are extracting laptop inventory listings from WhatsApp messages for a UAE laptop reseller.";
     const userMessage = `Extract every laptop listing from this WhatsApp chat. Return ONLY a JSON array, no markdown, no explanation.
 
@@ -1524,7 +1544,7 @@ Return format (JSON array ONLY, absolutely no text before or after):
 }]
 
 Chat:
-${cleanedTraderText.slice(0, 15000)}`;
+${processedText.slice(0, 15000)}`;
 
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
