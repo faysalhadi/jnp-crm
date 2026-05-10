@@ -1406,52 +1406,89 @@ ${importText.slice(0, 12000)}`;
   async function extractTraderListings() {
     if (!traderChatText.trim() || !anthropicKey) return;
     setTraderImportLoading(true); setTraderImportResult(null);
-    const system = `You are analyzing WhatsApp chat exports between a UAE laptop reseller (Laptop For Less) and their suppliers/traders.
+    const simpleSystem = "You are extracting laptop inventory listings from WhatsApp messages for a UAE laptop reseller.";
+    const userMessage = `Extract every laptop listing from this WhatsApp chat. Return ONLY a JSON array, no markdown, no explanation.
 
-Extract ALL laptop listings mentioned. A listing is any device with at least a model/brand AND a price mentioned in the same conversation thread.
+SHORTHAND RULES:
+- "840 g3" = HP EliteBook 840 G3
+- "840 g4" = HP EliteBook 840 G4
+- "850 g4" = HP EliteBook 850 G4
+- "850 g7" = HP EliteBook 850 G7
+- "650 g8" = HP EliteBook 650 G8
+- "T14" "T470" "T480" "T480s" "T490" "T570" "T580" "T590" = Lenovo ThinkPad [model]
+- "X1 yoga" = Lenovo ThinkPad X1 Yoga
+- "5400" "5411" "5420" "5430" "7410" etc = Dell Latitude [model]
+- "i5 6th" or "i5/6th" = Core i5 6th Gen
+- "i5 7th" = Core i5 7th Gen
+- "i5 8th" = Core i5 8th Gen
+- "i5 10th" = Core i5 10th Gen
+- "i5 11th" = Core i5 11th Gen
+- "i7 7th" = Core i7 7th Gen
+- "i7 8th" = Core i7 8th Gen
+- "8/256" = RAM: 8GB, Storage: 256GB
+- "16/512" = RAM: 16GB, Storage: 512GB
+- "16/256" = RAM: 16GB, Storage: 256GB
+- "New shipmant" or "New shipment" = these are selling listings
+- "750aed" or "750 aed" or "AED 750" = price 750 AED
+- "painted" = Condition: Painted/Refurbished
+- Sender name is the trader_name (remove ~ prefix if present)
+- Extract ALL devices listed, even if no price is given
 
-PARSING RULES:
-- Format: [date, time] SenderName: message
-- Owner messages are from 'Laptop For Less' - these are the buyer asking about prices
-- All other senders are traders/suppliers - these are sellers
-- ~ prefix on names should be removed
-- Combine context from nearby messages to understand full listing
-- Skip: 'image omitted', 'video omitted', 'audio omitted', 'document omitted', 'Messages and calls are end-to-end encrypted', 'This message was deleted', 'Voice call', 'No answer'
-- Pure Urdu/Arabic messages with no device info can be skipped
+Return format (JSON array ONLY, absolutely no text before or after):
+[{
+  "type": "selling",
+  "category": "laptop",
+  "brand": "HP" or "Lenovo" or "Dell" or "MacBook" or "Other",
+  "model": "full model name e.g. EliteBook 840 G3",
+  "processor": "e.g. Core i5 6th Gen",
+  "ram": "e.g. 8GB",
+  "storage": "e.g. 256GB",
+  "condition": "Used",
+  "price": null,
+  "currency": "AED",
+  "charger": "unknown",
+  "notes": "",
+  "trader_name": "sender name",
+  "trader_number": ""
+}]
 
-SHORTHAND DECODER:
-- '16/512' or '16gb/512gb' = RAM: 16GB, Storage: 512GB
-- '8/256' = RAM: 8GB, Storage: 256GB
-- '750aed' or '750 aed' or 'aed750' or '750$' or '750 usd' = Price: 750
-- 'i5 11th' or 'i5/11gen' or 'core i5 11' = Processor: Core i5 11th Gen
-- 'i7 12th' or 'i7/12gen' = Processor: Core i7 12th Gen
-- 'ryzen 7' or 'r7' = Processor: Ryzen 7
-- 'ryzen 5' or 'r5' = Processor: Ryzen 5
-- 'm1' or 'm2' or 'm3' = Apple Silicon
-- 'g7' 'g8' 'g6' after HP model = Generation (HP EliteBook 840 G7)
-- 'painted' or 'paint' = Condition: Refurbished/Painted
-- 'not paint' or 'original' = Condition: Original/Used
+Chat:
+${traderChatText.slice(0, 15000)}`;
 
-LISTING DETECTION - extract if you find:
-- A device model (Dell 5420, HP 840 G7, MacBook Air M1, etc)
-- AND a price in AED or USD anywhere in the conversation thread
-- Look across multiple messages from same sender to build complete picture
-
-DETERMINE TYPE:
-- SELLING: trader mentions device + price, or responds to owner's inquiry with a price
-- BUYING: trader says WTB, looking for, need, want to buy
-
-LAPTOP MODELS: 5420/5430/5440/5530/5540 = Dell Latitude, 840g7/840g8/845g8 = HP EliteBook, elitebook = HP EliteBook, probook = HP ProBook, thinkpad/x1 carbon/t14 = Lenovo, macbook air/mba = MacBook Air, macbook pro/mbp = MacBook Pro
-
-Return ONLY valid JSON array — no markdown, no explanation:
-[{"type":"selling or buying","category":"laptop or part","brand":"MacBook|Dell|HP|Lenovo|Other","model":"","processor":"","ram":"","storage":"","condition":"New|Like New|Used|Refurbished|Painted|Unknown","price":null,"currency":"AED","charger":"yes|no|unknown","notes":"","trader_name":"name without ~","trader_number":""}]
-If no listings found, return [].`;
     try {
-      const raw = await callClaude(anthropicKey, [{ role: "user", content: traderChatText.slice(0, 12000) }], system);
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let listings; try { listings = JSON.parse(clean); } catch { listings = []; }
-      setTraderImportPreview(Array.isArray(listings) ? listings : []);
-    } catch { setTraderImportResult({ success: false, message: "Extraction failed. Check API key." }); }
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          system: simpleSystem,
+          messages: [{ role: "user", content: userMessage }],
+        }),
+      });
+      const data = await res.json();
+      const raw = data?.content?.[0]?.text || "[]";
+      console.log("[Trader extraction] raw:", raw.slice(0, 300));
+      const jsonMatch = raw.match(/\[[\s\S]*\]/);
+      const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
+      let listings;
+      try { listings = JSON.parse(clean); } catch (e) {
+        console.error("[Trader extraction] parse error:", e, clean.slice(0, 100));
+        listings = [];
+      }
+      const result = Array.isArray(listings) ? listings : [];
+      console.log("[Trader extraction] extracted", result.length, "listings");
+      setTraderImportPreview(result);
+      if (result.length === 0) setTraderImportResult({ success: false, message: "No listings extracted. Check chat format or try pasting a simpler section." });
+    } catch (e) {
+      console.error("[Trader extraction] API error:", e);
+      setTraderImportResult({ success: false, message: "Extraction failed. Check API key." });
+    }
     setTraderImportLoading(false);
   }
 
