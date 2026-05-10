@@ -1075,44 +1075,62 @@ ${JSON.stringify(dealContexts, null, 2)}`;
     if (!importText.trim() || !anthropicKey) return;
     setImporting(true); setImportResult(null);
 
-    const prompt = `You are analyzing a WhatsApp chat export for a laptop reselling business in UAE called "Laptop for Less".
+    const prompt = `You are analyzing a WhatsApp chat export for a UAE laptop reselling business called "Laptop for Less".
 
-Extract ALL customer/contact information from this chat. For each unique person (excluding the business owner):
+WHATSAPP FORMAT: Lines start with [DD/MM/YYYY, H:MM:SS AM/PM] SenderName: message
+- Strip ~ from sender names (e.g. ~Kunchana → Kunchana)
+- "Laptop For Less" = the business owner — read their messages for context but do NOT create a record for them
+- Skip system messages and media omissions ("image omitted" etc.)
 
-Return ONLY a JSON array like this:
-[
-  {
-    "name": "contact name or display name",
-    "number": "phone number if visible or empty string",
-    "intent": "buying or selling or unknown",
-    "brand": "MacBook or Lenovo or Dell or HP or Other or unknown",
-    "model": "specific model or empty string",
-    "ram": "e.g. 8GB or empty",
-    "storage": "e.g. 256GB or empty",
-    "condition": "New or Like New or Used or Refurbished or unknown",
-    "budget": null or number,
-    "urgent": false or true,
-    "notes": "any relevant context from the conversation",
-    "stage": "new_inquiry or requirement_noted or negotiation or closed or lost"
-  }
-]
+YOUR TASK: Extract EVERY non-owner person as a customer. Do NOT skip anyone even if they only sent 1 message.
 
-Rules:
-- Skip forwarded messages, news, memes
-- Skip the business owner's messages
-- Only include people who are clearly buying or selling laptops
-- If someone appears multiple times, merge into one entry
-- Return empty array [] if no relevant contacts found
-- Return ONLY the JSON array, nothing else
+SHORTHAND SPECS:
+- "8/256" = RAM:8GB, Storage:256GB  |  "16/512" = RAM:16GB, Storage:512GB
+- "i5 11th" or "i5/11gen" = Processor: Core i5 11th Gen
+- "i7 12th" = Core i7 12th Gen  |  "i3 10th" = Core i3 10th Gen
+- "m1","m2","m3" = Apple Silicon  |  "ryzen 5","r5" = Ryzen 5
+- Numbers like "620", "1250 aed" = budget
+
+STAGE RULES:
+- new_inquiry: asked if something is available, no price/specs discussed
+- requirement_noted: specs and/or price mentioned by either side
+- negotiation: back-and-forth on price happened
+- closed: deal confirmed ("confirmed", "done", "I'll take it", "ok done")
+- lost: said no, or no reply after price given
+
+Return ONLY a JSON array — no markdown, no explanation:
+[{
+  "name": "customer name (strip ~)",
+  "number": "phone number from filename like +971 55 539 0642 or empty",
+  "intent": "buying or selling or unknown",
+  "brand": "MacBook or Dell or HP or Lenovo or Other or unknown",
+  "model": "model number/name or empty",
+  "processor": "Core i5 11th Gen or Apple M1 etc or empty",
+  "ram": "8GB or empty",
+  "storage": "256GB or empty",
+  "condition": "New or Like New or Used or Refurbished or unknown",
+  "budget": price as number or null,
+  "quantity": units wanted as number or null,
+  "urgent": true or false,
+  "notes": "key context from the conversation",
+  "stage": "new_inquiry or requirement_noted or negotiation or closed or lost"
+}]
+
+CRITICAL RULES:
+- Include EVERY customer even if they only sent 1 message
+- Include even if intent is not clear — set intent to "unknown"
+- Merge multiple appearances of same person into one entry
+- Never skip a contact just because the conversation is brief
+- Return ONLY the JSON array
 
 WhatsApp Chat:
-${importText.slice(0, 8000)}`;
+${importText.slice(0, 12000)}`;
 
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4000, messages: [{ role: "user", content: prompt }] }),
       });
       const data = await res.json();
       const raw = data?.content?.[0]?.text || "[]";
@@ -1121,7 +1139,7 @@ ${importText.slice(0, 8000)}`;
       try { contacts = JSON.parse(clean); } catch { contacts = []; }
 
       if (!contacts.length) {
-        setImportResult({ success: false, message: "No relevant contacts found in this chat." });
+        setImportResult({ success: false, message: "No contacts extracted. Try a longer chat or check the format." });
         setImporting(false); return;
       }
 
@@ -1136,10 +1154,14 @@ ${importText.slice(0, 8000)}`;
         if (!customer) continue;
         await supabase.from("deals").insert({
           customer_id: customer.id,
-          brand: c.brand !== "unknown" ? c.brand : "",
-          model: c.model || "", ram: c.ram || "", storage: c.storage || "",
-          condition: c.condition !== "unknown" ? c.condition : "",
-          budget: c.budget || null, stage: c.stage || "new_inquiry",
+          brand: c.brand && c.brand !== "unknown" ? c.brand : "",
+          model: c.model || "",
+          processor: c.processor || "",
+          ram: c.ram || "",
+          storage: c.storage || "",
+          condition: c.condition && c.condition !== "unknown" ? c.condition : "",
+          budget: c.budget || null,
+          stage: c.stage || "new_inquiry",
         });
         created++;
       }
@@ -1234,10 +1256,41 @@ ${importText.slice(0, 8000)}`;
   async function extractTraderListings() {
     if (!traderChatText.trim() || !anthropicKey) return;
     setTraderImportLoading(true); setTraderImportResult(null);
-    const system = `You are extracting trader listings from a WhatsApp group chat for a UAE laptop reselling business.
-Extract every buying and selling listing. Return ONLY a JSON array:
-[{"type":"selling or buying","category":"laptop or part","brand":"","model":"","processor":"","ram":"","storage":"","screen":"","condition":"","part_category":"Battery|RAM|SSD|Screen|Charger|Keyboard|Trackpad|Other or empty","part_compatible":"","part_specs":"","price":null,"currency":"AED","charger":"yes or no or empty","box":"yes or no or empty","notes":"","trader_name":"","trader_number":""}]
-Rules: Skip greetings, memes, irrelevant messages. Skip duplicates (same trader same device same day). For buying: type=buying, extract what they want and max budget as price. For parts: category=part and fill part fields. Extract trader name from message sender. Return empty array [] if no relevant listings found.`;
+    const system = `You are parsing a WhatsApp group chat export from a UAE laptop/computer trading group. Extract ALL buying and selling listings.
+
+WHATSAPP FORMAT:
+Each line: [DD/MM/YYYY, H:MM:SS AM/PM] SenderName: message text
+- Strip ~ from sender names
+- Combine consecutive lines from same sender into one message
+- Skip: "image omitted", "video omitted", "audio omitted", "document omitted", end-to-end encryption notices
+- Skip messages from "Laptop For Less" (the owner)
+- Questions like "Dell 5430 available?" without a price = ignore (buyer asking, not seller listing)
+
+LISTING TYPE:
+- SELLING: WTS, "selling", "available", "have", "for sale", "i have" + device + price = selling listing
+- BUYING: WTB, "looking for", "need", "want to buy", "wanted" = buying listing
+- PARTS: battery, screen replacement, RAM upgrade, SSD, charger, keyboard, trackpad = category=part
+
+SHORTHAND SPECS — parse these:
+- "8/256" = RAM:8GB, SSD:256GB  |  "16/512" = RAM:16GB, SSD:512GB
+- "8/256/i5" = RAM:8GB, SSD:256GB, Processor:Core i5
+- "i5 12th" or "i5/12gen" or "core i5 12" = Processor: Core i5 12th Gen
+- "i7 11th" = Core i7 11th Gen  |  "i3 10th" = Core i3 10th Gen
+- "ryzen 5" or "r5" = Ryzen 5  |  "ryzen 7" or "r7" = Ryzen 7
+- "m1" = Apple M1  |  "m2" = Apple M2  |  "m3" = Apple M3
+- "750", "750 aed", "AED 750", "750$" = price (USD prices multiply by 3.67 for AED)
+
+LAPTOP MODELS:
+- "5430","5440","5530","5540","7490","7480" = Dell Latitude [model]
+- "840 g8","845 g8","850 g8","840g8" = HP EliteBook [model]
+- "elitebook" = HP EliteBook  |  "probook" = HP ProBook
+- "x1 carbon","thinkpad x1","t14","t15" = Lenovo ThinkPad [model]
+- "macbook air","mba" = MacBook Air  |  "macbook pro","mbp" = MacBook Pro
+- "macbook neo" = MacBook  |  "hp 840","hp 850" = HP EliteBook
+
+Return ONLY a JSON array — no markdown, no explanation:
+[{"type":"selling or buying","category":"laptop or part","brand":"Dell|HP|MacBook|Lenovo|Other or empty","model":"","processor":"","ram":"","storage":"","screen":"","condition":"New|Used|Refurbished or empty","part_category":"Battery|RAM|SSD|Screen|Charger|Keyboard|Trackpad|Other or empty","part_compatible":"","part_specs":"","price":null,"currency":"AED","charger":"yes or no or empty","box":"yes or no or empty","notes":"","trader_name":"sender name without ~","trader_number":""}]
+Return [] only if there are truly zero valid listings.`;
     try {
       const raw = await callClaude(anthropicKey, [{ role: "user", content: traderChatText.slice(0, 12000) }], system);
       const clean = raw.replace(/```json|```/g, "").trim();
