@@ -331,6 +331,42 @@ FOLLOW UPS DUE:
 ${followUps||"(none due)"}`;
 }
 
+async function saveImportedMessages(dealId, chatContent, ownerName = "Laptop For Less") {
+  const lines = chatContent.split('\n');
+  const messages = [];
+  let currentMessage = null;
+  const messageRegex = /\[(\d{2}\/\d{2}\/\d{4}),\s*(\d{1,2}:\d{2}:\d{2}\s*[AP]M)\]\s*~?([^:]+):\s*(.*)/;
+  const skipPhrases = ['omitted', 'end-to-end encrypted', 'deleted', 'Voice call', 'No answer', 'is a contact', 'This business is now using'];
+
+  for (const line of lines) {
+    const match = line.match(messageRegex);
+    if (match) {
+      if (currentMessage) messages.push(currentMessage);
+      const [, date, time, sender, content] = match;
+      const cleanSender = sender.replace(/^~/, '').trim();
+      const cleanContent = content.trim();
+      if (!cleanContent || skipPhrases.some(p => cleanContent.includes(p))) { currentMessage = null; continue; }
+      const [day, month, year] = date.split('/');
+      let ts;
+      try { ts = new Date(`${year}-${month}-${day} ${time}`).toISOString(); } catch { ts = new Date().toISOString(); }
+      const isOwner = cleanSender === ownerName || cleanSender.toLowerCase().includes('laptop for less');
+      currentMessage = { deal_id: dealId, role: isOwner ? 'assistant' : 'customer', content: cleanContent, sent: isOwner ? cleanContent : null, is_voice: false, ts };
+    } else if (currentMessage && line.trim()) {
+      currentMessage.content += '\n' + line.trim();
+      if (currentMessage.sent) currentMessage.sent += '\n' + line.trim();
+    }
+  }
+  if (currentMessage) messages.push(currentMessage);
+
+  if (messages.length > 0) {
+    const chunkSize = 50;
+    for (let i = 0; i < messages.length; i += chunkSize) {
+      await supabase.from('messages').insert(messages.slice(i, i + chunkSize));
+    }
+  }
+  return messages.length;
+}
+
 // ── small UI ──────────────────────────────────────────────────────────────────
 function Badge({ color, bg, children, small }) {
   return (
@@ -1146,14 +1182,15 @@ ${text.slice(0, 12000)}`;
       }).select().single();
       if (!customer) return null;
 
-      await supabase.from("deals").insert({
+      const { data: deal } = await supabase.from("deals").insert({
         customer_id: customer.id,
         brand: info.brand && info.brand !== "Unknown" ? info.brand : "",
         model: info.model || "", processor: info.processor || "",
         ram: info.ram || "", storage: info.storage || "",
         condition: info.condition && info.condition !== "Unknown" ? info.condition : "",
         budget: info.budget || null, stage: info.stage || "new_inquiry",
-      });
+      }).select().single();
+      if (deal) await saveImportedMessages(deal.id, text);
       return customer;
     } catch { return null; }
   }
@@ -1264,7 +1301,7 @@ ${importText.slice(0, 12000)}`;
           tier: "cold", urgent: c.urgent || false,
         }).select().single();
         if (!customer) continue;
-        await supabase.from("deals").insert({
+        const { data: deal } = await supabase.from("deals").insert({
           customer_id: customer.id,
           brand: c.brand && c.brand !== "unknown" ? c.brand : "",
           model: c.model || "",
@@ -1274,7 +1311,8 @@ ${importText.slice(0, 12000)}`;
           condition: c.condition && c.condition !== "unknown" ? c.condition : "",
           budget: c.budget || null,
           stage: c.stage || "new_inquiry",
-        });
+        }).select().single();
+        if (deal) await saveImportedMessages(deal.id, importText);
         created++;
       }
 
@@ -1968,6 +2006,12 @@ For any issues please contact us on WhatsApp.
 
         {/* messages */}
         <div style={{ flex: 1, padding: "12px", display: "flex", flexDirection: "column", gap: 10, paddingBottom: 4 }}>
+          {/* Imported from WhatsApp banner */}
+          {messages.length > 0 && messages[0]?.ts && (Date.now() - new Date(messages[0].ts).getTime()) > 3600000 && (
+            <div style={{ textAlign: "center", padding: "6px 12px", borderRadius: 10, background: "#F0FDF4", border: "1px solid #BBF7D0", fontSize: 11, color: "#16A34A", fontWeight: 600 }}>
+              📱 Conversation imported from WhatsApp · {new Date(messages[0].ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+            </div>
+          )}
           {messages.length === 0 && !outreachMode && (
             <div style={{ textAlign: "center", padding: "24px 20px", color: "#CBD5E1" }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
