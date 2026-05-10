@@ -1350,7 +1350,7 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4000, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 8000, messages: [{ role: "user", content: prompt }] }),
       });
       const data = await res.json();
       const raw = data?.content?.[0]?.text || "[]";
@@ -1476,13 +1476,10 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
   async function extractTraderListings() {
     if (!traderChatText.trim() || !anthropicKey) return;
     setTraderImportLoading(true); setTraderImportResult(null);
+    setTraderImportPreview(null);
+
+    // Step 1: Clean and merge multi-line messages
     const cleanedTraderText = cleanWhatsAppText(traderChatText);
-    console.log('Chat text length:', cleanedTraderText.length);
-    console.log('First 200 chars:', cleanedTraderText.slice(0, 200));
-    
-    // Pre-process: join multi-line messages so Claude sees complete listings
-    // WhatsApp puts each line of a multi-line message on its own line
-    // We need to detect timestamp lines and join non-timestamp lines to previous message
     const lineRegexForMerge = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/;
     const rawLines = cleanedTraderText.split('\n');
     const mergedLines = [];
@@ -1490,100 +1487,122 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
       if (lineRegexForMerge.test(line.trim())) {
         mergedLines.push(line);
       } else if (line.trim() && mergedLines.length > 0) {
-        // Append to previous message line
         mergedLines[mergedLines.length - 1] += ' | ' + line.trim();
       }
     }
-    const processedText = mergedLines.join('\n');
-    console.log('Processed text (first 500):', processedText.slice(0, 500));
-    const simpleSystem = "You are extracting laptop inventory listings from WhatsApp messages for a UAE laptop reseller.";
-    const userMessage = `Extract every laptop listing from this WhatsApp chat. Return ONLY a JSON array, no markdown, no explanation.
 
-SHORTHAND RULES:
-- "840 g3" = HP EliteBook 840 G3
-- "840 g4" = HP EliteBook 840 G4
-- "850 g4" = HP EliteBook 850 G4
-- "850 g7" = HP EliteBook 850 G7
-- "650 g8" = HP EliteBook 650 G8
-- "T14" "T470" "T480" "T480s" "T490" "T570" "T580" "T590" = Lenovo ThinkPad [model]
-- "X1 yoga" = Lenovo ThinkPad X1 Yoga
-- "5400" "5411" "5420" "5430" "7410" etc = Dell Latitude [model]
-- "i5 6th" or "i5/6th" = Core i5 6th Gen
-- "i5 7th" = Core i5 7th Gen
-- "i5 8th" = Core i5 8th Gen
-- "i5 10th" = Core i5 10th Gen
-- "i5 11th" = Core i5 11th Gen
-- "i7 7th" = Core i7 7th Gen
-- "i7 8th" = Core i7 8th Gen
-- "8/256" = RAM: 8GB, Storage: 256GB
-- "16/512" = RAM: 16GB, Storage: 512GB
-- "16/256" = RAM: 16GB, Storage: 256GB
-- "New shipmant" or "New shipment" = these are selling listings
-- "750aed" or "750 aed" or "AED 750" = price 750 AED
-- "painted" = Condition: Painted/Refurbished
-- Sender name is the trader_name (remove ~ prefix if present)
-- Extract ALL devices listed, even if no price is given
+    // Step 2: Filter to only lines with laptop selling signals
+    const skipSenders = ['JNP', 'JNP Laptop Market'];
+    const skipContent = ['end-to-end encrypted', 'added you', 'created this group', 'omitted', 'sticker', 'document omitted'];
+    const sellSignals = ['wts', 'want to sale', 'want to sell', 'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
+    const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad', 'elitebook', 'latitude', 'surface', 'macbook', '840', '850', '5420', '7420', '640', '830', '845', '835'];
 
-Return format (JSON array ONLY, absolutely no text before or after):
-[{
-  "type": "selling",
-  "category": "laptop",
-  "brand": "HP" or "Lenovo" or "Dell" or "MacBook" or "Other",
-  "model": "full model name e.g. EliteBook 840 G3",
-  "processor": "e.g. Core i5 6th Gen",
-  "ram": "e.g. 8GB",
-  "storage": "e.g. 256GB",
-  "condition": "Used",
-  "price": null,
-  "currency": "AED",
-  "charger": "unknown",
-  "notes": "",
-  "trader_name": "sender name",
-  "trader_number": ""
-}]
+    const relevantLines = mergedLines.filter(line => {
+      const lower = line.toLowerCase();
+      if (skipContent.some(s => lower.includes(s))) return false;
+      if (skipSenders.some(s => line.includes('] ' + s + ':') || line.includes('] ~' + s + ':'))) return false;
+      const hasSellSignal = sellSignals.some(s => lower.includes(s));
+      const hasLaptop = laptopBrands.some(b => lower.includes(b));
+      return hasSellSignal || (hasLaptop && lower.includes('|'));
+    });
+
+    console.log('Total lines:', mergedLines.length, 'Relevant lines:', relevantLines.length);
+    setTraderImportResult({ success: false, message: `⏳ Processing ${relevantLines.length} relevant messages...` });
+
+    if (relevantLines.length === 0) {
+      setTraderImportResult({ success: false, message: 'No laptop listings found. Make sure you pasted a group chat with laptop listings.' });
+      setTraderImportLoading(false);
+      return;
+    }
+
+    // Step 3: Process in chunks of 30 lines to avoid token limits
+    const chunkSize = 30;
+    const allListings = [];
+    const totalChunks = Math.ceil(relevantLines.length / chunkSize);
+
+    const extractionPrompt = (chunkText) => `Extract laptop listings from this WhatsApp group chat. Return ONLY a JSON array, no markdown.
+
+SELLING signals: WTS, Want to Sell, Want to Sale, Available, New Shipment, W.T.SAL
+SKIP: RAM only, SSD only, HDD only, phones, LCD papers, screen papers, desktop towers, buying requests
+
+BRAND DECODER:
+- 640/650/840/850/830/835/845/1030/1040/EliteBook/firefly/ProBook = HP laptop
+- 3301/3390/3480/5290/5400/5410/5420/5490/5511/7320/7390/7400/7410/7420/7430/7490/XPS/Precision/Latitude = Dell laptop  
+- T14/T14s/X13/ThinkPad/T480/T490/L380 = Lenovo laptop
+- Surface = Microsoft laptop
+- MacBook = Apple laptop
+
+SPEC DECODER:
+- "CI5.11TH.8.256" = Core i5 11th Gen, 8GB RAM, 256GB SSD
+- "i5/11th Gen 8/256Gb" = Core i5 11th Gen, 8GB, 256GB
+- "840g8 Ci711th 16gb 512" = HP EliteBook 840 G8, Core i7 11th, 16GB, 512GB
+- "645g4 AMD 7 -1pc" = HP 645 G4, AMD Ryzen 7, qty 1
+
+Return format:
+[{"type":"selling","category":"laptop","brand":"HP","model":"EliteBook 840 G8","processor":"Core i7 11th Gen","ram":"8GB","storage":"256GB","condition":"Used","quantity":null,"price":null,"currency":"AED","charger":"unknown","notes":"","trader_name":"sender name","trader_number":"phone if visible in message"}]
+
+If no laptop listings found return [].
 
 Chat:
-${processedText.slice(0, 15000)}`;
+${chunkText}`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
-          system: simpleSystem,
-          messages: [{ role: "user", content: userMessage }],
-        }),
-      });
-      const data = await res.json();
-      if (data.error) console.error('[Trader extraction] API error:', data.error);
-      const raw = data?.content?.[0]?.text || "[]";
-      console.log('Claude raw response:', raw);
-      const jsonMatch = raw.match(/\[[\s\S]*\]/);
-      const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
-      let listings;
-      try { listings = JSON.parse(clean); } catch (e) {
-        console.error("[Trader extraction] parse error:", e, clean.slice(0, 100));
-        listings = [];
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = relevantLines.slice(i * chunkSize, (i + 1) * chunkSize);
+        const chunkText = chunk.join('\n');
+        setTraderImportResult({ success: false, message: `⏳ Processing chunk ${i + 1} of ${totalChunks}...` });
+
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 8000,
+            system: "You extract laptop inventory listings from WhatsApp group chats for a UAE laptop reseller. Return only valid JSON arrays.",
+            messages: [{ role: "user", content: extractionPrompt(chunkText) }],
+          }),
+        });
+
+        const data = await res.json();
+        if (data.error) { console.error('API error chunk', i, data.error); continue; }
+        const raw = data?.content?.[0]?.text || "[]";
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
+        let chunkListings = [];
+        try { chunkListings = JSON.parse(clean); } catch(e) { console.error('Parse error chunk', i, e.message, clean.slice(0, 100)); }
+        if (Array.isArray(chunkListings)) allListings.push(...chunkListings);
+        console.log(`Chunk ${i+1}/${totalChunks}: ${chunkListings.length} listings`);
       }
-      const result = Array.isArray(listings) ? listings : [];
-      console.log('Parsed results:', result);
-      setTraderImportPreview(result);
-      if (result.length === 0) setTraderImportResult({ success: false, message: "No listings extracted. Check chat format or try pasting a simpler section." });
-    } catch (e) {
-      console.error("[Trader extraction] API error:", e);
+
+      // Deduplicate by brand+model+trader
+      const seen = new Set();
+      const deduped = allListings.filter(l => {
+        const key = `${l.trader_name}|${l.brand}|${l.model}|${l.ram}|${l.storage}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      console.log('Total listings:', allListings.length, 'After dedup:', deduped.length);
+      setTraderImportPreview(deduped);
+      if (deduped.length === 0) {
+        setTraderImportResult({ success: false, message: "No laptop listings found. This group chat may not have laptop listings, or try a different section." });
+      } else {
+        setTraderImportResult({ success: false, message: `✅ Found ${deduped.length} listings from ${new Set(deduped.map(l => l.trader_name)).size} traders. Confirm to save.` });
+      }
+    } catch(e) {
+      console.error("Extraction error:", e);
       setTraderImportResult({ success: false, message: "Extraction failed. Check API key." });
     }
     setTraderImportLoading(false);
   }
 
-  async function saveTraderListings() {
+    async function saveTraderListings() {
     if (!traderImportPreview?.length) return;
     setSavingTraderListings(true);
     const rows = traderImportPreview.map(l => ({ ...l, source_group: traderGroup || "Other", status: "active" }));
