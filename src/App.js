@@ -1470,7 +1470,11 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
   // ── traders ──
   const loadTraderListings = useCallback(async () => {
     setTraderListingsLoading(true);
-    const { data } = await supabase.from("trader_inventory").select("*").order("created_at", { ascending: false });
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase.from("trader_inventory").select("*")
+      .eq("status", "active")
+      .gte("created_at", thirtyDaysAgo)
+      .order("created_at", { ascending: false });
     setTraderListings(data || []);
     setTraderListingsLoading(false);
   }, []);
@@ -1606,10 +1610,17 @@ ${chunkText}`;
     setTraderImportLoading(false);
   }
 
-    async function saveTraderListings() {
+  async function saveTraderListings() {
     if (!traderImportPreview?.length) return;
     setSavingTraderListings(true);
-    const rows = traderImportPreview.map(l => ({ ...l, source_group: traderGroup || "Other", status: "active" }));
+    const group = traderGroup || "Other";
+    // Delete stale listings from the same source_group (older than 1 hour)
+    // so re-importing the same chat replaces old data instead of duplicating
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await supabase.from("trader_inventory").delete()
+      .eq("source_group", group)
+      .lt("created_at", oneHourAgo);
+    const rows = traderImportPreview.map(l => ({ ...l, source_group: group, status: "active" }));
     const { error } = await supabase.from("trader_inventory").insert(rows);
     if (!error) {
       await loadTraderListings();
@@ -3245,17 +3256,24 @@ For any issues please contact us on WhatsApp.
                   return shown.map(item => {
                     const isSelling = item.type === "selling";
                     const isPart = item.category === "part";
-                    const isOld = daysSince(item.created_at) >= 3;
+                    const ageDays = daysSince(item.created_at);
+                    const ageBadge = ageDays <= 3
+                      ? { icon: "🟢", label: "Fresh", color: "#10B981", bg: "#ECFDF5" }
+                      : ageDays <= 7
+                      ? { icon: "🟡", label: "Recent", color: "#F59E0B", bg: "#FFFBEB" }
+                      : ageDays <= 14
+                      ? { icon: "🟠", label: "Getting old", color: "#F97316", bg: "#FFF7ED" }
+                      : { icon: "🔴", label: "May be sold", color: "#EF4444", bg: "#FEF2F2" };
                     const device = isPart
                       ? [item.part_category, item.part_compatible, item.part_specs].filter(Boolean).join(" · ")
                       : [item.brand, item.model, item.processor, item.ram, item.storage, item.screen, item.condition].filter(Boolean).join(" · ");
                     return (
-                      <div key={item.id} style={{ background: "#fff", borderRadius: 16, padding: "12px 14px", marginBottom: 8, border: `1.5px solid ${isOld ? "#FEE2E2" : "#F1F5F9"}`, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+                      <div key={item.id} style={{ background: "#fff", borderRadius: 16, padding: "12px 14px", marginBottom: 8, border: `1.5px solid ${ageDays > 14 ? "#FEE2E2" : "#F1F5F9"}`, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                             <Badge color={isSelling ? "#10B981" : "#6366F1"} bg={isSelling ? "#ECFDF5" : "#EEF2FF"} small>{isSelling ? "🟢 SELLING" : "🔵 BUYING"}</Badge>
                             <Badge color="#64748B" bg="#F1F5F9" small>{isPart ? "🔧 PART" : "💻 LAPTOP"}</Badge>
-                            {isOld && <Badge color="#EF4444" bg="#FEF2F2" small>⚠️ {daysSince(item.created_at)}d old</Badge>}
+                            <Badge color={ageBadge.color} bg={ageBadge.bg} small>{ageBadge.icon} {ageDays}d · {ageBadge.label}</Badge>
                           </div>
                           {item.price && <span style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>AED {Number(item.price).toLocaleString()}</span>}
                         </div>
