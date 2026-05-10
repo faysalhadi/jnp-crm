@@ -496,6 +496,10 @@ export default function App() {
   const [pendingSuggestion, setPendingSuggestion] = useState(null);
   const [copied, setCopied] = useState(null);
   const [editSent, setEditSent] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberInput, setNumberInput] = useState('');
   const [outreachMode, setOutreachMode] = useState(false);
   const [outreachReason, setOutreachReason] = useState("");
   const [outreachCustom, setOutreachCustom] = useState("");
@@ -1971,16 +1975,64 @@ For any issues please contact us on WhatsApp.
               style={{ width: 34, height: 34, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 18, flexShrink: 0 }}>←</button>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{activeCustomer.name}</span>
+                {editingName ? (
+                  <input
+                    autoFocus
+                    value={nameInput}
+                    onChange={e => setNameInput(e.target.value)}
+                    onBlur={async () => {
+                      if (nameInput.trim() && nameInput.trim() !== activeCustomer.name) {
+                        await supabase.from('customers').update({ name: nameInput.trim() }).eq('id', activeCustomerId);
+                        await loadCustomers();
+                      }
+                      setEditingName(false);
+                    }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingName(false); }}
+                    style={{ fontWeight: 800, fontSize: 16, color: "#0F172A", border: "none", borderBottom: "2px solid #6366F1", outline: "none", background: "transparent", padding: "1px 0", minWidth: 60, maxWidth: 160 }}
+                  />
+                ) : (
+                  <span
+                    onClick={() => { setEditingName(true); setNameInput(activeCustomer.name); }}
+                    style={{ fontWeight: 800, fontSize: 16, color: "#0F172A", cursor: "text", borderBottom: "1px dashed transparent" }}
+                    title="Tap to edit name"
+                  >{activeCustomer.name}</span>
+                )}
                 {activeCustomer.urgent && <Badge color="#EF4444" bg="#FEF2F2" small>🔴 URGENT</Badge>}
                 <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>
               </div>
-              {activeCustomer.number && (
-                <a href={`https://wa.me/${activeCustomer.number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                  style={{ fontSize: 12, color: "#6366F1", textDecoration: "none", fontWeight: 600 }}>
-                  📱 {activeCustomer.number}
-                </a>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                {editingNumber ? (
+                  <input
+                    autoFocus
+                    value={numberInput}
+                    onChange={e => setNumberInput(e.target.value)}
+                    onBlur={async () => {
+                      if (numberInput.trim() !== activeCustomer.number) {
+                        await supabase.from('customers').update({ number: numberInput.trim() }).eq('id', activeCustomerId);
+                        await loadCustomers();
+                      }
+                      setEditingNumber(false);
+                    }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingNumber(false); }}
+                    placeholder="Phone number"
+                    style={{ fontSize: 12, color: "#6366F1", border: "none", borderBottom: "2px solid #6366F1", outline: "none", background: "transparent", padding: "1px 0", minWidth: 80, maxWidth: 160, fontWeight: 600 }}
+                  />
+                ) : (
+                  <span
+                    onClick={() => { setEditingNumber(true); setNumberInput(activeCustomer.number || ''); }}
+                    style={{ fontSize: 12, color: "#6366F1", fontWeight: 600, cursor: "text" }}
+                    title="Tap to edit number"
+                  >
+                    {activeCustomer.number ? `📱 ${activeCustomer.number}` : '+ Add number'}
+                  </span>
+                )}
+                {activeCustomer.number && !editingNumber && (
+                  <a href={`https://wa.me/${activeCustomer.number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                    style={{ fontSize: 11, color: "#25D366", fontWeight: 700, textDecoration: "none" }}>
+                    WA
+                  </a>
+                )}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button onClick={() => setShowAddDeal(true)} style={{ padding: "6px 11px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, fontWeight: 700, color: "#6366F1", cursor: "pointer" }}>+ Deal</button>
