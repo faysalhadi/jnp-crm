@@ -331,40 +331,95 @@ FOLLOW UPS DUE:
 ${followUps||"(none due)"}`;
 }
 
-async function saveImportedMessages(dealId, chatContent, ownerName = "Laptop For Less") {
-  const lines = chatContent.split('\n');
+function convertTo24Hour(timeStr) {
+  const clean = timeStr.trim();
+  const isPM = clean.toLowerCase().includes('pm');
+  const isAM = clean.toLowerCase().includes('am');
+  const timePart = clean.replace(/\s*(am|pm)/i, '').trim();
+  const parts = timePart.split(':');
+  let hours = parseInt(parts[0]);
+  const minutes = parts[1] || '00';
+  const seconds = parts[2] || '00';
+  if (isPM && hours !== 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+  return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`;
+}
+
+async function saveImportedMessages(dealId, rawChatText) {
+  if (!dealId || !rawChatText) return 0;
+
   const messages = [];
-  let currentMessage = null;
-  const messageRegex = /\[(\d{2}\/\d{2}\/\d{4}),\s*(\d{1,2}:\d{2}:\d{2}\s*[AP]M)\]\s*~?([^:]+):\s*(.*)/;
-  const skipPhrases = ['omitted', 'end-to-end encrypted', 'deleted', 'Voice call', 'No answer', 'is a contact', 'This business is now using'];
+  const lines = rawChatText.split('\n');
+  // Handles 1 or 2 digit day/month, optional seconds, case-insensitive AM/PM
+  const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm))\]\s*~?([^:]+):\s*(.*)/;
+  const skipPhrases = [
+    'omitted', 'end-to-end encrypted', 'deleted',
+    'Voice call', 'No answer', 'is a contact',
+    'This business is now using', 'Messages and calls are',
+    '<This message was edited>'
+  ];
+
+  let currentMsg = null;
 
   for (const line of lines) {
-    const match = line.match(messageRegex);
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const match = trimmed.match(lineRegex);
+
     if (match) {
-      if (currentMessage) messages.push(currentMessage);
-      const [, date, time, sender, content] = match;
-      const cleanSender = sender.replace(/^~/, '').trim();
-      const cleanContent = content.trim();
-      if (!cleanContent || skipPhrases.some(p => cleanContent.includes(p))) { currentMessage = null; continue; }
+      if (currentMsg && currentMsg.content.trim()) messages.push(currentMsg);
+
+      const [, date, time, rawSender, content] = match;
+      const sender = rawSender.replace(/^~/, '').trim();
+      const cleanContent = content.replace(/<This message was edited>/g, '').trim();
+
+      if (!cleanContent || skipPhrases.some(p => cleanContent.includes(p))) {
+        currentMsg = null;
+        continue;
+      }
+
       const [day, month, year] = date.split('/');
       let ts;
-      try { ts = new Date(`${year}-${month}-${day} ${time}`).toISOString(); } catch { ts = new Date().toISOString(); }
-      const isOwner = cleanSender === ownerName || cleanSender.toLowerCase().includes('laptop for less');
-      currentMessage = { deal_id: dealId, role: isOwner ? 'assistant' : 'customer', content: cleanContent, sent: isOwner ? cleanContent : null, is_voice: false, ts };
-    } else if (currentMessage && line.trim()) {
-      currentMessage.content += '\n' + line.trim();
-      if (currentMessage.sent) currentMessage.sent += '\n' + line.trim();
-    }
-  }
-  if (currentMessage) messages.push(currentMessage);
+      try {
+        ts = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${convertTo24Hour(time)}`).toISOString();
+      } catch {
+        ts = new Date().toISOString();
+      }
 
-  if (messages.length > 0) {
-    const chunkSize = 50;
-    for (let i = 0; i < messages.length; i += chunkSize) {
-      await supabase.from('messages').insert(messages.slice(i, i + chunkSize));
+      const isOwner = sender === 'Laptop For Less' || sender === 'Laptop for Less';
+
+      currentMsg = {
+        deal_id: dealId,
+        role: isOwner ? 'assistant' : 'customer',
+        content: cleanContent,
+        sent: isOwner ? cleanContent : null,
+        is_voice: false,
+        ts,
+      };
+    } else if (currentMsg) {
+      if (!skipPhrases.some(p => trimmed.includes(p))) {
+        currentMsg.content += '\n' + trimmed;
+        if (currentMsg.sent) currentMsg.sent += '\n' + trimmed;
+      }
     }
   }
-  return messages.length;
+
+  if (currentMsg && currentMsg.content.trim()) messages.push(currentMsg);
+
+  const validMessages = messages.filter(m =>
+    m.content && m.content.length > 1 && !skipPhrases.some(p => m.content.includes(p))
+  );
+
+  if (validMessages.length === 0) return 0;
+
+  const chunkSize = 50;
+  for (let i = 0; i < validMessages.length; i += chunkSize) {
+    const { error } = await supabase.from('messages').insert(validMessages.slice(i, i + chunkSize));
+    if (error) console.error('Message insert error:', error);
+  }
+
+  return validMessages.length;
 }
 
 // ── small UI ──────────────────────────────────────────────────────────────────
