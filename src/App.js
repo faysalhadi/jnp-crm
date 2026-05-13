@@ -78,6 +78,19 @@ const QUICK_ACTIONS = [
   { icon: "📋", label: "Follow Ups Due",    question: "Who do I need to follow up with today and what should I say to each one?" },
 ];
 
+const SOURCING_STAGES = ["Evaluating", "Bid Sent", "Won", "Paid", "Shipped", "Customs", "Arrived", "In Stock"];
+const SOURCING_STAGE_COLORS = {
+  "Evaluating": { fg: "#6366F1", bg: "#EEF2FF" },
+  "Bid Sent":   { fg: "#F59E0B", bg: "#FFFBEB" },
+  "Won":        { fg: "#10B981", bg: "#ECFDF5" },
+  "Paid":       { fg: "#059669", bg: "#D1FAE5" },
+  "Shipped":    { fg: "#3B82F6", bg: "#DBEAFE" },
+  "Customs":    { fg: "#8B5CF6", bg: "#EDE9FE" },
+  "Arrived":    { fg: "#06B6D4", bg: "#CFFAFE" },
+  "In Stock":   { fg: "#10B981", bg: "#ECFDF5" },
+};
+const SOURCING_CHANNELS = ["Gmail", "WhatsApp", "Both"];
+
 const SYSTEM_PROMPT = `You are an AI assistant for "Laptop for Less", a UAE laptop reselling business run on WhatsApp.
 
 BUSINESS:
@@ -580,6 +593,24 @@ export default function App() {
   const [broadcastLoading, setBroadcastLoading] = useState(false);
   const [broadcastStep, setBroadcastStep] = useState("clients");
   const [broadcastSent, setBroadcastSent] = useState(new Set());
+
+  // ── sourcing ──
+  const [sourcingDeals, setSourcingDeals] = useState([]);
+  const [sourcingLoading, setSourcingLoading] = useState(false);
+  const [selectedSourcingId, setSelectedSourcingId] = useState(null);
+  const [showNewSourcing, setShowNewSourcing] = useState(false);
+  const [showLogSourcing, setShowLogSourcing] = useState(false);
+  const [newSourcingForm, setNewSourcingForm] = useState({ supplier: "", contact: "", channel: "Gmail", lot: "", notes: "" });
+  const [logSourcingForm, setLogSourcingForm] = useState({ ch: "whatsapp", sender: "You", content: "" });
+  const [sourcingFilterStage, setSourcingFilterStage] = useState("All");
+  const [sourcingFilterChannel, setSourcingFilterChannel] = useState("All");
+  const [bidChannel, setBidChannel] = useState("gmail");
+  const [bidAmt, setBidAmt] = useState("");
+  const [bidGenerated, setBidGenerated] = useState({ gmail: "", whatsapp: "" });
+  const [bidEditing, setBidEditing] = useState(false);
+  const [bidEditText, setBidEditText] = useState("");
+  const [bidLoading, setBidLoading] = useState(false);
+  const [bidSent, setBidSent] = useState({ gmail: false, whatsapp: false });
 
   // ── auth ──
   useEffect(() => {
@@ -1480,6 +1511,86 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
   }, []);
 
   useEffect(() => { if (activeTab === "traders") loadTraderListings(); }, [activeTab, loadTraderListings]);
+
+  // ── sourcing loaders / CRUD ──
+  const loadSourcingDeals = useCallback(async () => {
+    setSourcingLoading(true);
+    const { data } = await supabase.from("sourcing_deals").select("*").order("last_activity", { ascending: false, nullsFirst: false });
+    setSourcingDeals(data || []);
+    setSourcingLoading(false);
+  }, []);
+
+  useEffect(() => { if (activeTab === "sourcing") loadSourcingDeals(); }, [activeTab, loadSourcingDeals]);
+
+  async function createSourcingDeal() {
+    const f = newSourcingForm;
+    if (!f.supplier.trim()) return;
+    const now = new Date().toISOString();
+    const { data, error } = await supabase.from("sourcing_deals").insert({
+      supplier: f.supplier.trim(),
+      contact: f.contact.trim() || null,
+      channel: f.channel,
+      lot: f.lot.trim() || null,
+      stage: "Evaluating",
+      bid_amount: null,
+      currency: "AED",
+      last_activity: now,
+      notes: f.notes.trim() || null,
+      timeline: [],
+    }).select().single();
+    if (error) { alert("Failed to create deal: " + error.message); return; }
+    setSourcingDeals(ds => [data, ...ds]);
+    setNewSourcingForm({ supplier: "", contact: "", channel: "Gmail", lot: "", notes: "" });
+    setShowNewSourcing(false);
+  }
+
+  async function patchSourcingDeal(id, patch) {
+    const next = { ...patch, last_activity: new Date().toISOString() };
+    const { data, error } = await supabase.from("sourcing_deals").update(next).eq("id", id).select().single();
+    if (error) { alert("Failed to update: " + error.message); return; }
+    setSourcingDeals(ds => ds.map(d => d.id === id ? data : d));
+  }
+
+  async function appendSourcingTimeline(id) {
+    const deal = sourcingDeals.find(d => d.id === id);
+    if (!deal || !logSourcingForm.content.trim()) return;
+    const entry = {
+      id: Date.now(),
+      ch: logSourcingForm.ch,
+      sender: logSourcingForm.sender || "You",
+      content: logSourcingForm.content.trim(),
+      time: new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }),
+    };
+    const next = [...(deal.timeline || []), entry];
+    await patchSourcingDeal(id, { timeline: next });
+    setLogSourcingForm({ ch: "whatsapp", sender: "You", content: "" });
+    setShowLogSourcing(false);
+  }
+
+  async function generateBid() {
+    if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
+    const deal = sourcingDeals.find(d => d.id === selectedSourcingId);
+    if (!deal) return;
+    setBidLoading(true); setBidEditing(false);
+    const isEmail = bidChannel === "gmail";
+    const prompt = isEmail
+      ? `You are drafting a professional bid reply email for a laptop wholesale buyer in UAE.\nSupplier: ${deal.supplier}\nContact: ${deal.contact || "—"}\nLot: ${deal.lot || "—"}\nBid Amount: ${bidAmt || "to be decided"}\nNotes: ${deal.notes || "—"}\nWrite a concise, professional email reply placing a bid. Include subject line. No markdown, plain text only.`
+      : `You are drafting a WhatsApp message for a laptop wholesale buyer in UAE placing a bid.\nSupplier: ${deal.supplier}\nLot: ${deal.lot || "—"}\nBid Amount: ${bidAmt || "to be decided"}\nNotes: ${deal.notes || "—"}\nWrite a short, natural WhatsApp message placing a bid. Casual but professional. No markdown. Max 5 lines.`;
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
+      });
+      const data = await res.json();
+      const text = data.content?.find(b => b.type === "text")?.text || "Could not generate. Try again.";
+      setBidGenerated(g => ({ ...g, [bidChannel]: text }));
+      setBidEditText(text);
+    } catch {
+      setBidGenerated(g => ({ ...g, [bidChannel]: "Error generating. Check connection and API key." }));
+    }
+    setBidLoading(false);
+  }
 
   async function extractTraderListings() {
     if (!traderChatText.trim() || !anthropicKey) return;
@@ -2442,6 +2553,7 @@ For any issues please contact us on WhatsApp.
           { key: "customers", icon: "👥", label: "Clients" },
           { key: "tasks", icon: "📋", label: "Tasks" },
           { key: "stock", icon: "📦", label: "Stock" },
+          { key: "sourcing", icon: "🛒", label: "Sourcing" },
           { key: "traders", icon: "🏪", label: "Traders" },
           { key: "templates", icon: "💬", label: "Templates" },
           { key: "ask", icon: "🤖", label: "Ask" },
@@ -3572,6 +3684,348 @@ For any issues please contact us on WhatsApp.
         </div>
       )}
 
+      {/* ── SOURCING TAB ── */}
+      {activeTab === "sourcing" && (() => {
+        const selectedDeal = sourcingDeals.find(d => d.id === selectedSourcingId);
+        const stageCounts = SOURCING_STAGES.reduce((acc, s) => ({ ...acc, [s]: sourcingDeals.filter(d => d.stage === s).length }), {});
+        const filtered = sourcingDeals.filter(d => {
+          if (sourcingFilterStage !== "All" && d.stage !== sourcingFilterStage) return false;
+          if (sourcingFilterChannel !== "All" && d.channel !== sourcingFilterChannel) return false;
+          return true;
+        });
+
+        const ChannelBadge = ({ channel }) => {
+          const isBoth = channel === "Both";
+          const showGmail = channel === "Gmail" || isBoth;
+          const showWA = channel === "WhatsApp" || isBoth;
+          return (
+            <span style={{ display: "inline-flex", gap: 4 }}>
+              {showGmail && <span style={{ fontSize: 10, fontWeight: 700, color: "#EA4335", background: "#FEF2F2", padding: "2px 6px", borderRadius: 10 }}>📧 Gmail</span>}
+              {showWA && <span style={{ fontSize: 10, fontWeight: 700, color: "#16A34A", background: "#F0FDF4", padding: "2px 6px", borderRadius: 10 }}>💬 WA</span>}
+            </span>
+          );
+        };
+        const StagePill = ({ stage }) => {
+          const c = SOURCING_STAGE_COLORS[stage] || { fg: "#64748B", bg: "#F1F5F9" };
+          return <span style={{ fontSize: 10, fontWeight: 700, color: c.fg, background: c.bg, padding: "2px 8px", borderRadius: 10, whiteSpace: "nowrap" }}>{stage}</span>;
+        };
+
+        // DETAIL VIEW
+        if (selectedDeal) {
+          const d = selectedDeal;
+          const currentIdx = SOURCING_STAGES.indexOf(d.stage);
+          return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button onClick={() => { setSelectedSourcingId(null); setBidGenerated({ gmail: "", whatsapp: "" }); setBidAmt(""); setBidEditing(false); setBidSent({ gmail: false, whatsapp: false }); }}
+                  style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.08)", cursor: "pointer", fontSize: 18 }}>←</button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.supplier}</div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.lot || "—"}</div>
+                </div>
+                <StagePill stage={d.stage} />
+              </div>
+
+              <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 10 }}>STAGE</div>
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 4 }}>
+                  {SOURCING_STAGES.map((s, i) => {
+                    const c = SOURCING_STAGE_COLORS[s];
+                    const active = i === currentIdx;
+                    const done = i < currentIdx;
+                    return (
+                      <button key={s} onClick={() => patchSourcingDeal(d.id, { stage: s })}
+                        style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 14, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                          background: active ? c.fg : done ? c.bg : "#F1F5F9",
+                          color: active ? "#fff" : done ? c.fg : "#94A3B8" }}>
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "CHANNEL", value: <ChannelBadge channel={d.channel} /> },
+                  { label: "CONTACT", value: <span style={{ fontSize: 12, color: "#0F172A", wordBreak: "break-word" }}>{d.contact || "—"}</span> },
+                  { label: "BID AMOUNT", value: <span style={{ fontSize: 13, fontWeight: 700, color: "#10B981" }}>{d.bid_amount || "—"}</span> },
+                  { label: "LAST ACTIVITY", value: <span style={{ fontSize: 11, color: "#64748B" }}>{d.last_activity ? timeAgo(d.last_activity) : "—"}</span> },
+                ].map((it, i) => (
+                  <div key={i} style={{ background: "#fff", borderRadius: 12, padding: "10px 12px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{it.label}</div>
+                    <div>{it.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>SET BID AMOUNT</div>
+                <input defaultValue={d.bid_amount || ""}
+                  onBlur={e => { if (e.target.value !== (d.bid_amount || "")) patchSourcingDeal(d.id, { bid_amount: e.target.value || null }); }}
+                  placeholder="e.g. AED 45,000"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+              </div>
+
+              {d.notes && (
+                <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>NOTES</div>
+                  <div style={{ fontSize: 13, color: "#0F172A", lineHeight: 1.5 }}>{d.notes}</div>
+                </div>
+              )}
+
+              <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>DUAL CHANNEL TIMELINE</div>
+                  <button onClick={() => setShowLogSourcing(true)}
+                    style={{ padding: "4px 12px", borderRadius: 10, border: "none", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Log</button>
+                </div>
+                {(d.timeline || []).length === 0 ? (
+                  <div style={{ fontSize: 12, color: "#94A3B8", textAlign: "center", padding: "20px 0" }}>No messages yet</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {(d.timeline || []).map(entry => {
+                      const isGmail = entry.ch === "gmail";
+                      return (
+                        <div key={entry.id} style={{ display: "flex", gap: 10, paddingBottom: 10, borderBottom: "1px solid #F1F5F9" }}>
+                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: isGmail ? "#FEF2F2" : "#F0FDF4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>
+                            {isGmail ? "📧" : "💬"}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: isGmail ? "#EA4335" : "#16A34A" }}>{entry.sender}</span>
+                              <span style={{ fontSize: 10, color: "#94A3B8" }}>{entry.time}</span>
+                            </div>
+                            <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.5, wordBreak: "break-word" }}>{entry.content}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 10 }}>⚡ BID REPLY GENERATOR</div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                  {["gmail", "whatsapp"].map(t => (
+                    <button key={t} onClick={() => { setBidChannel(t); setBidEditing(false); }}
+                      style={{ flex: 1, padding: "6px 10px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                        background: bidChannel === t ? (t === "gmail" ? "#FEF2F2" : "#F0FDF4") : "#F1F5F9",
+                        color: bidChannel === t ? (t === "gmail" ? "#EA4335" : "#16A34A") : "#94A3B8" }}>
+                      {t === "gmail" ? "📧 Gmail" : "💬 WhatsApp"}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                  <input value={bidAmt} onChange={e => setBidAmt(e.target.value)} placeholder="Bid amount (e.g. AED 45,000)"
+                    style={{ flex: 1, padding: "8px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+                  <button onClick={generateBid} disabled={bidLoading}
+                    style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: bidLoading ? "#E2E8F0" : "#6366F1", color: bidLoading ? "#94A3B8" : "#fff", fontSize: 11, fontWeight: 700, cursor: bidLoading ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                    {bidLoading ? "..." : "Generate"}
+                  </button>
+                </div>
+                {bidGenerated[bidChannel] ? (
+                  <>
+                    {bidEditing ? (
+                      <textarea value={bidEditText} onChange={e => setBidEditText(e.target.value)}
+                        style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 10, border: "1.5px solid #6366F1", fontSize: 12, lineHeight: 1.5, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", outline: "none" }} />
+                    ) : (
+                      <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 10, fontSize: 12, color: "#0F172A", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                        {bidGenerated[bidChannel]}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                      {bidEditing ? (
+                        <>
+                          <button onClick={() => { setBidGenerated(g => ({ ...g, [bidChannel]: bidEditText })); setBidEditing(false); }}
+                            style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>💾 Save</button>
+                          <button onClick={() => setBidEditing(false)}
+                            style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#F1F5F9", color: "#64748B", fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => { setBidEditText(bidGenerated[bidChannel]); setBidEditing(true); }}
+                            style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#F1F5F9", color: "#64748B", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✏️ Edit</button>
+                          <button onClick={() => navigator.clipboard.writeText(bidGenerated[bidChannel])}
+                            style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#F1F5F9", color: "#64748B", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>📋 Copy</button>
+                          {!bidSent[bidChannel] ? (
+                            <button onClick={async () => {
+                              const entry = {
+                                id: Date.now(), ch: bidChannel, sender: "You",
+                                content: bidGenerated[bidChannel],
+                                time: new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }),
+                              };
+                              const next = [...(d.timeline || []), entry];
+                              await patchSourcingDeal(d.id, { timeline: next, stage: d.stage === "Evaluating" ? "Bid Sent" : d.stage });
+                              setBidSent(s => ({ ...s, [bidChannel]: true }));
+                            }}
+                              style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✅ Mark Sent</button>
+                          ) : (
+                            <span style={{ padding: "5px 12px", fontSize: 11, fontWeight: 700, color: "#10B981" }}>✅ Sent</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 14, textAlign: "center", color: "#94A3B8", fontSize: 12, border: "1px dashed #E2E8F0" }}>
+                    Enter bid amount and tap Generate
+                  </div>
+                )}
+              </div>
+
+              {showLogSourcing && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                  <div style={{ background: "#fff", borderRadius: 16, padding: 18, width: "100%", maxWidth: 380 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>Log Message</span>
+                      <button onClick={() => setShowLogSourcing(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 14 }}>✕</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                      {["gmail", "whatsapp"].map(t => (
+                        <button key={t} onClick={() => setLogSourcingForm(f => ({ ...f, ch: t }))}
+                          style={{ flex: 1, padding: "7px 0", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                            background: logSourcingForm.ch === t ? (t === "gmail" ? "#FEF2F2" : "#F0FDF4") : "#F1F5F9",
+                            color: logSourcingForm.ch === t ? (t === "gmail" ? "#EA4335" : "#16A34A") : "#94A3B8" }}>
+                          {t === "gmail" ? "📧 Gmail" : "💬 WhatsApp"}
+                        </button>
+                      ))}
+                    </div>
+                    <input value={logSourcingForm.sender} onChange={e => setLogSourcingForm(f => ({ ...f, sender: e.target.value }))} placeholder="Sender name"
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+                    <textarea value={logSourcingForm.content} onChange={e => setLogSourcingForm(f => ({ ...f, content: e.target.value }))} placeholder="Message content..."
+                      rows={4} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", marginBottom: 12 }} />
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button onClick={() => setShowLogSourcing(false)}
+                        style={{ padding: "7px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                      <button onClick={() => appendSourcingTimeline(d.id)}
+                        style={{ padding: "7px 14px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Log</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // LIST VIEW
+        return (
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A" }}>🛒 Sourcing</div>
+                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{sourcingDeals.length} deal{sourcingDeals.length === 1 ? "" : "s"} · Dual channel tracking</div>
+              </div>
+              <button onClick={() => setShowNewSourcing(true)}
+                style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>+ New Deal</button>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 2 }}>
+              {SOURCING_STAGES.filter(s => stageCounts[s] > 0).map(s => {
+                const c = SOURCING_STAGE_COLORS[s];
+                const active = sourcingFilterStage === s;
+                return (
+                  <button key={s} onClick={() => setSourcingFilterStage(active ? "All" : s)}
+                    style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 14, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                      background: active ? c.fg : c.bg, color: active ? "#fff" : c.fg }}>
+                    {s} · {stageCounts[s]}
+                  </button>
+                );
+              })}
+              {sourcingFilterStage !== "All" && (
+                <button onClick={() => setSourcingFilterStage("All")}
+                  style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 14, border: "1px solid #E2E8F0", fontSize: 10, fontWeight: 700, cursor: "pointer", background: "#fff", color: "#94A3B8" }}>✕ Clear</button>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 6 }}>
+              {["All", "Gmail", "WhatsApp", "Both"].map(ch => (
+                <button key={ch} onClick={() => setSourcingFilterChannel(ch)}
+                  style={{ flex: 1, padding: "6px 0", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    background: sourcingFilterChannel === ch ? "#6366F1" : "#F1F5F9",
+                    color: sourcingFilterChannel === ch ? "#fff" : "#64748B" }}>
+                  {ch}
+                </button>
+              ))}
+            </div>
+
+            {sourcingLoading && <div style={{ textAlign: "center", padding: 20, color: "#94A3B8", fontSize: 12 }}>Loading...</div>}
+            {!sourcingLoading && filtered.length === 0 && (
+              <div style={{ background: "#fff", borderRadius: 16, padding: 30, textAlign: "center", color: "#94A3B8", fontSize: 13, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                {sourcingDeals.length === 0 ? "No deals yet. Tap + New Deal to start." : "No deals match the current filter"}
+              </div>
+            )}
+            {filtered.map(deal => (
+              <div key={deal.id} onClick={() => setSelectedSourcingId(deal.id)}
+                style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.supplier}</div>
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.contact || "—"}</div>
+                  </div>
+                  <StagePill stage={deal.stage} />
+                </div>
+                <div style={{ fontSize: 12, color: "#475569", marginBottom: 8, lineHeight: 1.4 }}>{deal.lot || "—"}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <ChannelBadge channel={deal.channel} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {deal.bid_amount && <span style={{ fontSize: 12, fontWeight: 800, color: "#10B981" }}>{deal.bid_amount}</span>}
+                    <span style={{ fontSize: 10, color: "#94A3B8" }}>{deal.last_activity ? timeAgo(deal.last_activity) : "—"}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {showNewSourcing && (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                <div style={{ background: "#fff", borderRadius: 16, padding: 18, width: "100%", maxWidth: 420, maxHeight: "90vh", overflowY: "auto" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>New Sourcing Deal</span>
+                    <button onClick={() => setShowNewSourcing(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 14 }}>✕</button>
+                  </div>
+                  {[
+                    { label: "SUPPLIER", key: "supplier", placeholder: "e.g. Electro Computer Warehouse" },
+                    { label: "CONTACT (EMAIL / NUMBER)", key: "contact", placeholder: "e.g. sobia@example.com" },
+                    { label: "LOT DESCRIPTION", key: "lot", placeholder: "e.g. 50x Dell Latitude 5400 i5 8GB" },
+                  ].map(({ label, key, placeholder }) => (
+                    <div key={key} style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+                      <input value={newSourcingForm[key]} onChange={e => setNewSourcingForm(f => ({ ...f, [key]: e.target.value }))} placeholder={placeholder}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>NOTES</div>
+                    <textarea value={newSourcingForm.notes} onChange={e => setNewSourcingForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any extra context..."
+                      rows={3} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>CHANNEL</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {SOURCING_CHANNELS.map(ch => (
+                        <button key={ch} onClick={() => setNewSourcingForm(f => ({ ...f, channel: ch }))}
+                          style={{ flex: 1, padding: "7px 0", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                            background: newSourcingForm.channel === ch ? "#6366F1" : "#F1F5F9",
+                            color: newSourcingForm.channel === ch ? "#fff" : "#64748B" }}>
+                          {ch}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    <button onClick={() => setShowNewSourcing(false)}
+                      style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                    <button onClick={createSourcingDeal}
+                      style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Create Deal</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── RECEIPT MODAL ── */}
       {showReceipt && activeDeal && activeCustomer && (() => {
         const receiptText = buildReceiptText(receiptPaymentMethod);
@@ -3716,6 +4170,7 @@ For any issues please contact us on WhatsApp.
           { key: "customers", icon: "👥", label: "Clients" },
           { key: "tasks", icon: "📋", label: "Tasks", badge: tasks.filter(t => t.type === "overdue").length },
           { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
+          { key: "sourcing", icon: "🛒", label: "Sourcing" },
           { key: "traders", icon: "🏪", label: "Traders" },
           { key: "templates", icon: "💬", label: "Templates" },
           { key: "ask", icon: "🤖", label: "Ask" },
