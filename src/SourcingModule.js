@@ -1618,7 +1618,7 @@ function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, onUpdate 
 
   async function saveNotes() {
     setSaving(true);
-    const { data } = await supabase.from("suppliers").update({ notes }).eq("id", supplier.id).select().single();
+    const { data } = await supabase.from("customers").update({ notes }).eq("id", supplier.id).select().single();
     if (data) onUpdate(data);
     setSaving(false);
   }
@@ -1647,10 +1647,10 @@ function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, onUpdate 
               <span style={{ fontSize: 13, color: "#DC2626", fontWeight: 600 }}>{supplier.email}</span>
             </a>
           )}
-          {supplier.whatsapp && (
+          {supplier.number && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 28, height: 28, borderRadius: 8, background: "#F0FDF4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>💬</span>
-              <span style={{ fontSize: 13, color: "#16A34A", fontWeight: 600 }}>{supplier.whatsapp}</span>
+              <span style={{ fontSize: 13, color: "#16A34A", fontWeight: 600 }}>{supplier.number}</span>
             </div>
           )}
           {[
@@ -1857,14 +1857,15 @@ function AddSupplierModal({ onClose, onCreate }) {
 
   async function save() {
     if (!f.name.trim()) { alert("Name is required"); return; }
-    const { data, error } = await supabase.from("suppliers").insert({
-      name:           f.name.trim(),
-      email:          f.email.trim()   || null,
-      whatsapp:       f.whatsapp.trim()|| null,
-      location:       f.location.trim()|| null,
-      currency:       f.currency || "USD",
-      payment_method: f.payment_method.trim() || null,
-      notes:          f.notes.trim()   || null,
+    const notesVal = [f.notes.trim(), f.payment_method.trim() ? `Payment: ${f.payment_method.trim()}` : ""].filter(Boolean).join("\n") || null;
+    const { data, error } = await supabase.from("customers").insert({
+      name:         f.name.trim(),
+      email:        f.email.trim()    || null,
+      number:       f.whatsapp.trim() || null,
+      location:     f.location.trim() || null,
+      currency:     f.currency || "USD",
+      notes:        notesVal,
+      contact_type: "supplier",
     }).select().single();
     if (error) { alert("Failed: " + error.message); return; }
     onCreate(data);
@@ -1947,7 +1948,7 @@ export default function SourcingModule({ anthropicKey, onAddToStock }) {
   }, []);
 
   const loadSuppliers = useCallback(async () => {
-    const { data } = await supabase.from("suppliers").select("*").order("name");
+    const { data } = await supabase.from("customers").select("*").eq("contact_type", "supplier").order("name");
     setSuppliers(data || []);
   }, []);
 
