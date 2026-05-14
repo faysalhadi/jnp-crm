@@ -526,6 +526,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [msgLoading, setMsgLoading] = useState(false);
   const [msgInput, setMsgInput] = useState("");
+  const [chatMode, setChatMode] = useState("type"); // "type" | "ai"
   const [pendingSuggestion, setPendingSuggestion] = useState(null);
   const [copied, setCopied] = useState(null);
   const [editSent, setEditSent] = useState(null);
@@ -713,6 +714,9 @@ export default function App() {
   }, [activeDealId]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Reset chat mode to Type when switching between contacts
+  useEffect(() => { setChatMode("type"); setMsgInput(""); }, [activeCustomerId]);
   useEffect(() => { askBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [askMessages]);
 
   // Auto-create a conversation deal for traders/suppliers that have none,
@@ -824,6 +828,23 @@ export default function App() {
   }
 
   // ── message actions ──
+
+  // Mode 1 — Type Message: save owner's own typed text directly (no AI)
+  async function sendDirectMessage() {
+    if (!msgInput.trim() || !activeDealId) return;
+    const content = msgInput.trim();
+    setMsgInput("");
+    const { data: msg } = await supabase.from("messages").insert({
+      deal_id: activeDealId,
+      role: "assistant",
+      content,
+      sent: content,
+    }).select().single();
+    if (msg) setMessages(prev => [...prev, msg]);
+    await updateCustomer({ last_active: new Date().toISOString() });
+  }
+
+  // Mode 2 — AI Reply: paste client message, Claude generates a reply
   async function sendMessage() {
     if (!msgInput.trim() || !activeDeal || msgLoading) return;
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
@@ -2381,40 +2402,68 @@ For any issues please contact us on WhatsApp.
 
         {/* input bar */}
         <div style={{ padding: "10px 12px 20px", background: "#fff", borderTop: "1px solid #F1F5F9", position: "sticky", bottom: 0 }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <button onClick={() => { setOutreachMode(!outreachMode); }}
-              style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: `1.5px solid ${outreachMode ? "#6366F1" : "#E2E8F0"}`, background: outreachMode ? "#EEF2FF" : "#fff", color: outreachMode ? "#6366F1" : "#94A3B8", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-              👋 I'm Reaching Out
-            </button>
-            <button onClick={async () => {
-              if (!anthropicKey) { alert("Add API key in Settings first."); return; }
-              setMsgLoading(true);
-              const lastMsg = messages[messages.length - 1];
-              const context = `Generate a follow-up WhatsApp message for ${activeCustomer.name}. They were interested in ${activeDeal?.brand || "a laptop"} ${activeDeal?.model || ""}. Budget: ${activeDeal?.budget ? "AED " + activeDeal.budget : "unknown"}. Last stage: ${STAGES.find(s => s.id === activeDeal?.stage)?.label}. Days since last contact: ${daysSince(activeCustomer.last_active)}. Return JSON with only a "reply" field.`;
-              try {
-                const systemPrompt = buildSystemPromptFromCache(cachedStock);
-                const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], systemPrompt);
-                const clean = raw.replace(/```json|```/g, "").trim();
-                let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-                const { data: aiMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: parsed.reply || raw }).select().single();
-                setMessages(prev => [...prev, aiMsg]);
-              } catch { alert("Error. Check API key."); }
-              setMsgLoading(false);
-            }}
-              style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-              🔁 Follow Up
-            </button>
+
+          {/* Mode toggle */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            {[
+              { key: "type", label: "✏️ Type Message" },
+              { key: "ai",   label: "🤖 AI Reply" },
+            ].map(m => (
+              <button key={m.key} onClick={() => { setChatMode(m.key); setMsgInput(""); }}
+                style={{ flex: 1, padding: "8px 10px", borderRadius: 10, border: "none",
+                         background: chatMode === m.key ? "#6366F1" : "#F1F5F9",
+                         color:      chatMode === m.key ? "#fff"    : "#64748B",
+                         fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
+                {m.label}
+              </button>
+            ))}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <textarea value={msgInput} onChange={e => setMsgInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder={`Paste ${activeCustomer.name}'s message... (or "Voice note: ...")`}
-              rows={2} style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }} />
-            <button onClick={sendMessage} disabled={msgLoading || !msgInput.trim()}
-              style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: msgLoading || !msgInput.trim() ? "#E2E8F0" : "#6366F1", color: msgLoading || !msgInput.trim() ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 20, cursor: msgLoading || !msgInput.trim() ? "not-allowed" : "pointer", flexShrink: 0 }}>
-              ↑
-            </button>
-          </div>
+
+          {/* ── MODE 1: Type Message ── */}
+          {chatMode === "type" && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <textarea
+                value={msgInput}
+                onChange={e => setMsgInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDirectMessage(); } }}
+                placeholder="Type a message..."
+                rows={2}
+                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0",
+                         fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
+              />
+              <button onClick={sendDirectMessage} disabled={!msgInput.trim()}
+                style={{ width: 46, height: 52, borderRadius: 12, border: "none",
+                         background: !msgInput.trim() ? "#E2E8F0" : "#6366F1",
+                         color:      !msgInput.trim() ? "#94A3B8" : "#fff",
+                         fontWeight: 800, fontSize: 20, cursor: !msgInput.trim() ? "not-allowed" : "pointer",
+                         flexShrink: 0 }}>
+                ↑
+              </button>
+            </div>
+          )}
+
+          {/* ── MODE 2: AI Reply ── */}
+          {chatMode === "ai" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <textarea
+                value={msgInput}
+                onChange={e => setMsgInput(e.target.value)}
+                placeholder={`Paste ${activeCustomer.name}'s message…`}
+                rows={3}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0",
+                         fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit",
+                         lineHeight: 1.5, boxSizing: "border-box" }}
+              />
+              <button onClick={sendMessage} disabled={msgLoading || !msgInput.trim()}
+                style={{ width: "100%", padding: "12px", borderRadius: 12, border: "none",
+                         background: msgLoading || !msgInput.trim() ? "#E2E8F0" : "#6366F1",
+                         color:      msgLoading || !msgInput.trim() ? "#94A3B8" : "#fff",
+                         fontWeight: 800, fontSize: 14,
+                         cursor: msgLoading || !msgInput.trim() ? "not-allowed" : "pointer" }}>
+                {msgLoading ? "⏳ Generating…" : "🤖 Generate Reply"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
