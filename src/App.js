@@ -2,6 +2,7 @@
 import { supabase } from "./supabase";
 import * as XLSX from "xlsx";
 import SourcingModule, { useSourcingAlerts } from "./SourcingModule";
+import ContactModal from "./ContactModal";
 
 // ── constants ────────────────────────────────────────────────────────────────
 const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
@@ -597,6 +598,11 @@ export default function App() {
 
   // ── sourcing alerts for dashboard ──
   const sourcingAlerts = useSourcingAlerts();
+
+  // ── global contact modal ──
+  const [showContactModal,   setShowContactModal]   = useState(false);
+  const [contactModalPreType,setContactModalPreType]= useState(null); // null | "client" | "trader" | "supplier"
+  const [contactTypeFilter,  setContactTypeFilter]  = useState("all"); // "all" | "client" | "trader" | "supplier"
 
   // ── auth ──
   useEffect(() => {
@@ -1749,6 +1755,8 @@ For any issues please contact us on WhatsApp.
 
   const filtered = customers
     .filter(c => {
+      const cType = c.contact_type || "client";
+      if (contactTypeFilter !== "all" && cType !== contactTypeFilter) return false;
       if (search) return c.name.toLowerCase().includes(search.toLowerCase()) || (c.number || "").includes(search);
       if (filter === "urgent") return c.urgent;
       if (filter === "overdue") return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
@@ -1759,7 +1767,9 @@ For any issues please contact us on WhatsApp.
     .sort((a, b) => {
       if (a.urgent && !b.urgent) return -1;
       if (!a.urgent && b.urgent) return 1;
-      return new Date(b.last_active) - new Date(a.last_active);
+      const aTime = a.last_activity_at || a.last_active;
+      const bTime = b.last_activity_at || b.last_active;
+      return new Date(bTime) - new Date(aTime);
     });
 
   const filteredStock = stock.filter(item => {
@@ -2408,12 +2418,23 @@ For any issues please contact us on WhatsApp.
           <div>
             <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>
-              {activeTab === "customers" ? "Client CRM" : activeTab === "tasks" ? "Today's Tasks" : "Templates"}
+              {activeTab === "customers" ? "Contacts" : activeTab === "tasks" ? "Today's Tasks" : "Templates"}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button onClick={() => setView("settings")} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>⚙️</button>
-            {activeTab === "customers" && <button onClick={() => setView("add")} style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>+ Add</button>}
+            {activeTab === "customers" && (
+              <button onClick={() => { setContactModalPreType("client"); setShowContactModal(true); }}
+                style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                + Add Client
+              </button>
+            )}
+            {activeTab === "traders" && (
+              <button onClick={() => { setContactModalPreType("trader"); setShowContactModal(true); }}
+                style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#D97706", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                + Add Trader
+              </button>
+            )}
           </div>
         </div>
 
@@ -2435,14 +2456,31 @@ For any issues please contact us on WhatsApp.
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍  Search name or number..."
           style={{ width: "100%", padding: "9px 13px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#F8FAFC", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
 
-        {/* filters */}
+        {/* contact type filter */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          {[
+            { key: "all",      label: "All" },
+            { key: "client",   label: "🔴 Clients" },
+            { key: "trader",   label: "🟡 Traders" },
+            { key: "supplier", label: "🔵 Suppliers" },
+          ].map(f => (
+            <button key={f.key} onClick={() => setContactTypeFilter(f.key)}
+              style={{ padding: "5px 14px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                background: contactTypeFilter === f.key ? "#0F172A" : "#F1F5F9",
+                color:      contactTypeFilter === f.key ? "#fff"    : "#64748B", transition: "all 0.15s" }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* behaviour filters */}
         <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 10 }}>
           {[
-            { key: "all", label: "All" },
-            { key: "urgent", label: "🔴 Urgent" },
+            { key: "all",     label: "All" },
+            { key: "urgent",  label: "🔴 Urgent" },
             { key: "overdue", label: "⏰ Overdue" },
-            { key: "vip", label: "⭐ VIP" },
-            { key: "cold", label: "❄️ Cold" },
+            { key: "vip",     label: "⭐ VIP" },
+            { key: "cold",    label: "❄️ Cold" },
           ].map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               style={{ padding: "5px 14px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer", background: filter === f.key ? "#6366F1" : "#F1F5F9", color: filter === f.key ? "#fff" : "#64748B", transition: "all 0.15s" }}>
@@ -2456,7 +2494,7 @@ For any issues please contact us on WhatsApp.
       <div style={{ display: "flex", borderTop: "1px solid #F1F5F9", background: "#fff" }}>
         {[
           { key: "home", icon: "🏠", label: "Home" },
-          { key: "customers", icon: "👥", label: "Clients" },
+          { key: "customers", icon: "👥", label: "Contacts" },
           { key: "tasks", icon: "📋", label: "Tasks" },
           { key: "stock", icon: "📦", label: "Stock" },
           { key: "sourcing", icon: "🌍", label: "Sourcing" },
@@ -2610,43 +2648,62 @@ For any issues please contact us on WhatsApp.
             </div>
           )}
           {filtered.map(c => {
-            const tier = TIERS[c.tier] || TIERS.cold;
-            const openD = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
-            const latestDeal = openD[openD.length - 1] || (c.deals || [])[c.deals.length - 1];
-            const overdue = daysSince(c.last_active) >= 1 && openD.length > 0;
-            const totalValue = (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
+            const cType     = c.contact_type || "client";
+            const tier      = TIERS[c.tier] || TIERS.cold;
+            const openD     = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+            const latestDeal= openD[openD.length - 1] || (c.deals || [])[c.deals.length - 1];
+            const overdue   = daysSince(c.last_active) >= 1 && openD.length > 0;
+            const totalValue= (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
+            const activityTs= c.last_activity_at || c.last_active;
+            const typeBadge = cType === "trader" ? { label: "🟡 Trader", color: "#D97706", bg: "#FFFBEB" }
+                            : cType === "supplier"? { label: "🔵 Supplier", color: "#2563EB", bg: "#EFF6FF" }
+                            : null;
+            // preview text
+            const preview   = latestDeal
+              ? ([latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Device TBD")
+                + (latestDeal.budget ? ` · AED ${Number(latestDeal.budget).toLocaleString()}` : "")
+              : cType !== "client" ? (c.notes?.slice(0, 40) || "") : "";
+
             return (
               <div key={c.id} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(latestDeal?.id); setView("detail"); setPendingSuggestion(null); }}
-                style={{ background: "#fff", borderRadius: 18, padding: "14px 16px", border: `1.5px solid ${c.urgent ? "#FECACA" : "#F1F5F9"}`, cursor: "pointer", boxShadow: c.urgent ? "0 2px 16px rgba(239,68,68,0.08)" : "0 1px 4px rgba(0,0,0,0.05)", position: "relative", overflow: "hidden" }}>
+                style={{ background: "#fff", borderRadius: 18, padding: "12px 14px", border: `1.5px solid ${c.urgent ? "#FECACA" : "#F1F5F9"}`, cursor: "pointer", boxShadow: c.urgent ? "0 2px 16px rgba(239,68,68,0.08)" : "0 1px 4px rgba(0,0,0,0.05)", position: "relative", overflow: "hidden" }}>
                 {c.urgent && <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: "#EF4444" }} />}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: c.urgent ? "#FEF2F2" : "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: c.urgent ? "#EF4444" : "#6366F1", flexShrink: 0, textTransform: "uppercase" }}>{c.name[0]}</div>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{c.name}</span>
+
+                {/* Row 1 — avatar + name + timestamp */}
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: c.urgent ? "#FEF2F2" : cType === "trader" ? "#FFFBEB" : cType === "supplier" ? "#EFF6FF" : "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: c.urgent ? "#EF4444" : cType === "trader" ? "#D97706" : cType === "supplier" ? "#2563EB" : "#6366F1", flexShrink: 0, textTransform: "uppercase" }}>{c.name[0]}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                        <span style={{ fontWeight: 800, fontSize: 14, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                        {typeBadge && <span style={{ fontSize: 9, fontWeight: 700, color: typeBadge.color, background: typeBadge.bg, padding: "1px 6px", borderRadius: 8, flexShrink: 0 }}>{typeBadge.label}</span>}
                         {c.urgent && <Badge color="#EF4444" bg="#FEF2F2" small>URGENT</Badge>}
                       </div>
-                      <div style={{ fontSize: 11, color: "#94A3B8" }}>{c.number || "No number"} · {timeAgo(c.last_active)}</div>
+                      <span style={{ fontSize: 10, color: "#94A3B8", flexShrink: 0 }}>{timeAgo(activityTs)}</span>
                     </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                    <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>
-                    {totalValue > 0 && <span style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>AED {totalValue.toLocaleString()}</span>}
+                    {/* preview line */}
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {preview || (c.number || "No number")}
+                    </div>
                   </div>
                 </div>
-                {latestDeal && (
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: "#475569", fontWeight: 600, marginBottom: 4 }}>
-                      {[latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Device TBD"}
-                      {latestDeal.budget ? ` · AED ${Number(latestDeal.budget).toLocaleString()}` : ""}
-                    </div>
+
+                {/* Row 2 — stage bar (clients only) + tier + value */}
+                {cType === "client" && latestDeal && (
+                  <div style={{ marginTop: 8, marginLeft: 52 }}>
                     <StageBar stageId={latestDeal.stage} />
                   </div>
                 )}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "#CBD5E1" }}>{(c.deals || []).length} deal{(c.deals || []).length !== 1 ? "s" : ""}</span>
-                  {overdue && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>⚠️ Follow up needed</span>}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, marginLeft: 52 }}>
+                  {cType === "client" ? (
+                    <span style={{ fontSize: 10, color: "#CBD5E1" }}>{(c.deals || []).length} deal{(c.deals || []).length !== 1 ? "s" : ""}</span>
+                  ) : (
+                    <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.location || c.number || ""}</span>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {totalValue > 0 && <span style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>AED {totalValue.toLocaleString()}</span>}
+                    {overdue && <span style={{ fontSize: 9, color: "#EF4444", fontWeight: 700 }}>⚠️ Follow up</span>}
+                  </div>
                 </div>
               </div>
             );
@@ -3745,11 +3802,48 @@ For any issues please contact us on WhatsApp.
         </div>
       )}
 
+      {/* ── Floating "+" button ── */}
+      <button
+        onClick={() => { setContactModalPreType(null); setShowContactModal(true); }}
+        style={{
+          position: "fixed", bottom: 76, right: "calc(50% - 228px)",
+          width: 52, height: 52, borderRadius: "50%", border: "none",
+          background: "#6366F1", color: "#fff", fontSize: 26, fontWeight: 300,
+          cursor: "pointer", boxShadow: "0 4px 18px rgba(99,102,241,0.45)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 60, lineHeight: 1,
+        }}
+        title="Add contact"
+      >+</button>
+
+      {/* ── ContactModal ── */}
+      {showContactModal && (
+        <ContactModal
+          defaultType={contactModalPreType}
+          onClose={() => { setShowContactModal(false); setContactModalPreType(null); }}
+          onCreated={async (customer, deal) => {
+            await loadCustomers();
+            setShowContactModal(false);
+            setContactModalPreType(null);
+            if (customer && deal) {
+              setActiveCustomerId(customer.id);
+              setActiveDealId(deal.id);
+              setView("detail");
+              setActiveTab("customers");
+            } else if (customer) {
+              setActiveCustomerId(customer.id);
+              setView("detail");
+              setActiveTab("customers");
+            }
+          }}
+        />
+      )}
+
       {/* bottom tab bar */}
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
         {[
           { key: "home", icon: "🏠", label: "Home" },
-          { key: "customers", icon: "👥", label: "Clients" },
+          { key: "customers", icon: "👥", label: "Contacts" },
           { key: "tasks", icon: "📋", label: "Tasks", badge: tasks.filter(t => t.type === "overdue").length },
           { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
           { key: "sourcing", icon: "🌍", label: "Sourcing" },
