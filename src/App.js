@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import * as XLSX from "xlsx";
 import SourcingModule, { useSourcingAlerts } from "./SourcingModule";
@@ -506,13 +506,15 @@ function PartSaleModal({ part, onClose, onComplete }) {
       await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", part.id);
       const partLabel = [part.category, part.specs].filter(Boolean).join(" — ");
       await supabase.from("deals").insert({
-        sale_type:    "parts",
-        stage:        "closed",
-        closed_at:    new Date().toISOString(),
-        value:        totalRev || null,
-        walk_in_name: customerName.trim() || "Walk-in",
+        sale_type:     "parts",
+        stage:         "closed",
+        closed_at:     new Date().toISOString(),
+        value:         totalRev || null,
+        walk_in_name:  customerName.trim() || "Walk-in",
         payment_method: payMethod,
-        notes:        `${partLabel} ×${qtyToSell}`,
+        part_id:       part.id,
+        quantity_sold: qtyToSell,
+        notes:         `${partLabel} ×${qtyToSell}`,
       });
       setResult({ qtyToSell, profit, margin, newQty, partLabel });
       onComplete();
@@ -2043,6 +2045,23 @@ export default function App() {
   }
 
   async function moveStage(stageId) {
+    // Auto-create deal if none exists
+    if (!activeDealId && activeCustomer?.id) {
+      const { data: newDeal } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: stageId,
+        brand: "", model: "",
+        ...(stageId === "closed" ? { closed_at: new Date().toISOString() } : {}),
+      }).select().single();
+      if (newDeal) {
+        setActiveDealId(newDeal.id);
+        await loadCustomers();
+        if (stageId === "lost") setShowLossReason(true);
+        if (stageId === "confirmed_pending_pickup") setShowReservation(true);
+        if (stageId === "closed") setShowLinkStock(true);
+      }
+      return;
+    }
     const fields = { stage: stageId };
     if (stageId === "closed") fields.closed_at = new Date().toISOString();
     await updateDeal(fields);
@@ -2078,7 +2097,22 @@ export default function App() {
 
   // Step 1: add an incoming client message (saves as role=customer, shows LEFT)
   async function addIncomingMessage() {
-    if (!incomingText.trim() || !activeDealId) return;
+    if (!incomingText.trim()) return;
+    // Auto-create a deal if no active deal exists (e.g. new contact from floating button)
+    let dealId = activeDealId;
+    if (!dealId && activeCustomer?.id) {
+      const { data: newDeal } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: "new_inquiry",
+        brand: "", model: "",
+      }).select().single();
+      if (newDeal) {
+        dealId = newDeal.id;
+        setActiveDealId(newDeal.id);
+        await loadCustomers();
+      }
+    }
+    if (!dealId) return;
     const content = incomingText.trim();
     setIncomingText("");
     const isVoice  = content.toLowerCase().startsWith("voice note:");
@@ -2182,11 +2216,26 @@ export default function App() {
 
   // Mode 1 — Type Message: save owner's own typed text directly (no AI)
   async function sendDirectMessage() {
-    if (!msgInput.trim() || !activeDealId) return;
+    if (!msgInput.trim()) return;
+    // Auto-create a deal if no active deal exists
+    let dealId = activeDealId;
+    if (!dealId && activeCustomer?.id) {
+      const { data: newDeal } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: "new_inquiry",
+        brand: "", model: "",
+      }).select().single();
+      if (newDeal) {
+        dealId = newDeal.id;
+        setActiveDealId(newDeal.id);
+        await loadCustomers();
+      }
+    }
+    if (!dealId) return;
     const content = msgInput.trim();
     setMsgInput("");
     const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId,
+      deal_id: dealId,
       role: "assistant",
       content,
       sent: content,
@@ -2347,7 +2396,7 @@ Return JSON with only a "reply" field containing the message.`;
   useEffect(() => {
     if (stockFilter !== "parts_sold") return;
     setPartsSoldLoading(true);
-    supabase.from("deals").select("*").eq("sale_type", "parts").eq("stage", "closed")
+    supabase.from("deals").select("*, stock_parts(category, compatible_with, specs, condition)").eq("sale_type", "parts").eq("stage", "closed")
       .order("closed_at", { ascending: false })
       .then(({ data }) => { setPartsSold(data || []); setPartsSoldLoading(false); });
   }, [stockFilter]);
