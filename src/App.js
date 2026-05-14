@@ -534,6 +534,7 @@ export default function App() {
   const chatFilesInputRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const bottomRef = useRef(null);
@@ -693,6 +694,12 @@ export default function App() {
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
   useEffect(() => { if (session) { loadStock(); refreshCachedStock(); } }, [session, loadStock, refreshCachedStock]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (localStorage.getItem('jnp_install_dismissed')) return;
@@ -1819,6 +1826,16 @@ For any issues please contact us on WhatsApp.
     setBroadcastMessages(msgs); setBroadcastStep("messages"); setBroadcastLoading(false);
   }
 
+  // ── nav tabs (used by both sidebar instances) ──
+  const NAV_TABS = [
+    { key: "home",      icon: "🏠", label: "Home" },
+    { key: "customers", icon: "👥", label: "Contacts" },
+    { key: "stock",     icon: "📦", label: "Stock" },
+    { key: "sourcing",  icon: "🌍", label: "Sourcing" },
+    { key: "traders",   icon: "🏪", label: "Traders" },
+    { key: "ask",       icon: "🤖", label: "Ask Claude" },
+  ];
+
   // ── computed ──
   const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").length, 0);
   const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
@@ -2076,7 +2093,48 @@ For any issues please contact us on WhatsApp.
     const payStatus = PAYMENT_STATUSES.find(p => p.id === activeDeal?.payment_status) || PAYMENT_STATUSES[0];
 
     return (
-      <div style={{ minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }}>
+      <div style={isMobile
+        ? { minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }
+        : { minHeight: "100vh", background: "#F8FAFC", display: "flex" }}>
+        {/* Desktop sidebar in detail view */}
+        {!isMobile && (
+          <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRight: "1px solid #F1F5F9", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 40 }}>
+            <div style={{ padding: "22px 20px 18px", borderBottom: "1px solid #F1F5F9" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 12, background: "linear-gradient(135deg,#6366F1,#8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>💻</div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>JNP CRM</div>
+                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, letterSpacing: 0.5 }}>LAPTOP FOR LESS</div>
+                </div>
+              </div>
+            </div>
+            <div style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
+              {NAV_TABS.map(t => (
+                <button key={t.key}
+                  onClick={() => { setActiveTab(t.key); setView("list"); setActiveCustomerId(null); setActiveDealId(null); }}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", width: "100%", fontSize: 14,
+                           fontWeight: activeTab === t.key ? 700 : 500, background: activeTab === t.key ? "#EEF2FF" : "transparent",
+                           color: activeTab === t.key ? "#6366F1" : "#64748B", transition: "all 0.15s" }}>
+                  <span style={{ fontSize: 19 }}>{t.icon}</span>
+                  <span style={{ flex: 1 }}>{t.label}</span>
+                  {activeTab === t.key && <div style={{ width: 4, height: 20, borderRadius: 2, background: "#6366F1" }} />}
+                </button>
+              ))}
+            </div>
+            <div style={{ padding: "16px 20px", borderTop: "1px solid #F1F5F9" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, color: "#6366F1" }}>F</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>Faisal</div>
+                  <div style={{ fontSize: 10, color: "#94A3B8" }}>Owner</div>
+                </div>
+                <button onClick={() => setView("settings")} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }}>⚙️</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* detail content */}
+        <div style={isMobile ? { flex: 1, display: "flex", flexDirection: "column" } : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", maxWidth: "calc(100vw - 280px)" }}>
         {/* header */}
         <div style={{ background: "#fff", padding: "12px 14px 0", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -2605,13 +2663,63 @@ For any issues please contact us on WhatsApp.
             </button>
           </div>
         </div>
+        </div>{/* end detail content wrapper */}
       </div>
     );
   }
 
   // list view
   return (
-    <div style={{ minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }}>
+    <div style={isMobile
+      ? { minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }
+      : { minHeight: "100vh", background: "#F8FAFC", display: "flex" }}>
+
+      {/* ── Desktop sidebar ── */}
+      {!isMobile && (
+        <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRight: "1px solid #F1F5F9", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 40 }}>
+          {/* Logo */}
+          <div style={{ padding: "22px 20px 18px", borderBottom: "1px solid #F1F5F9" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 12, background: "linear-gradient(135deg,#6366F1,#8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>💻</div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>JNP CRM</div>
+                <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, letterSpacing: 0.5 }}>LAPTOP FOR LESS</div>
+              </div>
+            </div>
+          </div>
+          {/* Nav items */}
+          <div style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
+            {NAV_TABS.map(t => (
+              <button key={t.key}
+                onClick={() => { setActiveTab(t.key); setView("list"); setActiveCustomerId(null); setActiveDealId(null); }}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", width: "100%", fontSize: 14,
+                         fontWeight: activeTab === t.key ? 700 : 500, background: activeTab === t.key ? "#EEF2FF" : "transparent",
+                         color: activeTab === t.key ? "#6366F1" : "#64748B", transition: "all 0.15s" }}>
+                <span style={{ fontSize: 19 }}>{t.icon}</span>
+                <span style={{ flex: 1 }}>{t.label}</span>
+                {activeTab === t.key && <div style={{ width: 4, height: 20, borderRadius: 2, background: "#6366F1" }} />}
+              </button>
+            ))}
+          </div>
+          {/* User info */}
+          <div style={{ padding: "16px 20px", borderTop: "1px solid #F1F5F9" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, color: "#6366F1" }}>F</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>Faisal</div>
+                <div style={{ fontSize: 10, color: "#94A3B8" }}>Owner</div>
+              </div>
+              <button onClick={() => setView("settings")} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }}>⚙️</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Content area ── */}
+      <div style={isMobile
+        ? { flex: 1, display: "flex", flexDirection: "column" }
+        : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", overflow: "hidden" }}>
+
       {/* PWA install banner */}
       {showInstallBanner && (
         <div style={{
@@ -2641,7 +2749,8 @@ For any issues please contact us on WhatsApp.
           }}>Dismiss</button>
         </div>
       )}
-      {/* top bar */}
+      {/* top bar — contacts/traders header (hidden on desktop for other tabs) */}
+      {(isMobile || activeTab === "customers" || activeTab === "traders") && (
       <div style={{ background: "#fff", padding: "16px 14px 0", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
@@ -2718,6 +2827,7 @@ For any issues please contact us on WhatsApp.
           ))}
         </div>
       </div>
+      )}
 
       {/* ── HOME / DASHBOARD TAB ── */}
       {activeTab === "home" && (() => {
@@ -2745,7 +2855,7 @@ For any issues please contact us on WhatsApp.
         })();
 
         return (
-          <div style={{ flex: 1, padding: "16px 12px 100px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
+          <div style={{ flex: 1, padding: isMobile ? "16px 12px 100px" : "24px 32px 40px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
             {/* Greeting */}
             <div>
               <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A" }}>{getGreeting()} 👋</div>
@@ -2753,7 +2863,7 @@ For any issues please contact us on WhatsApp.
             </div>
 
             {/* Stats row */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10 }}>
               {[
                 { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF", icon: "📋" },
                 { label: "Revenue MTD", value: `AED ${revenue >= 1000 ? (revenue/1000).toFixed(1)+"k" : revenue}`, color: "#10B981", bg: "#ECFDF5", icon: "💰" },
@@ -2847,7 +2957,7 @@ For any issues please contact us on WhatsApp.
 
       {/* ── CUSTOMERS TAB ── */}
       {activeTab === "customers" && (
-        <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 24px 40px", display: "flex", flexDirection: "column", gap: 8 }}>
           {loading && <Spinner />}
           {!loading && filtered.length === 0 && (
             <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
@@ -2955,7 +3065,7 @@ For any issues please contact us on WhatsApp.
 
       {/* ── STOCK TAB ── */}
       {activeTab === "stock" && (
-        <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 32px 40px", display: "flex", flexDirection: "column", gap: 10 }}>
 
           {/* Devices / Parts toggle */}
           <div style={{ display: "flex", gap: 6 }}>
@@ -4035,7 +4145,7 @@ For any issues please contact us on WhatsApp.
       <button
         onClick={() => { setContactModalPreType(null); setShowContactModal(true); }}
         style={{
-          position: "fixed", bottom: 76, right: "calc(50% - 228px)",
+          position: "fixed", bottom: isMobile ? 76 : 28, right: isMobile ? "calc(50% - 228px)" : 28,
           width: 52, height: 52, borderRadius: "50%", border: "none",
           background: "#6366F1", color: "#fff", fontSize: 26, fontWeight: 300,
           cursor: "pointer", boxShadow: "0 4px 18px rgba(99,102,241,0.45)",
@@ -4064,27 +4174,30 @@ For any issues please contact us on WhatsApp.
         />
       )}
 
-      {/* bottom tab bar */}
-      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
-        {[
-          { key: "home", icon: "🏠", label: "Home" },
-          { key: "customers", icon: "👥", label: "Contacts" },
-          { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
-          { key: "sourcing", icon: "🌍", label: "Sourcing" },
-          { key: "traders", icon: "🏪", label: "Traders" },
-          { key: "ask", icon: "🤖", label: "Ask" },
-        ].map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            style={{ flex: 1, padding: "8px 2px 12px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position: "relative" }}>
-            {t.badge > 0 && (
-              <div style={{ position: "absolute", top: 6, right: "25%", width: 16, height: 16, borderRadius: "50%", background: "#EF4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{t.badge}</div>
-            )}
-            <span style={{ fontSize: 18 }}>{t.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
-            {activeTab === t.key && <div style={{ position: "absolute", bottom: 0, width: 28, height: 3, background: "#6366F1", borderRadius: "3px 3px 0 0" }} />}
-          </button>
-        ))}
-      </div>
+      {/* bottom tab bar — mobile only */}
+      {isMobile && (
+        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
+          {[
+            { key: "home", icon: "🏠", label: "Home" },
+            { key: "customers", icon: "👥", label: "Contacts" },
+            { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
+            { key: "sourcing", icon: "🌍", label: "Sourcing" },
+            { key: "traders", icon: "🏪", label: "Traders" },
+            { key: "ask", icon: "🤖", label: "Ask" },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
+              style={{ flex: 1, padding: "8px 2px 12px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position: "relative" }}>
+              {t.badge > 0 && (
+                <div style={{ position: "absolute", top: 6, right: "25%", width: 16, height: 16, borderRadius: "50%", background: "#EF4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{t.badge}</div>
+              )}
+              <span style={{ fontSize: 18 }}>{t.icon}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
+              {activeTab === t.key && <div style={{ position: "absolute", bottom: 0, width: 28, height: 3, background: "#6366F1", borderRadius: "3px 3px 0 0" }} />}
+            </button>
+          ))}
+        </div>
+      )}
+      </div>{/* end content area */}
     </div>
   );
 }
