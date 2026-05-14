@@ -40,34 +40,6 @@ const OUTREACH_REASONS = [
   "Custom message",
 ];
 
-const QUICK_TEMPLATES = [
-  { category: "First Reply", icon: "👋", color: "#6366F1", bg: "#EEF2FF", templates: [
-    { label: "Standard Greeting", text: "Hey! 👋 Welcome to *Laptop for Less*\n\nThanks for reaching out. To help you find the right device, could you share:\n\n1️⃣ What brand/model are you looking for?\n2️⃣ Preferred specs — RAM, storage?\n3️⃣ Your budget range (in AED)?\n4️⃣ New or used?" },
-    { label: "Referral Reply", text: "Hey! 👋 Thanks for reaching out to *Laptop for Less*\n\nGlad someone referred you! We deal in quality laptops — new and used — at the best prices in UAE.\n\nWhat are you looking for and what's your budget? 🚀" },
-  ]},
-  { category: "Follow Up", icon: "🔁", color: "#F59E0B", bg: "#FFFBEB", templates: [
-    { label: "Day 1 Nudge", text: "Hey [Name] 👋\n\nJust checking in — did you get a chance to look at the quote I sent?\n\nHappy to answer any questions or adjust based on your budget 😊\n\n— *Laptop for Less*" },
-    { label: "Day 3 Nudge", text: "Hi [Name],\n\nStill interested in the [Device]? 🖥️\n\nHeads up — stock moves fast. Let me know if you'd like to proceed!\n\n— *Laptop for Less*" },
-    { label: "Final Follow Up", text: "Hey [Name], last message from my side 😊\n\nIf you're still looking for a laptop, I'm here whenever you're ready. We always have fresh stock.\n\n— *Laptop for Less* 💻" },
-  ]},
-  { category: "Negotiation", icon: "💬", color: "#EC4899", bg: "#FDF2F8", templates: [
-    { label: "Hold Price", text: "This is already our best price for this spec and condition — we price fairly from the start. What I can do is make sure you get the charger included. Want me to confirm availability? 😊" },
-    { label: "Counter Offer", text: "I appreciate you being upfront! That price would be tough honestly. The closest I can go is AED [X]. If that works, we can close today 👌" },
-    { label: "Justify Price", text: "I get that — budget matters. The reason this one is priced here is [reason]. If you can stretch to AED [X], I'll make it work for you 😊" },
-  ]},
-  { category: "Deal Closed", icon: "✅", color: "#10B981", bg: "#ECFDF5", templates: [
-    { label: "Confirmation", text: "Thank you, [Name]! 🎉\n\nYour purchase is confirmed:\n📦 *Device:* [Brand + Model]\n💾 *Specs:* [RAM / Storage]\n💰 *Amount:* AED [Amount]\n📅 *Date:* [Date]\n\nReceipt coming shortly. Enjoy your new device! 💻✨" },
-    { label: "Post-Sale Check", text: "Hey [Name]! Hope you're enjoying your new [Device] 💻\n\nJust checking in — everything working well?\n\n— *Laptop for Less*" },
-  ]},
-  { category: "Re-engage", icon: "🔄", color: "#3B82F6", bg: "#EFF6FF", templates: [
-    { label: "New Stock", text: "Hey [Name]! 👋\n\nJust thought of you — we just got some fresh stock in. Still looking for a laptop? Prices are really good right now 👌\n\n— *Laptop for Less*" },
-    { label: "Price Drop", text: "Hey [Name] 💡\n\nGood news — the price on [Device] has dropped!\n\nWas: AED [Old]\nNow: AED [New]\n\nInterested? 😊\n\n— *Laptop for Less*" },
-  ]},
-  { category: "Complaint", icon: "🛠️", color: "#EF4444", bg: "#FEF2F2", templates: [
-    { label: "Acknowledge", text: "Hey [Name],\n\nI'm really sorry to hear that — this is not the experience we want for you 🙏\n\nCan you describe what's happening? A quick video or photo would help.\n\nI'll look into this right away.\n\n— *Laptop for Less*" },
-    { label: "Resolution", text: "Hey [Name],\n\nThanks for your patience 🙏\n\nHere's what we've agreed:\n✅ [Resolution]\n\nThis will be done by [Date].\n\nWe appreciate your trust!\n\n— *Laptop for Less*" },
-  ]},
-];
 
 const QUICK_ACTIONS = [
   { icon: "📦", label: "Stock Summary",     question: "Give me a full summary of my current stock by brand with total count and total value" },
@@ -554,7 +526,6 @@ export default function App() {
   const chatFilesInputRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
-  const [templateCopied, setTemplateCopied] = useState(null);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
   const stockFileInputRef = useRef(null);
@@ -574,6 +545,15 @@ export default function App() {
   const [importStockResult, setImportStockResult] = useState(null);
   const importStockFileRef = useRef(null);
   const [cachedStock, setCachedStock] = useState([]);
+  const [stockView, setStockView] = useState("devices"); // "devices" | "parts"
+  const [parts, setParts] = useState([]);
+  const [partsLoading, setPartsLoading] = useState(false);
+  const [showAddPart, setShowAddPart] = useState(false);
+  const [editingPart, setEditingPart] = useState(null);
+  const EMPTY_PART = { category: "RAM", compatible_with: "", specs: "", condition: "Used", quantity: 1, cost_price: "", sell_price: "", source: "", notes: "" };
+  const [partForm, setPartForm] = useState(EMPTY_PART);
+  const PART_CATEGORIES = ["RAM", "SSD", "HDD", "Screen", "Battery", "Charger", "Keyboard", "Trackpad", "Other"];
+  const PART_ICONS = { RAM: "🧠", SSD: "💾", HDD: "💿", Screen: "🖥️", Battery: "🔋", Charger: "🔌", Keyboard: "⌨️", Trackpad: "🖱️", Other: "🔧" };
   const [askMessages, setAskMessages] = useState([]);
   const [askInput, setAskInput] = useState("");
   const [askLoading, setAskLoading] = useState(false);
@@ -986,7 +966,46 @@ Return JSON with only a "reply" field containing the message.`;
   ).sort((a, b) => b.days - a.days);
 
   // ── stock ──
-  useEffect(() => { if (activeTab === "stock") { loadStock(); refreshCachedStock(); } }, [activeTab, loadStock, refreshCachedStock]);
+  useEffect(() => {
+    if (activeTab === "stock") {
+      loadStock(); refreshCachedStock();
+      loadParts();
+    }
+  }, [activeTab, loadStock, refreshCachedStock]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadParts() {
+    setPartsLoading(true);
+    const { data } = await supabase.from("stock_parts").select("*").order("created_at", { ascending: false });
+    setParts(data || []);
+    setPartsLoading(false);
+  }
+
+  async function savePart() {
+    const payload = {
+      category:       partForm.category,
+      compatible_with:partForm.compatible_with.trim() || null,
+      specs:          partForm.specs.trim()           || null,
+      condition:      partForm.condition,
+      quantity:       parseInt(partForm.quantity) || 1,
+      cost_price:     partForm.cost_price ? parseFloat(partForm.cost_price) : null,
+      sell_price:     partForm.sell_price ? parseFloat(partForm.sell_price) : null,
+      source:         partForm.source.trim()  || null,
+      notes:          partForm.notes.trim()   || null,
+      status:         "available",
+    };
+    if (editingPart) {
+      await supabase.from("stock_parts").update(payload).eq("id", editingPart.id);
+    } else {
+      await supabase.from("stock_parts").insert(payload);
+    }
+    await loadParts();
+    setShowAddPart(false); setEditingPart(null); setPartForm(EMPTY_PART);
+  }
+
+  async function deletePart(id) {
+    await supabase.from("stock_parts").delete().eq("id", id);
+    setParts(prev => prev.filter(p => p.id !== id));
+  }
 
   function getMatchingClients(item) {
     return customers.filter(c =>
@@ -2478,7 +2497,7 @@ For any issues please contact us on WhatsApp.
           <div>
             <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>
-              {activeTab === "customers" ? "Contacts" : "Templates"}
+              {activeTab === "customers" ? "Contacts" : "Ask Claude"}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -2548,25 +2567,6 @@ For any issues please contact us on WhatsApp.
             </button>
           ))}
         </div>
-      </div>
-
-      {/* bottom nav tabs */}
-      <div style={{ display: "flex", borderTop: "1px solid #F1F5F9", background: "#fff" }}>
-        {[
-          { key: "home", icon: "🏠", label: "Home" },
-          { key: "customers", icon: "👥", label: "Contacts" },
-          { key: "stock", icon: "📦", label: "Stock" },
-          { key: "sourcing", icon: "🌍", label: "Sourcing" },
-          { key: "traders", icon: "🏪", label: "Traders" },
-          { key: "templates", icon: "💬", label: "Templates" },
-          { key: "ask", icon: "🤖", label: "Ask" },
-        ].map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            style={{ flex: 1, padding: "8px 2px 10px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, borderTop: `2px solid ${activeTab === t.key ? "#6366F1" : "transparent"}` }}>
-            <span style={{ fontSize: 16 }}>{t.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
-          </button>
-        ))}
       </div>
 
       {/* ── HOME / DASHBOARD TAB ── */}
@@ -2806,6 +2806,163 @@ For any issues please contact us on WhatsApp.
       {/* ── STOCK TAB ── */}
       {activeTab === "stock" && (
         <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* Devices / Parts toggle */}
+          <div style={{ display: "flex", gap: 6 }}>
+            {[
+              { key: "devices", label: "💻 Devices" },
+              { key: "parts",   label: "🔧 Parts" },
+            ].map(v => (
+              <button key={v.key} onClick={() => setStockView(v.key)}
+                style={{ flex: 1, padding: "9px 0", borderRadius: 12, border: "none",
+                         fontWeight: 700, fontSize: 13, cursor: "pointer",
+                         background: stockView === v.key ? "#6366F1" : "#F1F5F9",
+                         color:      stockView === v.key ? "#fff"    : "#64748B" }}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ══ PARTS VIEW ══ */}
+          {stockView === "parts" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>🔧 Spare Parts</div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{parts.length} part{parts.length !== 1 ? "s" : ""} in inventory</div>
+                </div>
+                <button onClick={() => { setEditingPart(null); setPartForm(EMPTY_PART); setShowAddPart(true); }}
+                  style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  + Add Part
+                </button>
+              </div>
+
+              {partsLoading && <Spinner />}
+
+              {!partsLoading && parts.length === 0 && (
+                <div style={{ textAlign: "center", padding: "40px 20px", color: "#CBD5E1" }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>🔧</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8" }}>No parts yet</div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>Tap + Add Part to start tracking spare parts</div>
+                </div>
+              )}
+
+              {parts.map(p => (
+                <div key={p.id} style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontSize: 18 }}>{PART_ICONS[p.category] || "🔧"}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{p.category}</span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 10,
+                          background: p.quantity === 0 ? "#FEF2F2" : "#ECFDF5",
+                          color:      p.quantity === 0 ? "#EF4444" : "#059669",
+                        }}>
+                          {p.quantity === 0 ? "Out of stock" : `×${p.quantity}`}
+                        </span>
+                      </div>
+                      {p.compatible_with && <div style={{ fontSize: 12, color: "#6366F1", fontWeight: 600 }}>🖥️ {p.compatible_with}</div>}
+                      {p.specs        && <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{p.specs}</div>}
+                      {p.condition    && <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>{p.condition}</div>}
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                      {p.sell_price && <div style={{ fontSize: 14, fontWeight: 800, color: "#10B981" }}>AED {Number(p.sell_price).toLocaleString()}</div>}
+                      {p.cost_price && <div style={{ fontSize: 11, color: "#94A3B8" }}>Cost: AED {Number(p.cost_price).toLocaleString()}</div>}
+                    </div>
+                  </div>
+                  {p.source && <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6 }}>📦 {p.source}</div>}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => { setEditingPart(p); setPartForm({ category: p.category || "RAM", compatible_with: p.compatible_with || "", specs: p.specs || "", condition: p.condition || "Used", quantity: p.quantity ?? 1, cost_price: p.cost_price ?? "", sell_price: p.sell_price ?? "", source: p.source || "", notes: p.notes || "" }); setShowAddPart(true); }}
+                      style={{ flex: 1, padding: "6px", borderRadius: 8, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✏️ Edit</button>
+                    <button onClick={() => { if (window.confirm("Delete this part?")) deletePart(p.id); }}
+                      style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🗑</button>
+                  </div>
+                </div>
+              ))}
+
+              {/* Add/Edit Part Modal */}
+              {showAddPart && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+                  <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 440 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                        <span style={{ fontSize: 16, fontWeight: 800 }}>{editingPart ? "Edit Part" : "Add Part"}</span>
+                        <button onClick={() => { setShowAddPart(false); setEditingPart(null); setPartForm(EMPTY_PART); }} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+                      </div>
+
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>CATEGORY</div>
+                        <select value={partForm.category} onChange={e => setPartForm(f => ({ ...f, category: e.target.value }))}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", background: "#fff" }}>
+                          {PART_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                        </select>
+                      </div>
+
+                      {[
+                        { label: "COMPATIBLE WITH",   key: "compatible_with", ph: 'e.g. "MacBook Air M2" or "Universal"' },
+                        { label: "SPECS",             key: "specs",           ph: 'e.g. "8GB DDR4 3200MHz"' },
+                        { label: "SUPPLIER / SOURCE", key: "source",          ph: "e.g. Electro CW, local market" },
+                      ].map(({ label, key, ph }) => (
+                        <div key={key} style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+                          <input value={partForm[key]} onChange={e => setPartForm(f => ({ ...f, [key]: e.target.value }))} placeholder={ph}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                        </div>
+                      ))}
+
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>CONDITION</div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {["New", "Used", "Pulled"].map(c => (
+                            <button key={c} onClick={() => setPartForm(f => ({ ...f, condition: c }))}
+                              style={{ flex: 1, padding: "7px 0", borderRadius: 10, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                                       background: partForm.condition === c ? "#6366F1" : "#F1F5F9",
+                                       color:      partForm.condition === c ? "#fff"    : "#64748B" }}>
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        {[
+                          { label: "QUANTITY",   key: "quantity",   type: "number", ph: "1" },
+                          { label: "COST (AED)", key: "cost_price", type: "number", ph: "0" },
+                          { label: "SELL (AED)", key: "sell_price", type: "number", ph: "0" },
+                        ].map(({ label, key, type, ph }) => (
+                          <div key={key}>
+                            <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+                            <input type={type} value={partForm[key]} onChange={e => setPartForm(f => ({ ...f, [key]: e.target.value }))} placeholder={ph}
+                              style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>NOTES</div>
+                        <textarea value={partForm.notes} onChange={e => setPartForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                          placeholder="Any extra notes…"
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => { setShowAddPart(false); setEditingPart(null); setPartForm(EMPTY_PART); }}
+                          style={{ flex: 1, padding: 12, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+                        <button onClick={savePart}
+                          style={{ flex: 2, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                          {editingPart ? "Save Changes" : "Add Part"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ══ DEVICES VIEW (existing, shown when stockView === "devices") ══ */}
+          {stockView === "devices" && (<>
 
           {/* Stats */}
           {stock.length > 0 && (
@@ -3235,6 +3392,7 @@ For any issues please contact us on WhatsApp.
               </div>
             </div>
           )}
+          </>)}
         </div>
       )}
 
@@ -3496,37 +3654,6 @@ For any issues please contact us on WhatsApp.
               }
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── TEMPLATES TAB ── */}
-      {activeTab === "templates" && (
-        <div style={{ flex: 1, padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
-          {QUICK_TEMPLATES.map(section => (
-            <div key={section.category} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-              <div style={{ padding: "10px 14px", background: section.bg, display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${section.bg}` }}>
-                <span style={{ fontSize: 16 }}>{section.icon}</span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: section.color }}>{section.category}</span>
-              </div>
-              {section.templates.map((t, i) => {
-                const tid = `${section.category}-${i}`;
-                return (
-                  <div key={i} style={{ padding: "12px 14px", borderBottom: i < section.templates.length - 1 ? "1px solid #F8FAFC" : "none" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>{t.label}</span>
-                      <button onClick={() => { navigator.clipboard.writeText(t.text); setTemplateCopied(tid); setTimeout(() => setTemplateCopied(null), 2000); }}
-                        style={{ padding: "4px 12px", borderRadius: 8, border: "none", background: templateCopied === tid ? "#10B981" : section.color, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
-                        {templateCopied === tid ? "✓ Copied!" : "Copy"}
-                      </button>
-                    </div>
-                    <div style={{ fontSize: 12, color: "#94A3B8", lineHeight: 1.5, whiteSpace: "pre-line", background: "#F8FAFC", padding: "8px 10px", borderRadius: 8, borderLeft: `3px solid ${section.color}` }}>
-                      {t.text.slice(0, 120)}{t.text.length > 120 ? "..." : ""}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
         </div>
       )}
 
@@ -3795,7 +3922,6 @@ For any issues please contact us on WhatsApp.
           { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
           { key: "sourcing", icon: "🌍", label: "Sourcing" },
           { key: "traders", icon: "🏪", label: "Traders" },
-          { key: "templates", icon: "💬", label: "Templates" },
           { key: "ask", icon: "🤖", label: "Ask" },
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
