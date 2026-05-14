@@ -118,8 +118,8 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
 
     setSaving(false);
     setCreated({ customer: c, deal });
-    onCreated && onCreated(c, deal);
     setStep(3);
+    // onCreated is called when user taps "Open Chat" in step 3
   }
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -333,7 +333,7 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <button onClick={() => { onClose(); }} style={{
+                  <button onClick={() => onCreated && onCreated(c, created.deal)} style={{
                     padding: 13, borderRadius: 14, border: "none",
                     background: cType.color, color: "#fff",
                     fontWeight: 800, fontSize: 14, cursor: "pointer",

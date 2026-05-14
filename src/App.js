@@ -3825,13 +3825,9 @@ For any issues please contact us on WhatsApp.
             await loadCustomers();
             setShowContactModal(false);
             setContactModalPreType(null);
-            if (customer && deal) {
+            if (customer) {
               setActiveCustomerId(customer.id);
-              setActiveDealId(deal.id);
-              setView("detail");
-              setActiveTab("customers");
-            } else if (customer) {
-              setActiveCustomerId(customer.id);
+              setActiveDealId(deal?.id || null);
               setView("detail");
               setActiveTab("customers");
             }
