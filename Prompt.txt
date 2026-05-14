@@ -1,0 +1,43 @@
+Fix the chat window so the owner can send multiple messages anytime, not just as replies to client messages.
+
+THE PROBLEM:
+Currently after sending a reply the input disappears and owner cannot send another message until client sends something new. This is wrong.
+
+THE FIX:
+
+1. ALWAYS show the message input at the bottom of chat at all times regardless of conversation state. It never disappears.
+
+The bottom input area is always visible:
+
+[New message from client...] [+ Add]
+─────────────────────────────
+[Type your message...]  [Send]
+
+Two separate input rows always visible:
+- TOP ROW: for pasting incoming CLIENT messages
+- BOTTOM ROW: for typing YOUR OWN outgoing messages
+
+2. The [✏️ Reply Myself] [🤖 AI Reply] buttons appear after each unanswered client message as a convenience shortcut. But owner can ALSO just type in the bottom input and send anytime without using those buttons.
+
+3. When owner types in bottom input and hits Send:
+- Saves as role=assistant sent=content
+- Shows on RIGHT side in purple
+- Does NOT require a pending client message
+- Can send multiple messages in a row
+
+4. When AI Reply button is tapped on a specific client message:
+- App reads full conversation history
+- Generates reply
+- Shows in editable box above the bottom input
+- Send saves it, clears the generated reply box
+
+5. EMPTY CHAT STATE:
+Still show the two big buttons in center: I'll type first and AI opens conversation
+But ALSO show the two input rows at bottom so owner can start typing immediately
+
+The rule is simple:
+- TOP input row = paste what CLIENT sent you
+- BOTTOM input row = type what YOU want to send
+- Both always visible, always usable
+
+Run npm run build then git push.

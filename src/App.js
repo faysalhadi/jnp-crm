@@ -2531,80 +2531,70 @@ For any issues please contact us on WhatsApp.
           </div>
         )}
 
-        {/* ── INPUT BAR ── */}
+        {/* ── INPUT BAR — always visible ── */}
         <div style={{ padding: "10px 12px 20px", background: "#fff", borderTop: "1px solid #F1F5F9", position: "sticky", bottom: 0 }}>
 
-          {/* AI generated reply — review before sending */}
-          {replyMode === "ai" && generatedReply && !generatedReplyLoading && (
-            <div style={{ marginBottom: 10 }}>
+          {/* AI generated reply box — shown above inputs when ready */}
+          {generatedReply && !generatedReplyLoading && (
+            <div style={{ marginBottom: 12, background: "#EEF2FF", borderRadius: 14, padding: 12, border: "1px solid #C7D2FE" }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: 0.5, marginBottom: 6 }}>🤖 SUGGESTED REPLY</div>
               {editingGenerated ? (
-                <textarea value={generatedReply} onChange={e => setGeneratedReply(e.target.value)} rows={4} autoFocus
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #6366F1", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box" }} />
+                <textarea value={generatedReply} onChange={e => setGeneratedReply(e.target.value)} rows={3} autoFocus
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #6366F1", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box", background: "#fff" }} />
               ) : (
-                <div style={{ padding: "10px 13px", borderRadius: 12, background: "#EEF2FF", border: "1px solid #C7D2FE", fontSize: 13, color: "#1E1B4B", lineHeight: 1.65, whiteSpace: "pre-line" }}>
+                <div style={{ fontSize: 13, color: "#1E1B4B", lineHeight: 1.65, whiteSpace: "pre-line" }}>
                   {generatedReply}
                 </div>
               )}
               <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                 <button onClick={sendAIReply}
-                  style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                   ✅ Send
                 </button>
                 <button onClick={() => setEditingGenerated(v => !v)}
-                  style={{ padding: "10px 14px", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  style={{ padding: "9px 14px", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                   {editingGenerated ? "Done" : "✏️ Edit"}
                 </button>
-                <button onClick={() => { setGeneratedReply(""); setReplyMode(null); setReplyingToId(null); setEditingGenerated(false); }}
-                  style={{ padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                <button onClick={() => { setGeneratedReply(""); setReplyingToId(null); setEditingGenerated(false); }}
+                  style={{ padding: "9px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                   ❌ Skip
                 </button>
               </div>
             </div>
           )}
 
-          {/* Reply Myself input */}
-          {replyMode === "myself" && !generatedReply && (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 0 }}>
-              <textarea
-                value={directReplyText}
-                onChange={e => setDirectReplyText(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDirectReply(); } }}
-                autoFocus
-                placeholder="Type your reply..."
-                rows={2}
-                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #6366F1", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
-              />
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
-                <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
-                  style={{ width: 46, height: 38, borderRadius: 10, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 18, cursor: directReplyText.trim() ? "pointer" : "not-allowed" }}>
-                  ↑
-                </button>
-                <button onClick={() => { setReplyMode(null); setReplyingToId(null); setDirectReplyText(""); }}
-                  style={{ width: 46, height: 38, borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
+          {/* TOP ROW — paste client's incoming message */}
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8 }}>
+            <textarea
+              value={incomingText}
+              onChange={e => setIncomingText(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addIncomingMessage(); } }}
+              placeholder="New message from client..."
+              rows={1}
+              style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5, background: "#F8FAFC" }}
+            />
+            <button onClick={addIncomingMessage} disabled={!incomingText.trim()}
+              style={{ padding: "9px 14px", height: 38, borderRadius: 10, border: "none", background: incomingText.trim() ? "#22C55E" : "#E2E8F0", color: incomingText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 12, cursor: incomingText.trim() ? "pointer" : "not-allowed", whiteSpace: "nowrap", flexShrink: 0 }}>
+              + Add
+            </button>
+          </div>
 
-          {/* Default — add incoming client message */}
-          {!replyMode && (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-              <textarea
-                value={incomingText}
-                onChange={e => setIncomingText(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addIncomingMessage(); } }}
-                placeholder="New message from client..."
-                rows={2}
-                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
-              />
-              <button onClick={addIncomingMessage} disabled={!incomingText.trim()}
-                style={{ padding: "0 14px", height: 52, borderRadius: 12, border: "none", background: incomingText.trim() ? "#22C55E" : "#E2E8F0", color: incomingText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 12, cursor: incomingText.trim() ? "pointer" : "not-allowed", whiteSpace: "nowrap", flexShrink: 0 }}>
-                + Add
-              </button>
-            </div>
-          )}
+          {/* BOTTOM ROW — type your own outgoing message (always usable) */}
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <textarea
+              id="ownerReplyInput"
+              value={directReplyText}
+              onChange={e => setDirectReplyText(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDirectReply(); } }}
+              placeholder="Type your message..."
+              rows={2}
+              style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
+            />
+            <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
+              style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 20, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
+              ↑
+            </button>
+          </div>
         </div>
       </div>
     );
