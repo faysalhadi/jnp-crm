@@ -130,12 +130,14 @@ function DealDetail({ deal: initialDeal, suppliers, rate, anthropicKey, onBack, 
   const [toast,      setToast]      = useState(null);      // string message
 
   // reply generator
-  const [showReply,   setShowReply]   = useState(false);
+  const [replyOpen,   setReplyOpen]   = useState(false);
   const [replyType,   setReplyType]   = useState("Bid Offer");
   const [replyCtx,    setReplyCtx]    = useState("");
   const [replyLoading,setReplyLoading]= useState(false);
   const [gmailReply,  setGmailReply]  = useState("");
   const [waReply,     setWaReply]     = useState("");
+  const [copiedGmail, setCopiedGmail] = useState(false);
+  const [copiedWA,    setCopiedWA]    = useState(false);
 
   // financials
   const [showFin,    setShowFin]    = useState(true);
@@ -286,7 +288,7 @@ Return JSON only, no markdown:
   // ── generate reply ────────────────────────────────────────────────────────
   async function generateReply() {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setReplyLoading(true); setGmailReply(""); setWaReply("");
+    setReplyLoading(true); setGmailReply(""); setWaReply(""); setCopiedGmail(false); setCopiedWA(false);
     try {
       const raw = await callClaude(
         anthropicKey,
@@ -679,12 +681,163 @@ Write TWO reply versions. Return JSON only:
           )}
         </div>
 
-        {/* Generate Reply button */}
-        <button onClick={() => { setReplyCtx(""); setReplyType("Bid Offer"); setGmailReply(""); setWaReply(""); setShowReply(true); }}
-          style={{ width: "100%", marginTop: 12, padding: 13, borderRadius: 14, border: "none",
-                   background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
-          ✍️ Generate Reply
-        </button>
+        {/* ── Reply Generator (inline) ── */}
+        <div style={{ background: "#fff", borderRadius: 16, marginTop: 12,
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+
+          {/* Header row — always visible */}
+          <button onClick={() => { setReplyOpen(v => !v); setGmailReply(""); setWaReply(""); setCopiedGmail(false); setCopiedWA(false); }}
+            style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                     padding: "14px 16px", background: "none", border: "none", cursor: "pointer" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>✍️</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>Reply Generator</span>
+              <span style={{ fontSize: 11, color: "#94A3B8" }}>Gmail + WhatsApp</span>
+            </div>
+            <span style={{ fontSize: 18, color: "#94A3B8", lineHeight: 1 }}>
+              {replyOpen ? "▲" : "▼"}
+            </span>
+          </button>
+
+          {replyOpen && (
+            <div style={{ padding: "0 16px 18px", borderTop: "1px solid #F1F5F9" }}>
+
+              {/* Deal context chip */}
+              <div style={{ margin: "12px 0", padding: "8px 12px", background: "#F8FAFC",
+                            borderRadius: 10, fontSize: 12, color: "#475569" }}>
+                <strong>{d.supplier_name}</strong>
+                {d.lot_name  && <span> · {d.lot_name}</span>}
+                {d.units_bid && <span> · {Number(d.units_bid).toLocaleString()} units</span>}
+                {d.our_bid_usd && <span> · ${Number(d.our_bid_usd).toLocaleString()}/unit</span>}
+              </div>
+
+              {/* Reply type pills */}
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8",
+                            letterSpacing: 0.5, marginBottom: 8 }}>REPLY TYPE</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                {[
+                  "Bid Offer",
+                  "Counter Offer",
+                  "Request Inventory",
+                  "Ask Shipping Quote",
+                  "Payment Confirmation",
+                  "Chase Tracking",
+                  "Custom",
+                ].map(t => (
+                  <button key={t} onClick={() => setReplyType(t)} style={{
+                    padding: "5px 12px", borderRadius: 20, border: "none",
+                    fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    background: replyType === t ? "#6366F1" : "#F1F5F9",
+                    color:      replyType === t ? "#fff"    : "#64748B",
+                    transition: "all 0.1s",
+                  }}>{t}</button>
+                ))}
+              </div>
+
+              {/* Context input */}
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8",
+                            letterSpacing: 0.5, marginBottom: 6 }}>YOUR CONTEXT <span style={{ fontWeight: 400, textTransform: "none" }}>(optional)</span></div>
+              <textarea
+                value={replyCtx}
+                onChange={e => setReplyCtx(e.target.value)}
+                rows={2}
+                placeholder={
+                  replyType === "Bid Offer"            ? 'e.g. "Bid $85/unit for 50 units, ask for invoice"' :
+                  replyType === "Counter Offer"        ? 'e.g. "Counter at $78/unit, max 40 units"' :
+                  replyType === "Chase Tracking"       ? 'e.g. "Payment sent 3 days ago, need tracking"' :
+                  replyType === "Ask Shipping Quote"   ? 'e.g. "Need quote for air freight to Dubai"' :
+                  'Add any extra context here…'
+                }
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10,
+                         border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none",
+                         boxSizing: "border-box", resize: "vertical", fontFamily: "inherit",
+                         marginBottom: 14, lineHeight: 1.5 }}
+              />
+
+              {/* Generate button */}
+              <button onClick={generateReply} disabled={replyLoading} style={{
+                width: "100%", padding: 13, borderRadius: 12, border: "none",
+                background: replyLoading ? "#E2E8F0" : "#6366F1",
+                color: replyLoading ? "#94A3B8" : "#fff",
+                fontWeight: 800, fontSize: 14, cursor: replyLoading ? "default" : "pointer",
+                marginBottom: (gmailReply || waReply) ? 18 : 0,
+                transition: "background 0.15s",
+              }}>
+                {replyLoading ? "⏳ Generating both versions…" : "⚡ Generate Gmail + WhatsApp"}
+              </button>
+
+              {/* ── Gmail version ── */}
+              {gmailReply && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between",
+                                alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 15 }}>📧</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "#DC2626" }}>Gmail — formal</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(gmailReply);
+                        setCopiedGmail(true);
+                        setTimeout(() => setCopiedGmail(false), 2000);
+                      }}
+                      style={{
+                        padding: "5px 14px", borderRadius: 20, border: "none", cursor: "pointer",
+                        background: copiedGmail ? "#ECFDF5" : "#F1F5F9",
+                        color:      copiedGmail ? "#059669" : "#64748B",
+                        fontSize: 11, fontWeight: 700, transition: "all 0.15s",
+                      }}
+                    >
+                      {copiedGmail ? "✓ Copied!" : "📋 Copy"}
+                    </button>
+                  </div>
+                  <div style={{
+                    background: "#FEF2F2", border: "1.5px solid #FECACA",
+                    borderRadius: 12, padding: "12px 14px",
+                    fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap",
+                  }}>
+                    {gmailReply}
+                  </div>
+                </div>
+              )}
+
+              {/* ── WhatsApp version ── */}
+              {waReply && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between",
+                                alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 15 }}>💬</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "#16A34A" }}>WhatsApp — short</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(waReply);
+                        setCopiedWA(true);
+                        setTimeout(() => setCopiedWA(false), 2000);
+                      }}
+                      style={{
+                        padding: "5px 14px", borderRadius: 20, border: "none", cursor: "pointer",
+                        background: copiedWA ? "#ECFDF5" : "#F1F5F9",
+                        color:      copiedWA ? "#059669" : "#64748B",
+                        fontSize: 11, fontWeight: 700, transition: "all 0.15s",
+                      }}
+                    >
+                      {copiedWA ? "✓ Copied!" : "📋 Copy"}
+                    </button>
+                  </div>
+                  <div style={{
+                    background: "#F0FDF4", border: "1.5px solid #BBF7D0",
+                    borderRadius: 12, padding: "12px 14px",
+                    fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap",
+                  }}>
+                    {waReply}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
@@ -808,79 +961,6 @@ Write TWO reply versions. Return JSON only:
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          REPLY GENERATOR
-      ══════════════════════════════════════════════════════════════════════ */}
-      {showReply && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
-          <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>✍️ Generate Reply</span>
-                <button onClick={() => setShowReply(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
-              </div>
-
-              <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#475569" }}>
-                <strong>{d.supplier_name}</strong> · {d.lot_name || "—"} · {d.units_bid || "—"} units · ${d.our_bid_usd || "—"}/unit
-              </div>
-
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>REPLY TYPE</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-                {["Bid Offer","Counter Offer","Request Inventory List","Ask Shipping Quote","Payment Confirmation","Chase Tracking","Custom"].map(t => (
-                  <button key={t} onClick={() => setReplyType(t)} style={{
-                    padding: "5px 12px", borderRadius: 20, border: "none",
-                    fontSize: 11, fontWeight: 700, cursor: "pointer",
-                    background: replyType === t ? "#6366F1" : "#F1F5F9",
-                    color:      replyType === t ? "#fff"    : "#64748B",
-                  }}>{t}</button>
-                ))}
-              </div>
-
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>ADDITIONAL CONTEXT</div>
-              <textarea value={replyCtx} onChange={e => setReplyCtx(e.target.value)} rows={2}
-                placeholder='e.g. "Counter at $80/unit, ask about shipping cost"'
-                style={{ width: "100%", padding: "9px 11px", borderRadius: 10, border: "1.5px solid #E2E8F0",
-                         fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical",
-                         fontFamily: "inherit", marginBottom: 14 }} />
-
-              <button onClick={generateReply} disabled={replyLoading} style={{
-                width: "100%", padding: 12, borderRadius: 12, border: "none", marginBottom: 16,
-                background: replyLoading ? "#E2E8F0" : "#6366F1",
-                color: replyLoading ? "#94A3B8" : "#fff",
-                fontWeight: 800, fontSize: 14, cursor: "pointer",
-              }}>
-                {replyLoading ? "⏳ Generating…" : "Generate Gmail + WhatsApp"}
-              </button>
-
-              {gmailReply && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#DC2626", marginBottom: 6 }}>📧 GMAIL VERSION</div>
-                  <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12,
-                                padding: 13, fontSize: 12, color: "#1E293B", lineHeight: 1.65,
-                                whiteSpace: "pre-wrap", marginBottom: 8 }}>{gmailReply}</div>
-                  <button onClick={() => navigator.clipboard.writeText(gmailReply)} style={{
-                    padding: "6px 14px", borderRadius: 8, border: "none",
-                    background: "#F1F5F9", color: "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer",
-                  }}>📋 Copy Gmail</button>
-                </div>
-              )}
-              {waReply && (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#16A34A", marginBottom: 6 }}>💬 WHATSAPP VERSION</div>
-                  <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 12,
-                                padding: 13, fontSize: 12, color: "#1E293B", lineHeight: 1.65,
-                                whiteSpace: "pre-wrap", marginBottom: 8 }}>{waReply}</div>
-                  <button onClick={() => navigator.clipboard.writeText(waReply)} style={{
-                    padding: "6px 14px", borderRadius: 8, border: "none",
-                    background: "#F1F5F9", color: "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer",
-                  }}>📋 Copy WhatsApp</button>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}
