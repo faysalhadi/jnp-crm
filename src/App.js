@@ -604,6 +604,15 @@ export default function App() {
   const [contactModalPreType,setContactModalPreType]= useState(null); // null | "client" | "trader" | "supplier"
   const [contactTypeFilter,  setContactTypeFilter]  = useState("all"); // "all" | "client" | "trader" | "supplier"
 
+  // ── supplier reply generator ──
+  const [showSupplierReply,   setShowSupplierReply]   = useState(false);
+  const [supplierReplyCtx,    setSupplierReplyCtx]    = useState("");
+  const [supplierReplyGmail,  setSupplierReplyGmail]  = useState("");
+  const [supplierReplyWA,     setSupplierReplyWA]     = useState("");
+  const [supplierReplyLoading,setSupplierReplyLoading]= useState(false);
+  const [copiedSupGmail,      setCopiedSupGmail]      = useState(false);
+  const [copiedSupWA,         setCopiedSupWA]         = useState(false);
+
   // ── auth ──
   useEffect(() => {
     const stored = localStorage.getItem('jnp_session');
@@ -664,6 +673,25 @@ export default function App() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { askBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [askMessages]);
+
+  // Auto-create a conversation deal for traders/suppliers that have none,
+  // so the existing messages system (which requires deal_id) works unchanged.
+  useEffect(() => {
+    if (view !== "detail" || !activeCustomerId) return;
+    const c = customers.find(x => x.id === activeCustomerId);
+    if (!c) return;
+    const cType = c.contact_type || "client";
+    if (cType === "client") return;                  // clients always have deals
+    if (c.deals && c.deals.length > 0) {
+      if (!activeDealId) setActiveDealId(c.deals[0].id);
+      return;
+    }
+    // No deals — create a silent conversation deal
+    supabase.from("deals")
+      .insert({ customer_id: activeCustomerId, stage: "new_inquiry" })
+      .select().single()
+      .then(({ data: d }) => { if (d) { setActiveDealId(d.id); loadCustomers(); } });
+  }, [activeCustomerId, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeCustomer = customers.find(c => c.id === activeCustomerId);
   const activeDeal = activeCustomer?.deals?.find(d => d.id === activeDealId);
@@ -774,7 +802,12 @@ export default function App() {
         content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
       }));
 
-      const systemPrompt = buildSystemPromptFromCache(cachedStock);
+      const cType = activeCustomer?.contact_type || "client";
+      const systemPrompt = cType === "trader"
+        ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, a local laptop trader. Keep messages short, direct and casual — this is a trader-to-trader conversation. You may be buying from or selling to them. Return JSON with only a "reply" field (WhatsApp style, max 3 lines).`
+        : cType === "supplier"
+        ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, an international laptop supplier. Write professional business messages. Return JSON with only a "reply" field (formal but friendly, 2-4 sentences).`
+        : buildSystemPromptFromCache(cachedStock);
       const raw = await callClaude(anthropicKey, history, systemPrompt);
       const clean = raw.replace(/```json|```/g, "").trim();
       let parsed;
@@ -806,6 +839,31 @@ export default function App() {
       const { data: errMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: "⚠️ API error. Check your Anthropic key in Settings." }).select().single();
       setMessages(prev => [...prev, errMsg]);
     } finally { setMsgLoading(false); }
+  }
+
+  async function generateSupplierReply() {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setSupplierReplyLoading(true); setSupplierReplyGmail(""); setSupplierReplyWA("");
+    const sup = activeCustomer;
+    const prompt = `You are writing communications on behalf of Faisal Hadi, Laptop for Less, Sharjah UAE.
+
+Supplier: ${sup?.name || "Supplier"}
+${sup?.location ? `Location: ${sup.location}` : ""}
+${sup?.email ? `Email: ${sup.email}` : ""}
+Context: ${supplierReplyCtx || "General follow-up"}
+
+Write TWO versions. Return JSON only:
+{
+  "gmail": "Formal email, 3-5 sentences, professional tone. End with: Best regards,\\nFaisal Hadi\\nLaptop for Less, UAE",
+  "whatsapp": "Casual, 2-3 lines max, 1 emoji, no formal sign-off"
+}`;
+    try {
+      const raw = await callClaude(anthropicKey, [{ role: "user", content: prompt }],
+        "You write professional supplier communications for a UAE laptop reseller. Return only valid JSON.");
+      const p = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      setSupplierReplyGmail(p.gmail || ""); setSupplierReplyWA(p.whatsapp || "");
+    } catch { setSupplierReplyGmail("Error generating — check your API key."); }
+    setSupplierReplyLoading(false);
   }
 
   async function generateOutreach() {
@@ -2036,7 +2094,9 @@ For any issues please contact us on WhatsApp.
                   >{activeCustomer.name}</span>
                 )}
                 {activeCustomer.urgent && <Badge color="#EF4444" bg="#FEF2F2" small>🔴 URGENT</Badge>}
-                <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>
+                {activeCustomer.contact_type === "trader"   && <Badge color="#D97706" bg="#FFFBEB" small>🟡 TRADER</Badge>}
+                {activeCustomer.contact_type === "supplier" && <Badge color="#2563EB" bg="#EFF6FF" small>🔵 SUPPLIER</Badge>}
+                {(!activeCustomer.contact_type || activeCustomer.contact_type === "client") && <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                 {editingNumber ? (
@@ -2088,6 +2148,54 @@ For any issues please contact us on WhatsApp.
             ))}
           </div>
         </div>
+
+        {/* ── TRADER action buttons ── */}
+        {activeCustomer.contact_type === "trader" && (
+          <div style={{ display: "flex", gap: 8, margin: "10px 12px 0" }}>
+            {[
+              { label: "💰 Buy From", ctx: `I want to buy devices from ${activeCustomer.name}. Ask what they have available and at what price.` },
+              { label: "💵 Sell To",  ctx: `I want to sell devices to ${activeCustomer.name}. Mention what stock I have available.` },
+            ].map(({ label, ctx }) => (
+              <button key={label} onClick={() => {
+                setOutreachReason("Custom message");
+                setOutreachCustom(ctx);
+                setOutreachMode(true);
+              }} style={{
+                flex: 1, padding: "9px 6px", borderRadius: 12, border: "1.5px solid #FDE68A",
+                background: "#FFFBEB", color: "#D97706", fontWeight: 700, fontSize: 12, cursor: "pointer",
+              }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── SUPPLIER action buttons ── */}
+        {activeCustomer.contact_type === "supplier" && (
+          <div style={{ display: "flex", gap: 8, margin: "10px 12px 0" }}>
+            <button onClick={() => {
+              const email = window.prompt("Paste the email content from " + activeCustomer.name + ":");
+              if (!email?.trim()) return;
+              setOutreachReason("Custom message");
+              setOutreachCustom("Reply professionally to this email from the supplier: " + email.trim());
+              setOutreachMode(true);
+            }} style={{
+              flex: 1, padding: "9px 6px", borderRadius: 12, border: "1.5px solid #FECACA",
+              background: "#FEF2F2", color: "#DC2626", fontWeight: 700, fontSize: 12, cursor: "pointer",
+            }}>
+              📧 Check Gmail
+            </button>
+            <button onClick={() => {
+              setSupplierReplyCtx(""); setSupplierReplyGmail("");
+              setSupplierReplyWA(""); setShowSupplierReply(true);
+            }} style={{
+              flex: 1, padding: "9px 6px", borderRadius: 12, border: "1.5px solid #BFDBFE",
+              background: "#EFF6FF", color: "#2563EB", fontWeight: 700, fontSize: 12, cursor: "pointer",
+            }}>
+              ✍️ Generate Reply
+            </button>
+          </div>
+        )}
 
         {/* deal card */}
         {activeDeal && (
@@ -2346,6 +2454,63 @@ For any issues please contact us on WhatsApp.
 
           <div ref={bottomRef} />
         </div>
+
+        {/* ── SUPPLIER REPLY GENERATOR MODAL ── */}
+        {showSupplierReply && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+            <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>✍️ Generate Reply</div>
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{activeCustomer.name} · Supplier</div>
+                  </div>
+                  <button onClick={() => setShowSupplierReply(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+                </div>
+
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>WHAT DO YOU WANT TO SAY?</div>
+                <textarea value={supplierReplyCtx} onChange={e => setSupplierReplyCtx(e.target.value)} rows={3}
+                  placeholder='e.g. "Accept their lot offer, ask for invoice and shipping quote"'
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", marginBottom: 14 }} />
+
+                <button onClick={generateSupplierReply} disabled={supplierReplyLoading} style={{
+                  width: "100%", padding: 13, borderRadius: 12, border: "none", marginBottom: 18,
+                  background: supplierReplyLoading ? "#E2E8F0" : "#2563EB",
+                  color: supplierReplyLoading ? "#94A3B8" : "#fff",
+                  fontWeight: 800, fontSize: 14, cursor: "pointer",
+                }}>
+                  {supplierReplyLoading ? "⏳ Generating…" : "⚡ Generate Gmail + WhatsApp"}
+                </button>
+
+                {supplierReplyGmail && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#DC2626", marginBottom: 8 }}>📧 GMAIL — FORMAL</div>
+                    <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: 8 }}>
+                      {supplierReplyGmail}
+                    </div>
+                    <button onClick={() => { navigator.clipboard.writeText(supplierReplyGmail); setCopiedSupGmail(true); setTimeout(() => setCopiedSupGmail(false), 2000); }}
+                      style={{ padding: "6px 16px", borderRadius: 20, border: "none", background: copiedSupGmail ? "#ECFDF5" : "#F1F5F9", color: copiedSupGmail ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
+                      {copiedSupGmail ? "✓ Copied!" : "📋 Copy Gmail"}
+                    </button>
+                  </div>
+                )}
+
+                {supplierReplyWA && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#16A34A", marginBottom: 8 }}>💬 WHATSAPP — SHORT</div>
+                    <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: 8 }}>
+                      {supplierReplyWA}
+                    </div>
+                    <button onClick={() => { navigator.clipboard.writeText(supplierReplyWA); setCopiedSupWA(true); setTimeout(() => setCopiedSupWA(false), 2000); }}
+                      style={{ padding: "6px 16px", borderRadius: 20, border: "none", background: copiedSupWA ? "#ECFDF5" : "#F1F5F9", color: copiedSupWA ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
+                      {copiedSupWA ? "✓ Copied!" : "📋 Copy WhatsApp"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* edit sent overlay */}
         {editSent && (
