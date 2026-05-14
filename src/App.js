@@ -201,6 +201,24 @@ function timeAgo(ts) {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+
+// WhatsApp-style timestamp for contact list
+function waTsFormat(ts) {
+  if (!ts) return "";
+  const now  = new Date();
+  const d    = new Date(ts);
+  const diffMs  = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffH   = Math.floor(diffMs / 3600000);
+  const diffDays= Math.floor(diffMs / 86400000);
+  if (diffMin < 1)  return "now";
+  if (diffMin < 60) return `${diffMin}m`;
+  if (diffH   < 24) return `${diffH}h`;
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  if (diffDays < 7) return d.toLocaleDateString("en-GB", { weekday: "short" });
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" });
+}
 function daysSince(ts) {
   if (!ts) return 0;
   return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
@@ -604,6 +622,9 @@ export default function App() {
   const [contactModalPreType,setContactModalPreType]= useState(null); // null | "client" | "trader" | "supplier"
   const [contactTypeFilter,  setContactTypeFilter]  = useState("all"); // "all" | "client" | "trader" | "supplier"
 
+  // ── last messages for contact list previews ──
+  const [lastMsgMap, setLastMsgMap] = useState({}); // { customerId: { role, content, sent, ts } }
+
   // ── supplier reply generator ──
   const [showSupplierReply,   setShowSupplierReply]   = useState(false);
   const [supplierReplyCtx,    setSupplierReplyCtx]    = useState("");
@@ -641,6 +662,30 @@ export default function App() {
     const { data: custs } = await supabase.from("customers").select("*, deals(*)").order("last_active", { ascending: false });
     setCustomers(custs || []);
     setLoading(false);
+
+    // Batch-load the last message for every deal so the contact list
+    // can show real previews and an unread dot — one query, not N.
+    const dealIds = [];
+    const dealToCustomer = {};
+    (custs || []).forEach(c =>
+      (c.deals || []).forEach(d => {
+        dealIds.push(d.id);
+        dealToCustomer[d.id] = c.id;
+      })
+    );
+    if (!dealIds.length) return;
+    const { data: msgs } = await supabase
+      .from("messages")
+      .select("deal_id, role, content, sent, ts")
+      .in("deal_id", dealIds)
+      .order("ts", { ascending: false })
+      .limit(1000);
+    const map = {};
+    (msgs || []).forEach(msg => {
+      const cid = dealToCustomer[msg.deal_id];
+      if (cid && !map[cid]) map[cid] = msg; // first result = most recent (ordered desc)
+    });
+    setLastMsgMap(map);
   }, []);
 
   const loadStock = useCallback(async () => {
@@ -2813,21 +2858,29 @@ For any issues please contact us on WhatsApp.
             </div>
           )}
           {filtered.map(c => {
-            const cType     = c.contact_type || "client";
-            const tier      = TIERS[c.tier] || TIERS.cold;
-            const openD     = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
-            const latestDeal= openD[openD.length - 1] || (c.deals || [])[c.deals.length - 1];
-            const overdue   = daysSince(c.last_active) >= 1 && openD.length > 0;
-            const totalValue= (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
-            const activityTs= c.last_activity_at || c.last_active;
-            const typeBadge = cType === "trader" ? { label: "🟡 Trader", color: "#D97706", bg: "#FFFBEB" }
-                            : cType === "supplier"? { label: "🔵 Supplier", color: "#2563EB", bg: "#EFF6FF" }
+            const cType      = c.contact_type || "client";
+            const tier       = TIERS[c.tier] || TIERS.cold;
+            const openD      = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+            const latestDeal = openD[openD.length - 1] || (c.deals || [])[c.deals.length - 1];
+            const overdue    = daysSince(c.last_active) >= 1 && openD.length > 0;
+            const totalValue = (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
+            const activityTs = c.last_activity_at || c.last_active;
+
+            // Last message from batch-loaded map
+            const lastMsg   = lastMsgMap[c.id];
+            const msgText   = lastMsg ? (lastMsg.sent && lastMsg.sent !== "NOT_SENT" ? lastMsg.sent : lastMsg.content) : null;
+            const isUnread  = lastMsg && lastMsg.role === "customer" && (!lastMsg.sent || lastMsg.sent === "NOT_SENT");
+
+            // Preview: real last message → deal info fallback → notes fallback
+            const preview = msgText
+              ? msgText.slice(0, 40) + (msgText.length > 40 ? "…" : "")
+              : latestDeal
+                ? ([latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Device TBD") + (latestDeal.budget ? ` · AED ${Number(latestDeal.budget).toLocaleString()}` : "")
+                : (c.notes?.slice(0, 40) || c.number || "No messages yet");
+
+            const typeBadge = cType === "trader"   ? { label: "🟡 Trader",   color: "#D97706", bg: "#FFFBEB" }
+                            : cType === "supplier"  ? { label: "🔵 Supplier", color: "#2563EB", bg: "#EFF6FF" }
                             : null;
-            // preview text
-            const preview   = latestDeal
-              ? ([latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Device TBD")
-                + (latestDeal.budget ? ` · AED ${Number(latestDeal.budget).toLocaleString()}` : "")
-              : cType !== "client" ? (c.notes?.slice(0, 40) || "") : "";
 
             return (
               <div key={c.id} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(latestDeal?.id); setView("detail"); setPendingSuggestion(null); }}
@@ -2835,41 +2888,65 @@ For any issues please contact us on WhatsApp.
                 {c.urgent && <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: "#EF4444" }} />}
 
                 {/* Row 1 — avatar + name + timestamp */}
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: c.urgent ? "#FEF2F2" : cType === "trader" ? "#FFFBEB" : cType === "supplier" ? "#EFF6FF" : "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: c.urgent ? "#EF4444" : cType === "trader" ? "#D97706" : cType === "supplier" ? "#2563EB" : "#6366F1", flexShrink: 0, textTransform: "uppercase" }}>{c.name[0]}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {/* Avatar with green dot if unread */}
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: c.urgent ? "#FEF2F2" : cType === "trader" ? "#FFFBEB" : cType === "supplier" ? "#EFF6FF" : "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, color: c.urgent ? "#EF4444" : cType === "trader" ? "#D97706" : cType === "supplier" ? "#2563EB" : "#6366F1", textTransform: "uppercase" }}>
+                      {c.name[0]}
+                    </div>
+                    {isUnread && (
+                      <div style={{ position: "absolute", bottom: 1, right: 1, width: 11, height: 11, borderRadius: "50%", background: "#22C55E", border: "2px solid #fff" }} />
+                    )}
+                  </div>
+
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+                    {/* Name row + timestamp */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                         <span style={{ fontWeight: 800, fontSize: 14, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
                         {typeBadge && <span style={{ fontSize: 9, fontWeight: 700, color: typeBadge.color, background: typeBadge.bg, padding: "1px 6px", borderRadius: 8, flexShrink: 0 }}>{typeBadge.label}</span>}
                         {c.urgent && <Badge color="#EF4444" bg="#FEF2F2" small>URGENT</Badge>}
                       </div>
-                      <span style={{ fontSize: 10, color: "#94A3B8", flexShrink: 0 }}>{timeAgo(activityTs)}</span>
+                      <span style={{ fontSize: 11, color: isUnread ? "#22C55E" : "#94A3B8", fontWeight: isUnread ? 700 : 400, flexShrink: 0 }}>
+                        {waTsFormat(activityTs)}
+                      </span>
                     </div>
-                    {/* preview line */}
-                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {preview || (c.number || "No number")}
+
+                    {/* Preview line */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                      {lastMsg && lastMsg.role !== "customer" && (
+                        <span style={{ fontSize: 10, color: "#94A3B8", flexShrink: 0 }}>You:</span>
+                      )}
+                      <span style={{ fontSize: 12, color: isUnread ? "#0F172A" : "#94A3B8", fontWeight: isUnread ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                        {preview}
+                      </span>
+                      {isUnread && (
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22C55E", flexShrink: 0 }} />
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Row 2 — stage bar (clients only) + tier + value */}
+                {/* Stage bar for clients */}
                 {cType === "client" && latestDeal && (
-                  <div style={{ marginTop: 8, marginLeft: 52 }}>
+                  <div style={{ marginTop: 8, marginLeft: 54 }}>
                     <StageBar stageId={latestDeal.stage} />
                   </div>
                 )}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, marginLeft: 52 }}>
-                  {cType === "client" ? (
-                    <span style={{ fontSize: 10, color: "#CBD5E1" }}>{(c.deals || []).length} deal{(c.deals || []).length !== 1 ? "s" : ""}</span>
-                  ) : (
-                    <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.location || c.number || ""}</span>
-                  )}
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {totalValue > 0 && <span style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>AED {totalValue.toLocaleString()}</span>}
-                    {overdue && <span style={{ fontSize: 9, color: "#EF4444", fontWeight: 700 }}>⚠️ Follow up</span>}
+
+                {/* Bottom row */}
+                {(totalValue > 0 || overdue || (cType !== "client" && (c.location || c.number))) && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 5, marginLeft: 54 }}>
+                    {cType === "client"
+                      ? <span style={{ fontSize: 10, color: "#CBD5E1" }}>{(c.deals || []).length} deal{(c.deals || []).length !== 1 ? "s" : ""}</span>
+                      : <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.location || c.number || ""}</span>
+                    }
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {totalValue > 0 && <span style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>AED {totalValue.toLocaleString()}</span>}
+                      {overdue && <span style={{ fontSize: 9, color: "#EF4444", fontWeight: 700 }}>⚠️ Follow up</span>}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })}
