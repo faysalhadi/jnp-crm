@@ -7,8 +7,8 @@ const TYPES = [
     id: "client",
     emoji: "🔴",
     label: "Client",
-    sub: "Retail buyer — you sell to them",
-    detail: "Buys laptops for personal or office use",
+    sub: "I sell to them",
+    detail: "Retail buyer — personal or office use",
     comms: "WhatsApp",
     color: "#EF4444",
     bg: "#FEF2F2",
@@ -18,7 +18,7 @@ const TYPES = [
     id: "trader",
     emoji: "🟡",
     label: "Trader",
-    sub: "Local dealer — you buy and sell",
+    sub: "I buy and sell",
     detail: "UAE market trader, JNP Market etc",
     comms: "WhatsApp",
     color: "#D97706",
@@ -29,8 +29,8 @@ const TYPES = [
     id: "supplier",
     emoji: "🔵",
     label: "Supplier",
-    sub: "International supplier — you buy from them",
-    detail: "USA/UK bulk supplier",
+    sub: "I buy from them",
+    detail: "International bulk supplier — USA/UK",
     comms: "Gmail + WhatsApp",
     color: "#2563EB",
     bg: "#EFF6FF",
@@ -271,26 +271,13 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
                     <div>
                       <div style={labelStyle}>CURRENCY</div>
                       <div style={{ display: "flex", gap: 6 }}>
-                        {["USD", "GBP", "EUR", "AED"].map(c => (
+                        {["USD", "GBP", "EUR"].map(c => (
                           <button key={c} onClick={() => set("currency", c)} style={{
-                            flex: 1, padding: "8px 0", borderRadius: 10, border: "none",
-                            fontSize: 12, fontWeight: 700, cursor: "pointer",
-                            background: form.currency === c ? "#6366F1" : "#F1F5F9",
+                            flex: 1, padding: "10px 0", borderRadius: 10, border: "none",
+                            fontSize: 13, fontWeight: 700, cursor: "pointer",
+                            background: form.currency === c ? "#2563EB" : "#F1F5F9",
                             color:      form.currency === c ? "#fff"    : "#64748B",
                           }}>{c}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>SENDS LISTS VIA</div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        {[["gmail","📧 Gmail"],["whatsapp","💬 WhatsApp"],["both","Both"]].map(([v,l]) => (
-                          <button key={v} onClick={() => set("sends_via", v)} style={{
-                            flex: 1, padding: "8px 0", borderRadius: 10, border: "none",
-                            fontSize: 11, fontWeight: 700, cursor: "pointer",
-                            background: form.sends_via === v ? "#6366F1" : "#F1F5F9",
-                            color:      form.sends_via === v ? "#fff"    : "#64748B",
-                          }}>{l}</button>
                         ))}
                       </div>
                     </div>
