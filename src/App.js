@@ -534,6 +534,8 @@ export default function App() {
   const chatFilesInputRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
   const stockFileInputRef = useRef(null);
@@ -691,6 +693,13 @@ export default function App() {
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
   useEffect(() => { if (session) { loadStock(); refreshCachedStock(); } }, [session, loadStock, refreshCachedStock]);
+
+  useEffect(() => {
+    if (localStorage.getItem('jnp_install_dismissed')) return;
+    const handler = (e) => { e.preventDefault(); setInstallPromptEvent(e); setShowInstallBanner(true); };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   // Note: tasks tab cache loading is handled after tasks is defined
 
@@ -2603,6 +2612,35 @@ For any issues please contact us on WhatsApp.
   // list view
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }}>
+      {/* PWA install banner */}
+      {showInstallBanner && (
+        <div style={{
+          background: "#6366F1", color: "#fff", padding: "10px 14px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 10, fontSize: 13, fontWeight: 600, flexShrink: 0,
+        }}>
+          <span style={{ flex: 1 }}>📱 Install JNP CRM on your phone for quick access</span>
+          <button onClick={async () => {
+            if (installPromptEvent) {
+              installPromptEvent.prompt();
+              await installPromptEvent.userChoice;
+            }
+            setShowInstallBanner(false);
+          }} style={{
+            background: "#fff", color: "#6366F1", border: "none",
+            borderRadius: 8, padding: "5px 12px", fontWeight: 800,
+            fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+          }}>Install Now</button>
+          <button onClick={() => {
+            localStorage.setItem('jnp_install_dismissed', '1');
+            setShowInstallBanner(false);
+          }} style={{
+            background: "rgba(255,255,255,0.2)", color: "#fff", border: "none",
+            borderRadius: 8, padding: "5px 10px", fontWeight: 700,
+            fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+          }}>Dismiss</button>
+        </div>
+      )}
       {/* top bar */}
       <div style={{ background: "#fff", padding: "16px 14px 0", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
