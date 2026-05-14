@@ -12,8 +12,9 @@ const STAGES = [
   { id: "requirement_noted", label: "Requirement Noted", color: "#F59E0B", bg: "#FFFBEB" },
   { id: "searching",         label: "Searching Device",  color: "#3B82F6", bg: "#EFF6FF" },
   { id: "device_found",      label: "Device Found",      color: "#8B5CF6", bg: "#F5F3FF" },
-  { id: "negotiation",       label: "Negotiation",       color: "#EC4899", bg: "#FDF2F8" },
-  { id: "closed",            label: "Deal Closed",       color: "#10B981", bg: "#ECFDF5" },
+  { id: "negotiation",              label: "Negotiation",              color: "#EC4899", bg: "#FDF2F8" },
+  { id: "confirmed_pending_pickup", label: "Confirmed — Pending Pickup", color: "#F59E0B", bg: "#FFFBEB" },
+  { id: "closed",                   label: "Deal Closed",                color: "#10B981", bg: "#ECFDF5" },
   { id: "lost",              label: "Lost",              color: "#EF4444", bg: "#FEF2F2" },
 ];
 
@@ -100,7 +101,7 @@ ALWAYS return valid JSON only — no markdown, no explanation:
   "charger": "yes|no|unknown",
   "box": "yes|no|unknown",
   "notes": "any extra context",
-  "suggestedStage": "new_inquiry|requirement_noted|searching|device_found|negotiation|closed|lost",
+  "suggestedStage": "new_inquiry|requirement_noted|searching|device_found|negotiation|confirmed_pending_pickup|closed|lost",
   "stageReason": "one line reason",
   "reply": "ready to send WhatsApp reply"
 }
@@ -151,7 +152,8 @@ STAGE LOGIC:
 - searching: actively looking
 - device_found: matching device located
 - negotiation: price being discussed
-- closed: sale confirmed
+- confirmed_pending_pickup: client confirmed purchase, coming to collect — use when client says "I'll take it", "confirmed", "I'll come", "picking up", "will buy"
+- closed: sale confirmed and completed
 - lost: deal fell through`;
 
 function getGreeting() {
@@ -478,16 +480,184 @@ function Spinner() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  RESERVATION MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+function ReservationModal({ customer, deal, stock, onClose, onDone }) {
+  const [search,        setSearch]        = useState("");
+  const [selectedItem,  setSelectedItem]  = useState(null);
+  const [pickupDate,    setPickupDate]    = useState("");
+  const [depositType,   setDepositType]   = useState("none"); // none | partial | full
+  const [depositAmount, setDepositAmount] = useState("");
+  const [notes,         setNotes]         = useState("");
+  const [saving,        setSaving]        = useState(false);
+
+  const available = stock.filter(s => s.status === "available");
+  const filtered  = search
+    ? available.filter(s =>
+        [s.brand, s.model, s.processor, s.ram, s.ssd].filter(Boolean).join(" ")
+          .toLowerCase().includes(search.toLowerCase()))
+    : available;
+
+  const fullAmount  = Number(deal?.value || deal?.budget || 0);
+  const depositAmt  = depositType === "full"    ? fullAmount
+                    : depositType === "partial"  ? (Number(depositAmount) || 0)
+                    : 0;
+  const balanceDue  = Math.max(0, fullAmount - depositAmt);
+
+  async function save() {
+    if (!pickupDate) { alert("Pickup date is required"); return; }
+    setSaving(true);
+    try {
+      if (selectedItem) {
+        await supabase.from("stock").update({
+          status: "reserved",
+          reserved_for_customer_id: customer.id,
+          reserved_at: new Date().toISOString(),
+          pickup_date: pickupDate,
+        }).eq("id", selectedItem.id);
+      }
+      await supabase.from("deals").update({
+        stage:              "confirmed_pending_pickup",
+        deposit_amount:     depositAmt,
+        balance_due:        balanceDue,
+        pickup_date:        pickupDate,
+        reservation_notes:  notes.trim() || null,
+      }).eq("id", deal.id);
+
+      onDone({ selectedItem, pickupDate, depositAmt, balanceDue });
+    } catch (e) {
+      alert("Error saving reservation: " + (e.message || "Unknown error"));
+    }
+    setSaving(false);
+  }
+
+  const customerName = customer?.name || "Client";
+  const deviceLabel  = selectedItem ? ([selectedItem.brand, selectedItem.model].filter(Boolean).join(" ") || "Device") : null;
+  const pickupLabel  = pickupDate ? new Date(pickupDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
+          {/* Header */}
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>🔒 Reserve Device</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>for {customerName}</div>
+            </div>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+          </div>
+
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* 1. Device picker */}
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>SELECT DEVICE FROM STOCK</div>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search device…"
+                style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 6 }} />
+              <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+                {filtered.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "16px 0", color: "#CBD5E1", fontSize: 12 }}>No available stock</div>
+                )}
+                {filtered.map(item => {
+                  const isSel  = selectedItem?.id === item.id;
+                  const specs  = [item.processor, item.ram, item.ssd].filter(Boolean).join(" · ");
+                  return (
+                    <div key={item.id} onClick={() => setSelectedItem(isSel ? null : item)}
+                      style={{ padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${isSel ? "#F59E0B" : "#F1F5F9"}`,
+                               background: isSel ? "#FFFBEB" : "#F8FAFC", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${isSel ? "#F59E0B" : "#CBD5E1"}`,
+                                    background: isSel ? "#F59E0B" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {isSel && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: "#0F172A" }}>{[item.brand, item.model].filter(Boolean).join(" ") || "Device"}</div>
+                        {specs && <div style={{ fontSize: 11, color: "#94A3B8" }}>{specs}</div>}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#F59E0B", flexShrink: 0 }}>AED {Number(item.max_price || 0).toLocaleString()}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Pickup date */}
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>PICKUP DATE *</div>
+              <input type="date" value={pickupDate} onChange={e => setPickupDate(e.target.value)}
+                min={new Date().toISOString().split("T")[0]}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+
+            {/* 3. Deposit */}
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>DEPOSIT RECEIVED</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                {[["none","No Deposit"],["partial","Partial Deposit"],["full","Full Payment"]].map(([k,l]) => (
+                  <button key={k} onClick={() => { setDepositType(k); if (k === "full") setDepositAmount(String(fullAmount)); }}
+                    style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                             background: depositType === k ? "#F59E0B" : "#F1F5F9", color: depositType === k ? "#fff" : "#64748B" }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              {depositType === "partial" && (
+                <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)}
+                  placeholder="Amount received (AED)"
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #FDE68A", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+              )}
+              {depositType !== "none" && depositAmt > 0 && fullAmount > 0 && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "#92400E", fontWeight: 600 }}>
+                  Balance due: AED {balanceDue.toLocaleString()}
+                </div>
+              )}
+            </div>
+
+            {/* 4. Notes */}
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>NOTES (OPTIONAL)</div>
+              <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Client called to confirm, coming Thursday"
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+
+            {/* Summary */}
+            {pickupDate && (
+              <div style={{ padding: "10px 14px", background: "#FFFBEB", borderRadius: 12, border: "1px solid #FDE68A" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E" }}>
+                  🔒 {deviceLabel ? `${deviceLabel} reserved` : "Reservation set"} for {customerName} until {pickupLabel}
+                </div>
+                {depositAmt > 0 && (
+                  <div style={{ fontSize: 11, color: "#B45309", marginTop: 3 }}>
+                    Deposit: AED {depositAmt.toLocaleString()} · Balance: AED {balanceDue.toLocaleString()}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button onClick={save} disabled={saving || !pickupDate}
+              style={{ padding: 14, borderRadius: 12, border: "none", fontSize: 14, fontWeight: 800,
+                       cursor: saving || !pickupDate ? "not-allowed" : "pointer",
+                       background: saving || !pickupDate ? "#E2E8F0" : "#F59E0B",
+                       color: saving || !pickupDate ? "#94A3B8" : "#fff" }}>
+              {saving ? "Saving…" : "🔒 Reserve Device"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  QUICK SALE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
-function QuickSaleModal({ stock, onClose, onComplete }) {
-  const [step,           setStep]           = useState(1);
+function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
+  const [step,           setStep]           = useState(prefill?.item ? 3 : 1);
   const [search,         setSearch]         = useState("");
-  const [selected,       setSelected]       = useState([]);
-  const [name,           setName]           = useState("");
-  const [number,         setNumber]         = useState("");
+  const [selected,       setSelected]       = useState(prefill?.item ? [prefill.item] : []);
+  const [name,           setName]           = useState(prefill?.name || "");
+  const [number,         setNumber]         = useState(prefill?.number || "");
   const [addToContacts,  setAddToContacts]  = useState(false);
-  const [prices,         setPrices]         = useState({});
+  const [prices,         setPrices]         = useState(prefill?.item ? { [prefill.item.id]: prefill.item.max_price ?? "" } : {});
   const [paymentMethod,  setPaymentMethod]  = useState("Cash");
   const [amountReceived, setAmountReceived] = useState("");
   const [saving,         setSaving]         = useState(false);
@@ -808,6 +978,17 @@ For any issues contact us on WhatsApp.
                 </div>
               )}
 
+              {prefill?.depositPaid > 0 && (
+                <div style={{ padding: "10px 14px", background: "#FFFBEB", borderRadius: 12, border: "1px solid #FDE68A" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E" }}>
+                    Deposit already paid: AED {Number(prefill.depositPaid).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#B45309", marginTop: 2 }}>
+                    Balance due: AED {Math.max(0, totalSold - Number(prefill.depositPaid)).toLocaleString()}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setStep(2)} style={{ flex: 1, padding: 12, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>← Back</button>
                 <button onClick={complete} disabled={saving}
@@ -950,8 +1131,12 @@ export default function App() {
   const [broadcastSent, setBroadcastSent] = useState(new Set());
 
   // ── quick sale ──
-  const [showQuickSale, setShowQuickSale] = useState(false);
-  const [todaySales,    setTodaySales]    = useState({ total: 0, whatsapp: 0, walkin: 0 });
+  const [showQuickSale,    setShowQuickSale]    = useState(false);
+  const [quickSalePrefill, setQuickSalePrefill] = useState(null);
+  const [todaySales,       setTodaySales]       = useState({ total: 0, whatsapp: 0, walkin: 0 });
+
+  // ── reservation ──
+  const [showReservation, setShowReservation] = useState(false);
 
   // ── sourcing alerts for dashboard ──
   const sourcingAlerts = useSourcingAlerts();
@@ -1192,11 +1377,11 @@ export default function App() {
     const fields = { stage: stageId };
     if (stageId === "closed") fields.closed_at = new Date().toISOString();
     await updateDeal(fields);
-    // auto tier
     const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
     await updateCustomer({ tier: autoTier(updatedDeals) });
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
+    if (stageId === "confirmed_pending_pickup") setShowReservation(true);
   }
 
   // ── message actions ──
@@ -2233,6 +2418,7 @@ For any issues please contact us on WhatsApp.
              (item.serial_number || "").toLowerCase().includes(q);
     }
     if (stockFilter === "available") return item.status === "available";
+    if (stockFilter === "reserved") return item.status === "reserved";
     if (stockFilter === "sold") return item.status === "sold";
     return true;
   });
@@ -2692,16 +2878,22 @@ For any issues please contact us on WhatsApp.
 
             {/* AI stage suggestion */}
             {pendingSuggestion && (
-              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, background: "#EEF2FF", border: "1px solid #C7D2FE" }}>
-                <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, marginBottom: 3 }}>🤖 AI Suggests</div>
-                <div style={{ fontSize: 12, color: "#4338CA", marginBottom: 8 }}>{pendingSuggestion.reason}</div>
+              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12,
+                            background: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#FFFBEB" : "#EEF2FF",
+                            border: `1px solid ${pendingSuggestion.stage === "confirmed_pending_pickup" ? "#FDE68A" : "#C7D2FE"}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 3,
+                              color: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#D97706" : "#6366F1" }}>🤖 AI Suggests</div>
+                <div style={{ fontSize: 12, color: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#92400E" : "#4338CA", marginBottom: 8 }}>
+                  {pendingSuggestion.reason}
+                </div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={() => moveStage(pendingSuggestion.stage)}
-                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                    Move → {STAGES.find(s => s.id === pendingSuggestion.stage)?.label}
+                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                             background: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#F59E0B" : "#6366F1", color: "#fff" }}>
+                    {pendingSuggestion.stage === "confirmed_pending_pickup" ? "🔒 Reserve Device" : `Move → ${STAGES.find(s => s.id === pendingSuggestion.stage)?.label}`}
                   </button>
                   <button onClick={() => setPendingSuggestion(null)}
-                    style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #C7D2FE", background: "#fff", color: "#6366F1", fontSize: 11, cursor: "pointer" }}>
+                    style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${pendingSuggestion.stage === "confirmed_pending_pickup" ? "#FDE68A" : "#C7D2FE"}`, background: "#fff", color: "#6366F1", fontSize: 11, cursor: "pointer" }}>
                     Ignore
                   </button>
                 </div>
@@ -3200,6 +3392,10 @@ For any issues please contact us on WhatsApp.
         const overdueFollowUps = tasks.filter(t => t.days >= 1).length;
         const slowStock = stock.filter(s => s.status === "available" && daysSince(s.created_at) >= 7).length;
         const pendingPayments = customers.reduce((n, c) => n + (c.deals || []).filter(d => d.stage === "closed" && d.payment_status === "pending").length, 0);
+        const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+        const reservedItems = stock.filter(s => s.status === "reserved");
+        const pickupsToday  = reservedItems.filter(s => s.pickup_date && new Date(s.pickup_date).toDateString() === new Date().toDateString());
+        const overduePickups = reservedItems.filter(s => s.pickup_date && new Date(s.pickup_date) < todayMidnight);
         const topFocus = [
           ...tasks.filter(t => t.days >= 3).map(t => ({ ...t, priority: 3 })),
           ...tasks.filter(t => t.days >= 1 && t.days < 3).map(t => ({ ...t, priority: 2 })),
@@ -3266,10 +3462,12 @@ For any issues please contact us on WhatsApp.
             )}
 
             {/* Alerts */}
-            {(urgentClients > 0 || overdueFollowUps > 0 || slowStock > 0 || pendingPayments > 0) && (
+            {(urgentClients > 0 || overdueFollowUps > 0 || slowStock > 0 || pendingPayments > 0 || pickupsToday.length > 0 || overduePickups.length > 0) && (
               <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>⚡ ALERTS</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {pickupsToday.length > 0 && <button onClick={() => { setStockFilter("reserved"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FFFBEB", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#D97706", fontWeight: 700 }}>🔒 {pickupsToday.length} reservation{pickupsToday.length !== 1 ? "s" : ""} — pickup today</span><span style={{ color: "#D97706", fontSize: 13 }}>→</span></button>}
+                  {overduePickups.length > 0 && <button onClick={() => { setStockFilter("reserved"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF2F2", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#EF4444", fontWeight: 700 }}>⚠️ {overduePickups.length} reservation{overduePickups.length !== 1 ? "s" : ""} overdue — client didn't show</span><span style={{ color: "#EF4444", fontSize: 13 }}>→</span></button>}
                   {urgentClients > 0 && <button onClick={() => { setFilter("urgent"); setActiveTab("customers"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF2F2", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#EF4444", fontWeight: 700 }}>🔴 {urgentClients} urgent client{urgentClients !== 1 ? "s" : ""}</span><span style={{ color: "#EF4444", fontSize: 13 }}>→</span></button>}
                   {overdueFollowUps > 0 && <button onClick={() => setActiveTab("tasks")} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FFFBEB", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#F59E0B", fontWeight: 700 }}>⏰ {overdueFollowUps} overdue follow up{overdueFollowUps !== 1 ? "s" : ""}</span><span style={{ color: "#F59E0B", fontSize: 13 }}>→</span></button>}
                   {slowStock > 0 && <button onClick={() => { setStockFilter("available"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF9C3", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#CA8A04", fontWeight: 700 }}>⚠️ {slowStock} device{slowStock !== 1 ? "s" : ""} unsold 7+ days</span><span style={{ color: "#CA8A04", fontSize: 13 }}>→</span></button>}
@@ -3646,11 +3844,23 @@ For any issues please contact us on WhatsApp.
           </div>
 
           {/* Filters */}
-          <div style={{ display: "flex", gap: 6 }}>
-            {[{ key: "available", label: "✅ Available" }, { key: "sold", label: "🏷️ Sold" }, { key: "all", label: "All" }].map(f => (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {[
+              { key: "available", label: "✅ Available" },
+              { key: "reserved",  label: "🔒 Reserved", color: "#F59E0B", activeBg: "#F59E0B" },
+              { key: "sold",      label: "🏷️ Sold" },
+              { key: "all",       label: "All" },
+            ].map(f => (
               <button key={f.key} onClick={() => setStockFilter(f.key)}
-                style={{ padding: "5px 14px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0, background: stockFilter === f.key ? "#6366F1" : "#F1F5F9", color: stockFilter === f.key ? "#fff" : "#64748B" }}>
+                style={{ padding: "5px 14px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                         background: stockFilter === f.key ? (f.activeBg || "#6366F1") : "#F1F5F9",
+                         color:      stockFilter === f.key ? "#fff" : (f.color || "#64748B") }}>
                 {f.label}
+                {f.key === "reserved" && stock.filter(s => s.status === "reserved").length > 0 && (
+                  <span style={{ marginLeft: 4, background: stockFilter === "reserved" ? "rgba(255,255,255,0.3)" : "#F59E0B", color: "#fff", borderRadius: 8, padding: "0 5px", fontSize: 10 }}>
+                    {stock.filter(s => s.status === "reserved").length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -3673,10 +3883,47 @@ For any issues please contact us on WhatsApp.
           {/* Stock cards */}
           {filteredStock.map(item => {
             const isExpanded = expandedStockId === item.id;
-            const matches = getMatchingClients(item);
-            const isAvail = item.status === "available";
+            const matches    = getMatchingClients(item);
+            const isAvail    = item.status === "available";
+            const isReserved = item.status === "reserved";
+            const reservedFor = isReserved && item.reserved_for_customer_id
+              ? customers.find(c => c.id === item.reserved_for_customer_id)
+              : null;
+            const pickupLabel = item.pickup_date
+              ? new Date(item.pickup_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+              : null;
+            const today = new Date(); today.setHours(0,0,0,0);
+            const isOverdue = isReserved && item.pickup_date && new Date(item.pickup_date) < today;
             return (
-              <div key={item.id} style={{ background: "#fff", borderRadius: 18, border: `1.5px solid ${isAvail ? "#E2E8F0" : "#F1F5F9"}`, boxShadow: "0 1px 6px rgba(0,0,0,0.05)", overflow: "hidden", opacity: isAvail ? 1 : 0.7 }}>
+              <div key={item.id} style={{ background: "#fff", borderRadius: 18,
+                border: `1.5px solid ${isReserved ? (isOverdue ? "#FCA5A5" : "#FDE68A") : isAvail ? "#E2E8F0" : "#F1F5F9"}`,
+                boxShadow: isReserved ? "0 1px 6px rgba(245,158,11,0.15)" : "0 1px 6px rgba(0,0,0,0.05)",
+                overflow: "hidden", opacity: isAvail || isReserved ? 1 : 0.7 }}>
+              {/* Reserved banner */}
+              {isReserved && (
+                <div style={{ padding: "8px 14px", background: isOverdue ? "#FEF2F2" : "#FFFBEB", borderBottom: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: isOverdue ? "#EF4444" : "#D97706" }}>
+                      🔒 Reserved{reservedFor ? ` for ${reservedFor.name}` : ""}
+                    </div>
+                    {pickupLabel && (
+                      <div style={{ fontSize: 11, color: isOverdue ? "#EF4444" : "#B45309" }}>
+                        {isOverdue ? `⚠️ Pickup was ${pickupLabel} — no show` : `Pickup: ${pickupLabel}`}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={e => { e.stopPropagation(); setQuickSalePrefill({ item, name: reservedFor?.name || "", number: reservedFor?.number || "", depositPaid: 0 }); setShowQuickSale(true); }}
+                      style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      ✅ Complete Sale
+                    </button>
+                    <button onClick={async e => { e.stopPropagation(); if (!window.confirm("Release reservation and set item back to available?")) return; await supabase.from("stock").update({ status: "available", reserved_for_customer_id: null, reserved_at: null, pickup_date: null }).eq("id", item.id); loadStock(); }}
+                      style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", color: "#D97706", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      🔓 Release
+                    </button>
+                  </div>
+                </div>
+              )}
                 {item.photo_url && (
                   <img src={item.photo_url} alt={item.model || "stock"} style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
                 )}
@@ -3692,9 +3939,11 @@ For any issues please contact us on WhatsApp.
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 4, alignItems: "flex-start", flexShrink: 0 }}>
-                      <button onClick={e => { e.stopPropagation(); toggleStockStatus(item); }}
-                        style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", background: isAvail ? "#ECFDF5" : "#F1F5F9", color: isAvail ? "#10B981" : "#94A3B8" }}>
-                        {isAvail ? "✅ Available" : "🏷️ Sold"}
+                      <button onClick={e => { e.stopPropagation(); if (!isReserved) toggleStockStatus(item); }}
+                        style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: isReserved ? "default" : "pointer",
+                                 background: isReserved ? "#FFFBEB" : isAvail ? "#ECFDF5" : "#F1F5F9",
+                                 color: isReserved ? "#D97706" : isAvail ? "#10B981" : "#94A3B8" }}>
+                        {isReserved ? "🔒 Reserved" : isAvail ? "✅ Available" : "🏷️ Sold"}
                       </button>
                       {isAvail && (
                         <button onClick={e => { e.stopPropagation(); openBroadcast(item); }}
@@ -4395,12 +4644,25 @@ For any issues please contact us on WhatsApp.
         <SourcingModule anthropicKey={anthropicKey} onAddToStock={() => { loadStock(); refreshCachedStock(); }} />
       )}
 
+      {/* ── RESERVATION MODAL ── */}
+      {showReservation && activeCustomer && activeDeal && (
+        <ReservationModal
+          customer={activeCustomer}
+          deal={activeDeal}
+          stock={stock}
+          onClose={() => setShowReservation(false)}
+          onDone={() => { setShowReservation(false); loadStock(); loadCustomers(); }}
+        />
+      )}
+
       {/* ── QUICK SALE MODAL ── */}
       {showQuickSale && (
         <QuickSaleModal
+          key={quickSalePrefill ? `prefill-${quickSalePrefill.item?.id}` : "new"}
           stock={stock}
-          onClose={() => setShowQuickSale(false)}
-          onComplete={() => { loadStock(); refreshCachedStock(); loadTodaySales(); loadCustomers(); }}
+          prefill={quickSalePrefill}
+          onClose={() => { setShowQuickSale(false); setQuickSalePrefill(null); }}
+          onComplete={() => { loadStock(); refreshCachedStock(); loadTodaySales(); loadCustomers(); setQuickSalePrefill(null); }}
         />
       )}
 
