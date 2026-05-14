@@ -498,7 +498,15 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [msgLoading, setMsgLoading] = useState(false);
   const [msgInput, setMsgInput] = useState("");
-  const [chatMode, setChatMode] = useState("type"); // "type" | "ai"
+  const [chatMode, setChatMode] = useState("type"); // kept for compat
+  // ── new chat flow ──
+  const [incomingText,         setIncomingText]         = useState("");
+  const [replyMode,            setReplyMode]            = useState(null); // null | "myself" | "ai"
+  const [replyingToId,         setReplyingToId]         = useState(null);
+  const [directReplyText,      setDirectReplyText]      = useState("");
+  const [generatedReply,       setGeneratedReply]       = useState("");
+  const [generatedReplyLoading,setGeneratedReplyLoading]= useState(false);
+  const [editingGenerated,     setEditingGenerated]     = useState(false);
   const [pendingSuggestion, setPendingSuggestion] = useState(null);
   const [copied, setCopied] = useState(null);
   const [editSent, setEditSent] = useState(null);
@@ -695,8 +703,12 @@ export default function App() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  // Reset chat mode to Type when switching between contacts
-  useEffect(() => { setChatMode("type"); setMsgInput(""); }, [activeCustomerId]);
+  // Reset all chat input state when switching contacts
+  useEffect(() => {
+    setChatMode("type"); setMsgInput("");
+    setIncomingText(""); setReplyMode(null); setReplyingToId(null);
+    setDirectReplyText(""); setGeneratedReply(""); setGeneratedReplyLoading(false); setEditingGenerated(false);
+  }, [activeCustomerId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { askBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [askMessages]);
 
   // Auto-create a conversation deal for traders/suppliers that have none,
@@ -808,6 +820,112 @@ export default function App() {
   }
 
   // ── message actions ──
+
+  // ── NEW CHAT FLOW FUNCTIONS ─────────────────────────────────────────────────
+
+  // Step 1: add an incoming client message (saves as role=customer, shows LEFT)
+  async function addIncomingMessage() {
+    if (!incomingText.trim() || !activeDealId) return;
+    const content = incomingText.trim();
+    setIncomingText("");
+    const isVoice  = content.toLowerCase().startsWith("voice note:");
+    const isUrgent = /urgent|today|asap|same day|need it now|quickly/i.test(content);
+    const { data: msg } = await supabase.from("messages").insert({
+      deal_id: activeDealId, role: "customer", content, is_voice: isVoice,
+    }).select().single();
+    if (msg) setMessages(prev => [...prev, msg]);
+    if (isUrgent) await updateCustomer({ urgent: true });
+    await updateCustomer({ last_active: new Date().toISOString() });
+  }
+
+  // Step 3b: call Claude with full conversation history, show result for review
+  async function generateAIReply(triggerMsgId) {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setReplyingToId(triggerMsgId);
+    setReplyMode("ai");
+    setGeneratedReplyLoading(true);
+    setGeneratedReply("");
+    setEditingGenerated(false);
+
+    const history = messages.map(m => ({
+      role: m.role === "customer" ? "user" : "assistant",
+      content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
+    }));
+
+    const cType = activeCustomer?.contact_type || "client";
+    const systemPrompt = cType === "trader"
+      ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, a local laptop trader. Keep messages short, direct and casual. Return JSON with only a "reply" field (WhatsApp style, max 3 lines).`
+      : cType === "supplier"
+      ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, an international laptop supplier. Write professional business messages. Return JSON with only a "reply" field (formal, 2-4 sentences).`
+      : buildSystemPromptFromCache(cachedStock);
+
+    try {
+      const raw = await callClaude(anthropicKey, history, systemPrompt);
+      const clean = raw.replace(/```json|```/g, "").trim();
+      let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
+      setGeneratedReply(parsed.reply || raw);
+      // Update deal specs from AI analysis (clients only)
+      if (cType === "client" && parsed) {
+        const specUpdate = {};
+        if (parsed.brand && parsed.brand !== "unknown" && !activeDeal?.brand) specUpdate.brand = parsed.brand;
+        if (parsed.model && parsed.model !== "unknown" && !activeDeal?.model) specUpdate.model = parsed.model;
+        if (parsed.ram   && parsed.ram   !== "unknown") specUpdate.ram   = parsed.ram;
+        if (parsed.storage && parsed.storage !== "unknown") specUpdate.storage = parsed.storage;
+        if (parsed.condition && parsed.condition !== "unknown") specUpdate.condition = parsed.condition;
+        if (parsed.budget) specUpdate.budget = parsed.budget;
+        if (Object.keys(specUpdate).length) await updateDeal(specUpdate);
+        if (parsed.suggestedStage && parsed.suggestedStage !== activeDeal?.stage)
+          setPendingSuggestion({ stage: parsed.suggestedStage, reason: parsed.stageReason });
+        if (parsed.urgency) await updateCustomer({ urgent: true });
+      }
+    } catch {
+      setGeneratedReply("⚠️ Error generating. Check your API key in Settings.");
+    }
+    setGeneratedReplyLoading(false);
+  }
+
+  // Send the AI-generated reply (or edited version)
+  async function sendAIReply() {
+    const content = generatedReply.trim();
+    if (!content || !activeDealId) return;
+    const { data: msg } = await supabase.from("messages").insert({
+      deal_id: activeDealId, role: "assistant", content, sent: content,
+    }).select().single();
+    if (msg) setMessages(prev => [...prev, msg]);
+    setGeneratedReply(""); setReplyMode(null); setReplyingToId(null); setEditingGenerated(false);
+    await updateCustomer({ last_active: new Date().toISOString() });
+  }
+
+  // Send the manually-typed reply
+  async function sendDirectReply() {
+    const content = directReplyText.trim();
+    if (!content || !activeDealId) return;
+    setDirectReplyText("");
+    const { data: msg } = await supabase.from("messages").insert({
+      deal_id: activeDealId, role: "assistant", content, sent: content,
+    }).select().single();
+    if (msg) setMessages(prev => [...prev, msg]);
+    setReplyMode(null); setReplyingToId(null);
+    await updateCustomer({ last_active: new Date().toISOString() });
+  }
+
+  // Generate an opening message for an empty conversation
+  async function generateOpeningMessage() {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setReplyMode("ai");
+    setGeneratedReplyLoading(true);
+    setGeneratedReply("");
+    const prompt = `Generate a friendly opening WhatsApp message from "Laptop for Less" (UAE laptop reseller) to a new client named ${activeCustomer?.name}. ${activeDeal?.brand ? `They are interested in: ${activeDeal.brand} ${activeDeal.model || ""}` : ""}${activeDeal?.budget ? `. Budget: AED ${activeDeal.budget}` : ""}. Keep it short, welcoming, ask what they're looking for. Return JSON with only a "reply" field.`;
+    try {
+      const raw = await callClaude(anthropicKey, [{ role: "user", content: prompt }], buildSystemPromptFromCache(cachedStock));
+      const clean = raw.replace(/```json|```/g, "").trim();
+      let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
+      setGeneratedReply(parsed.reply || raw);
+    } catch { setGeneratedReply("Error generating. Check your API key."); }
+    setGeneratedReplyLoading(false);
+  }
+
+  // ── LEGACY (kept so nothing breaks) ─────────────────────────────────────────
 
   // Mode 1 — Type Message: save owner's own typed text directly (no AI)
   async function sendDirectMessage() {
@@ -2235,105 +2353,99 @@ For any issues please contact us on WhatsApp.
           </div>
         )}
 
-        {/* messages */}
+        {/* ── MESSAGES ── */}
         <div style={{ flex: 1, padding: "12px", display: "flex", flexDirection: "column", gap: 10, paddingBottom: 4 }}>
+
+          {/* Empty state */}
+          {messages.length === 0 && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: "30px 16px", textAlign: "center" }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>💬</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8", marginBottom: 20 }}>No messages yet</div>
+              <div style={{ display: "flex", gap: 10, width: "100%" }}>
+                <button onClick={() => { setReplyMode("myself"); setDirectReplyText(""); }}
+                  style={{ flex: 1, padding: "11px 8px", borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  ✏️ I'll start typing
+                </button>
+                <button onClick={generateOpeningMessage}
+                  style={{ flex: 1, padding: "11px 8px", borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  🤖 AI opens
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Imported from WhatsApp banner */}
           {messages.length > 0 && messages[0]?.ts && (Date.now() - new Date(messages[0].ts).getTime()) > 3600000 && (
             <div style={{ textAlign: "center", padding: "5px 12px", borderRadius: 8, background: "#F1F5F9", fontSize: 11, color: "#94A3B8", fontWeight: 500 }}>
               📱 Imported from WhatsApp
             </div>
           )}
-          {messages.length === 0 && !outreachMode && (
-            <div style={{ textAlign: "center", padding: "24px 20px", color: "#CBD5E1" }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#94A3B8" }}>No messages yet</div>
-              <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 2 }}>Paste their message or start the conversation</div>
-            </div>
-          )}
 
-          {messages.map((msg) => {
-            const isCustomer = msg.role === "customer";
-            const isSent = msg.sent && msg.sent !== "NOT_SENT";
-            const isNotSent = msg.sent === "NOT_SENT";
-            const displayContent = isSent && msg.sent !== msg.content ? msg.sent : msg.content;
-
-            return (
-              <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: isCustomer ? "flex-start" : "flex-end", gap: 4 }}>
-                <div style={{ fontSize: 10, color: "#CBD5E1" }}>
-                  {isCustomer ? (msg.is_voice ? "🎤 Voice Note" : `👤 ${activeCustomer.name}`) : "🤖 Suggested"} · {timeAgo(msg.ts)}
-                </div>
-                <div style={{
-                  maxWidth: "84%", padding: "10px 13px", fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-line",
-                  borderRadius: isCustomer ? "4px 16px 16px 16px" : "16px 4px 16px 16px",
-                  background: isCustomer ? "#F1F5F9" : "#EEF2FF",
-                  color: isCustomer ? "#334155" : "#1E1B4B",
-                  border: isCustomer ? "1px solid #E2E8F0" : "1px solid #C7D2FE",
-                  opacity: isNotSent ? 0.45 : 1,
-                }}>
-                  {isSent && msg.sent !== msg.content && (
-                    <div style={{ fontSize: 10, color: "#6366F1", marginBottom: 4, fontWeight: 700 }}>✏️ You edited:</div>
-                  )}
-                  {displayContent}
-                </div>
-
-                {!isCustomer && !msg.sent && (
-                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <button onClick={() => { copyMsg(msg.content, msg.id); confirmSent(msg.id, msg.content); }}
-                      style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: copied === msg.id ? "#10B981" : "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                      {copied === msg.id ? "✓ Sent!" : "✅ Send As Is"}
-                    </button>
-                    <button onClick={() => setEditSent({ msgId: msg.id, text: msg.content })}
-                      style={{ padding: "5px 11px", borderRadius: 8, border: "1px solid #C7D2FE", background: "#fff", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                      ✏️ Edit
-                    </button>
-                    <button onClick={() => markNotSent(msg.id)}
-                      style={{ padding: "5px 11px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 11, cursor: "pointer" }}>
-                      ❌ Didn't Send
-                    </button>
-                  </div>
-                )}
-                {isSent && !isCustomer && <div style={{ fontSize: 10, color: "#10B981", fontWeight: 600 }}>✓ Sent · {timeAgo(msg.ts)}</div>}
-                {isNotSent && !isCustomer && <div style={{ fontSize: 10, color: "#94A3B8" }}>Not sent</div>}
-              </div>
+          {/* Message list with inline reply buttons */}
+          {(() => {
+            // Compute which customer messages still need a reply
+            const lastAssistantTs = messages
+              .filter(m => m.role === "assistant" && m.sent && m.sent !== "NOT_SENT")
+              .map(m => new Date(m.ts).getTime()).sort().pop() || 0;
+            const unansweredIds = new Set(
+              messages
+                .filter(m => m.role === "customer" && new Date(m.ts).getTime() > lastAssistantTs)
+                .map(m => m.id)
             );
-          })}
 
-          {msgLoading && (
+            return messages.map(msg => {
+              const isCustomer = msg.role === "customer";
+              const isSent     = msg.sent && msg.sent !== "NOT_SENT";
+              const isNotSent  = msg.sent === "NOT_SENT";
+              const display    = isSent && msg.sent !== msg.content ? msg.sent : msg.content;
+              const showReplyBtns = isCustomer && unansweredIds.has(msg.id) && replyingToId !== msg.id;
+
+              return (
+                <div key={msg.id}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: isCustomer ? "flex-start" : "flex-end", gap: 4 }}>
+                    <div style={{ fontSize: 10, color: "#CBD5E1" }}>
+                      {isCustomer ? (msg.is_voice ? "🎤 Voice Note" : `👤 ${activeCustomer.name}`) : "You"} · {timeAgo(msg.ts)}
+                    </div>
+                    <div style={{
+                      maxWidth: "84%", padding: "10px 13px", fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-line",
+                      borderRadius: isCustomer ? "4px 16px 16px 16px" : "16px 4px 16px 16px",
+                      background: isCustomer ? "#F1F5F9" : "#6366F1",
+                      color:      isCustomer ? "#334155"  : "#fff",
+                      border:     isCustomer ? "1px solid #E2E8F0" : "none",
+                      opacity: isNotSent ? 0.45 : 1,
+                    }}>
+                      {display}
+                    </div>
+                    {isSent  && !isCustomer && <div style={{ fontSize: 10, color: "#10B981", fontWeight: 600 }}>✓ Sent · {timeAgo(msg.ts)}</div>}
+                    {isNotSent && !isCustomer && <div style={{ fontSize: 10, color: "#94A3B8" }}>Not sent</div>}
+                  </div>
+
+                  {/* Inline reply buttons — shown on each unanswered client message */}
+                  {showReplyBtns && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button onClick={() => { setReplyingToId(msg.id); setReplyMode("myself"); setDirectReplyText(""); }}
+                        style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        ✏️ Reply Myself
+                      </button>
+                      <button onClick={() => generateAIReply(msg.id)}
+                        style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        🤖 AI Reply
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+
+          {/* AI generating spinner */}
+          {generatedReplyLoading && (
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <div style={{ padding: "10px 16px", borderRadius: "16px 4px 16px 16px", background: "#EEF2FF", border: "1px solid #C7D2FE", display: "flex", gap: 4, alignItems: "center" }}>
                 {[0, 0.2, 0.4].map((d, i) => (
                   <span key={i} style={{ fontSize: 14, color: "#6366F1", animation: `pulse 1s ${d}s infinite` }}>●</span>
                 ))}
                 <style>{`@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}`}</style>
-              </div>
-            </div>
-          )}
-
-          {/* outreach mode */}
-          {outreachMode && (
-            <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #E2E8F0", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-              <div style={{ fontWeight: 800, fontSize: 13, color: "#0F172A", marginBottom: 10 }}>👋 Why are you reaching out?</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-                {OUTREACH_REASONS.map(r => (
-                  <button key={r} onClick={() => setOutreachReason(r)}
-                    style={{ padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${outreachReason === r ? "#6366F1" : "#E2E8F0"}`, background: outreachReason === r ? "#EEF2FF" : "#fff", color: outreachReason === r ? "#6366F1" : "#475569", fontSize: 12, fontWeight: outreachReason === r ? 700 : 500, cursor: "pointer", textAlign: "left" }}>
-                    {r}
-                  </button>
-                ))}
-              </div>
-              {outreachReason === "Custom message" && (
-                <textarea value={outreachCustom} onChange={e => setOutreachCustom(e.target.value)} placeholder="Describe what you want to say..." rows={2}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8 }} />
-              )}
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={generateOutreach} disabled={!outreachReason || msgLoading}
-                  style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: outreachReason ? "#6366F1" : "#E2E8F0", color: outreachReason ? "#fff" : "#94A3B8", fontWeight: 700, fontSize: 13, cursor: outreachReason ? "pointer" : "not-allowed" }}>
-                  Generate Message
-                </button>
-                <button onClick={() => { setOutreachMode(false); setOutreachReason(""); }}
-                  style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>
-                  Cancel
-                </button>
               </div>
             </div>
           )}
@@ -2419,67 +2531,77 @@ For any issues please contact us on WhatsApp.
           </div>
         )}
 
-        {/* input bar */}
+        {/* ── INPUT BAR ── */}
         <div style={{ padding: "10px 12px 20px", background: "#fff", borderTop: "1px solid #F1F5F9", position: "sticky", bottom: 0 }}>
 
-          {/* Mode toggle */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-            {[
-              { key: "type", label: "✏️ Type Message" },
-              { key: "ai",   label: "🤖 AI Reply" },
-            ].map(m => (
-              <button key={m.key} onClick={() => { setChatMode(m.key); setMsgInput(""); }}
-                style={{ flex: 1, padding: "8px 10px", borderRadius: 10, border: "none",
-                         background: chatMode === m.key ? "#6366F1" : "#F1F5F9",
-                         color:      chatMode === m.key ? "#fff"    : "#64748B",
-                         fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {/* ── MODE 1: Type Message ── */}
-          {chatMode === "type" && (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-              <textarea
-                value={msgInput}
-                onChange={e => setMsgInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDirectMessage(); } }}
-                placeholder="Type a message..."
-                rows={2}
-                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0",
-                         fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
-              />
-              <button onClick={sendDirectMessage} disabled={!msgInput.trim()}
-                style={{ width: 46, height: 52, borderRadius: 12, border: "none",
-                         background: !msgInput.trim() ? "#E2E8F0" : "#6366F1",
-                         color:      !msgInput.trim() ? "#94A3B8" : "#fff",
-                         fontWeight: 800, fontSize: 20, cursor: !msgInput.trim() ? "not-allowed" : "pointer",
-                         flexShrink: 0 }}>
-                ↑
-              </button>
+          {/* AI generated reply — review before sending */}
+          {replyMode === "ai" && generatedReply && !generatedReplyLoading && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: 0.5, marginBottom: 6 }}>🤖 SUGGESTED REPLY</div>
+              {editingGenerated ? (
+                <textarea value={generatedReply} onChange={e => setGeneratedReply(e.target.value)} rows={4} autoFocus
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #6366F1", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box" }} />
+              ) : (
+                <div style={{ padding: "10px 13px", borderRadius: 12, background: "#EEF2FF", border: "1px solid #C7D2FE", fontSize: 13, color: "#1E1B4B", lineHeight: 1.65, whiteSpace: "pre-line" }}>
+                  {generatedReply}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <button onClick={sendAIReply}
+                  style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  ✅ Send
+                </button>
+                <button onClick={() => setEditingGenerated(v => !v)}
+                  style={{ padding: "10px 14px", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  {editingGenerated ? "Done" : "✏️ Edit"}
+                </button>
+                <button onClick={() => { setGeneratedReply(""); setReplyMode(null); setReplyingToId(null); setEditingGenerated(false); }}
+                  style={{ padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  ❌ Skip
+                </button>
+              </div>
             </div>
           )}
 
-          {/* ── MODE 2: AI Reply ── */}
-          {chatMode === "ai" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Reply Myself input */}
+          {replyMode === "myself" && !generatedReply && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 0 }}>
               <textarea
-                value={msgInput}
-                onChange={e => setMsgInput(e.target.value)}
-                placeholder={`Paste ${activeCustomer.name}'s message…`}
-                rows={3}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0",
-                         fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit",
-                         lineHeight: 1.5, boxSizing: "border-box" }}
+                value={directReplyText}
+                onChange={e => setDirectReplyText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDirectReply(); } }}
+                autoFocus
+                placeholder="Type your reply..."
+                rows={2}
+                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #6366F1", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
               />
-              <button onClick={sendMessage} disabled={msgLoading || !msgInput.trim()}
-                style={{ width: "100%", padding: "12px", borderRadius: 12, border: "none",
-                         background: msgLoading || !msgInput.trim() ? "#E2E8F0" : "#6366F1",
-                         color:      msgLoading || !msgInput.trim() ? "#94A3B8" : "#fff",
-                         fontWeight: 800, fontSize: 14,
-                         cursor: msgLoading || !msgInput.trim() ? "not-allowed" : "pointer" }}>
-                {msgLoading ? "⏳ Generating…" : "🤖 Generate Reply"}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+                <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
+                  style={{ width: 46, height: 38, borderRadius: 10, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 18, cursor: directReplyText.trim() ? "pointer" : "not-allowed" }}>
+                  ↑
+                </button>
+                <button onClick={() => { setReplyMode(null); setReplyingToId(null); setDirectReplyText(""); }}
+                  style={{ width: 46, height: 38, borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Default — add incoming client message */}
+          {!replyMode && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <textarea
+                value={incomingText}
+                onChange={e => setIncomingText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addIncomingMessage(); } }}
+                placeholder="New message from client..."
+                rows={2}
+                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
+              />
+              <button onClick={addIncomingMessage} disabled={!incomingText.trim()}
+                style={{ padding: "0 14px", height: 52, borderRadius: 12, border: "none", background: incomingText.trim() ? "#22C55E" : "#E2E8F0", color: incomingText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 12, cursor: incomingText.trim() ? "pointer" : "not-allowed", whiteSpace: "nowrap", flexShrink: 0 }}>
+                + Add
               </button>
             </div>
           )}
