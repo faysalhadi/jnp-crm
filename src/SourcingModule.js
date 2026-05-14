@@ -155,7 +155,10 @@ function DealDetail({ deal: initialDeal, suppliers, rate, anthropicKey, onBack, 
 
   // move to stock
   const [showMove,   setShowMove]   = useState(false);
-  const [moveForm,   setMoveForm]   = useState({ units_arrived: "", actual_shipping: "", brand: "", model: "" });
+  const [moveForm,   setMoveForm]   = useState({
+    units_arrived: "", actual_shipping: "",
+    brand: "", model: "", processor: "", ram: "", ssd: "", condition: "Used",
+  });
 
   const timelineRef = useRef(null);
   const d  = deal;
@@ -319,22 +322,47 @@ Write TWO reply versions. Return JSON only:
 
   // ── move to stock ────────────────────────────────────────────────────────
   async function handleMoveToStock() {
-    const units    = Number(moveForm.units_arrived) || Number(d.units_bid) || 1;
-    const ship     = Number(moveForm.actual_shipping) || localShipping || 0;
-    const purAED   = Number(d.our_bid_usd || 0) * units * localRate;
-    const totalL   = purAED + ship + purAED * DUTY_PCT;
-    const costPer  = Math.round(totalL / units);
-    const rows     = Array.from({ length: units }, () => ({
-      brand: moveForm.brand || "", model: moveForm.model || d.lot_name || "",
-      cost_price: costPer, min_price: Math.round(costPer * 1.1), max_price: Math.round(costPer * 1.2),
-      status: "available", condition: "Used",
-      notes: `Lot: ${d.lot_name || "—"} | Supplier: ${d.supplier_name}`,
-    }));
-    const { error } = await supabase.from("stock").insert(rows);
-    if (error) { alert("Stock insert failed: " + error.message); return; }
-    await patchDeal({ status: "in_stock" });
+    const units   = Number(moveForm.units_arrived) || Number(d.units_bid) || 1;
+    // Use actual shipping if entered in the form, otherwise fall back to the live calculator value
+    const ship    = moveForm.actual_shipping !== "" ? Number(moveForm.actual_shipping) : localShipping;
+    // Recalculate landed cost with the confirmed unit count + shipping
+    const purAED  = Number(d.our_bid_usd || 0) * units * localRate;
+    const duty    = purAED * DUTY_PCT;
+    const totalL  = purAED + ship + duty;
+    const costPer = Math.round(totalL / units);
+
+    const stockRow = {
+      brand:      moveForm.brand     || "",
+      model:      moveForm.model     || d.lot_name || "",
+      processor:  moveForm.processor || "",
+      ram:        moveForm.ram       || "",
+      ssd:        moveForm.ssd       || "",
+      condition:  moveForm.condition || "Used",
+      cost_price: costPer,
+      min_price:  Math.round(costPer * 1.10),   // 10% above cost
+      max_price:  Math.round(costPer * 1.20),   // 20% above cost
+      status:     "available",
+      notes:      [
+        d.lot_name    ? `Lot: ${d.lot_name}`            : null,
+        d.supplier_name ? `Supplier: ${d.supplier_name}` : null,
+      ].filter(Boolean).join(" | ") || null,
+    };
+
+    // Insert N identical rows (one per device unit)
+    const rows = Array.from({ length: units }, () => ({ ...stockRow }));
+
+    // Supabase insert handles arrays; split into chunks of 100 to be safe
+    const CHUNK = 100;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const { error } = await supabase.from("stock").insert(rows.slice(i, i + CHUNK));
+      if (error) { alert("Stock insert failed: " + error.message); return; }
+    }
+
+    // Mark deal as in_stock and persist final shipping
+    await patchDeal({ status: "in_stock", shipping_cost_aed: ship, landed_cost_aed: totalL });
     setShowMove(false);
-    showToast(`✅ ${units} device${units !== 1 ? "s" : ""} added to stock at ${fmtAED(costPer)}/unit`);
+    if (onAddToStock) onAddToStock();
+    showToast(`✅ ${units} device${units !== 1 ? "s" : ""} added to stock · Cost ${fmtAED(costPer)}/unit`);
   }
 
   // ── timeline: split messages by channel for rendering ─────────────────────
@@ -398,18 +426,34 @@ Write TWO reply versions. Return JSON only:
           </div>
         )}
 
-        {/* Move to stock banner */}
+        {/* ── Move to Stock banner — shown only when arrived ── */}
         {d.status === "arrived" && (
-          <button onClick={() => {
-            setMoveForm({ units_arrived: String(d.units_bid || ""), actual_shipping: String(d.shipping_cost_aed || ""), brand: "", model: d.lot_name || "" });
-            setShowMove(true);
-          }} style={{
-            width: "100%", margin: "10px 0", padding: "11px",
-            borderRadius: 12, border: "none", background: "#0891B2",
-            color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer",
-          }}>
-            📦 Move to Your Stock →
-          </button>
+          <div style={{ margin: "10px 0 4px", padding: "14px 16px", borderRadius: 16,
+                        background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+                        boxShadow: "0 4px 14px rgba(8,145,178,0.35)" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", marginBottom: 4 }}>
+              📦 Lot arrived — ready to add to stock
+            </div>
+            <div style={{ fontSize: 11, color: "#A5F3FC", marginBottom: 10 }}>
+              {d.units_bid ? `${Number(d.units_bid).toLocaleString()} units` : "—"}
+              {costPerUnit > 0 ? ` · est. cost ${fmtAED(costPerUnit)}/unit` : ""}
+            </div>
+            <button onClick={() => {
+              setMoveForm({
+                units_arrived:   String(d.units_bid || ""),
+                actual_shipping: String(localShipping || d.shipping_cost_aed || ""),
+                brand:     "", model:     d.lot_name || "",
+                processor: "", ram:       "", ssd: "", condition: "Used",
+              });
+              setShowMove(true);
+            }} style={{
+              padding: "9px 20px", borderRadius: 10, border: "2px solid rgba(255,255,255,0.4)",
+              background: "rgba(255,255,255,0.15)", color: "#fff",
+              fontWeight: 800, fontSize: 13, cursor: "pointer",
+            }}>
+              Move to Stock →
+            </button>
+          </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
@@ -1144,38 +1188,110 @@ Write TWO reply versions. Return JSON only:
       {/* ══════════════════════════════════════════════════════════════════════
           MOVE TO STOCK
       ══════════════════════════════════════════════════════════════════════ */}
-      {showMove && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300,
-                      display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 400 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <span style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>📦 Move to Stock</span>
-              <button onClick={() => setShowMove(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
-            </div>
-            <div style={{ background: "#CFFAFE", borderRadius: 10, padding: "9px 14px", marginBottom: 14, fontSize: 12, color: "#0891B2", fontWeight: 600 }}>
-              {d.lot_name || "—"} · {d.supplier_name}
-            </div>
-            {[
-              { label: "UNITS ARRIVED",               key: "units_arrived",   ph: `e.g. ${d.units_bid || 50}` },
-              { label: "ACTUAL SHIPPING PAID (AED)",  key: "actual_shipping", ph: "e.g. 2500" },
-              { label: "BRAND",                       key: "brand",           ph: "e.g. Dell" },
-              { label: "MODEL",                       key: "model",           ph: "e.g. Latitude 5420" },
-            ].map(({ label, key, ph }) => (
-              <div key={key} style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
-                <input value={moveForm[key]} onChange={e => setMoveForm(f => ({ ...f, [key]: e.target.value }))} placeholder={ph}
-                  style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+      {showMove && (() => {
+        // Live cost preview inside the modal
+        const mUnits  = Number(moveForm.units_arrived) || Number(d.units_bid) || 1;
+        const mShip   = moveForm.actual_shipping !== "" ? Number(moveForm.actual_shipping) : localShipping;
+        const mPurAED = Number(d.our_bid_usd || 0) * mUnits * localRate;
+        const mDuty   = mPurAED * DUTY_PCT;
+        const mLanded = mPurAED + mShip + mDuty;
+        const mCostPer= mUnits > 0 ? Math.round(mLanded / mUnits) : 0;
+
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+            <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 420 }}>
+
+                {/* Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>📦 Move to Stock</div>
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{d.supplier_name} · {d.lot_name || "—"}</div>
+                  </div>
+                  <button onClick={() => setShowMove(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+                </div>
+
+                {/* ── Section 1: Quantity & shipping ── */}
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>QUANTITY & COST</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                  {[
+                    { label: "UNITS ARRIVED",      key: "units_arrived",   ph: String(d.units_bid || 0), type: "number" },
+                    { label: "SHIPPING PAID (AED)", key: "actual_shipping", ph: String(localShipping || 0), type: "number" },
+                  ].map(({ label, key, ph, type }) => (
+                    <div key={key}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+                      <input type={type} value={moveForm[key]}
+                        onChange={e => setMoveForm(f => ({ ...f, [key]: e.target.value }))}
+                        placeholder={ph}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Live cost preview */}
+                <div style={{ background: "#EEF2FF", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: "#4338CA" }}>Purchase ({mUnits} units × ${d.our_bid_usd || 0} × {localRate})</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#4338CA" }}>{fmtAED(mPurAED)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: "#4338CA" }}>Shipping</span>
+                    <span style={{ fontSize: 12, color: "#4338CA" }}>{fmtAED(mShip)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: "#4338CA" }}>Import duty (5%)</span>
+                    <span style={{ fontSize: 12, color: "#4338CA" }}>{fmtAED(mDuty)}</span>
+                  </div>
+                  <div style={{ borderTop: "1px solid #C7D2FE", paddingTop: 6,
+                                display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "#4338CA" }}>Cost per unit</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: "#4338CA" }}>{fmtAED(mCostPer)}</span>
+                  </div>
+                </div>
+
+                {/* ── Section 2: Device specs ── */}
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>DEVICE SPECS (applied to all units)</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                  {[
+                    { label: "BRAND",     key: "brand",     ph: "e.g. Dell" },
+                    { label: "MODEL",     key: "model",     ph: "e.g. Latitude 5420" },
+                    { label: "PROCESSOR", key: "processor", ph: "e.g. Core i5 11th" },
+                    { label: "RAM",       key: "ram",       ph: "e.g. 8GB" },
+                    { label: "STORAGE",   key: "ssd",       ph: "e.g. 256GB SSD" },
+                  ].map(({ label, key, ph }) => (
+                    <div key={key}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+                      <input value={moveForm[key]}
+                        onChange={e => setMoveForm(f => ({ ...f, [key]: e.target.value }))}
+                        placeholder={ph}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                  <div>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>CONDITION</div>
+                    <select value={moveForm.condition}
+                      onChange={e => setMoveForm(f => ({ ...f, condition: e.target.value }))}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", background: "#fff" }}>
+                      {["New", "Like New", "Used", "Refurbished"].map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "9px 12px", marginBottom: 14, fontSize: 11, color: "#64748B" }}>
+                  This will create <strong>{mUnits} stock record{mUnits !== 1 ? "s" : ""}</strong> at <strong>{fmtAED(mCostPer)}/unit</strong> and mark this deal as In Stock.
+                </div>
+
+                <button onClick={handleMoveToStock} style={{
+                  width: "100%", padding: 13, borderRadius: 12, border: "none",
+                  background: "#0891B2", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer",
+                }}>
+                  ✅ Add {mUnits} Device{mUnits !== 1 ? "s" : ""} to Stock
+                </button>
               </div>
-            ))}
-            <button onClick={handleMoveToStock} style={{
-              width: "100%", padding: 13, borderRadius: 12, border: "none",
-              background: "#0891B2", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer",
-            }}>
-              ✅ Confirm &amp; Add to Stock
-            </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
