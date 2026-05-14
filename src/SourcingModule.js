@@ -1443,14 +1443,383 @@ function GmailSheet({ anthropicKey, onClose, onCreateDeal }) {
 // ══════════════════════════════════════════════════════════════════════════════
 //  MAIN MODULE
 // ══════════════════════════════════════════════════════════════════════════════
+// ── Section toggle bar ────────────────────────────────────────────────────────
+function SectionToggle({ section, setSection, deals, suppliers }) {
+  return (
+    <div style={{ padding: "12px 12px 0", background: "#F8FAFC" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <button onClick={() => setSection("deals")} style={{
+          flex: 1, padding: "10px 8px", borderRadius: 12, border: "none",
+          fontWeight: 700, fontSize: 12, cursor: "pointer",
+          background: section === "deals" ? "#6366F1" : "#F1F5F9",
+          color:      section === "deals" ? "#fff"    : "#64748B",
+        }}>
+          📋 Deals
+          <span style={{
+            marginLeft: 6, fontSize: 11,
+            background: section === "deals" ? "rgba(255,255,255,0.25)" : "#E2E8F0",
+            color:      section === "deals" ? "#fff" : "#64748B",
+            padding: "1px 7px", borderRadius: 10,
+          }}>
+            {deals.filter(d => d.status !== "in_stock").length}
+          </span>
+        </button>
+        <button onClick={() => setSection("suppliers")} style={{
+          flex: 1, padding: "10px 8px", borderRadius: 12, border: "none",
+          fontWeight: 700, fontSize: 12, cursor: "pointer",
+          background: section === "suppliers" ? "#6366F1" : "#F1F5F9",
+          color:      section === "suppliers" ? "#fff"    : "#64748B",
+        }}>
+          👥 Suppliers
+          <span style={{
+            marginLeft: 6, fontSize: 11,
+            background: section === "suppliers" ? "rgba(255,255,255,0.25)" : "#E2E8F0",
+            color:      section === "suppliers" ? "#fff" : "#64748B",
+            padding: "1px 7px", borderRadius: 10,
+          }}>
+            {suppliers.length}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SUPPLIER DETAIL
+// ══════════════════════════════════════════════════════════════════════════════
+function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, onUpdate }) {
+  const [notes,    setNotes]    = useState(supplier.notes || "");
+  const [savingNote, setSaving] = useState(false);
+  const supDeals = deals.filter(d =>
+    d.supplier_id === supplier.id || d.supplier_name === supplier.name
+  );
+  const wonDeal  = supDeals.filter(d =>
+    ["bid_won","payment_due","paid","in_transit","in_customs","arrived","in_stock"].includes(d.status)
+  ).length;
+  const totalUSD = supDeals.reduce((s, d) => s + (Number(d.our_bid_usd||0) * Number(d.units_bid||0)), 0);
+  const totalAED = totalUSD * rate;
+
+  async function saveNotes() {
+    setSaving(true);
+    const { data } = await supabase.from("suppliers").update({ notes }).eq("id", supplier.id).select().single();
+    if (data) onUpdate(data);
+    setSaving(false);
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={onBack} style={{
+          width: 36, height: 36, borderRadius: 10, border: "none",
+          background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", cursor: "pointer", fontSize: 18,
+        }}>←</button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{supplier.name}</div>
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>{supplier.location || "—"} · {supplier.currency || "USD"}</div>
+        </div>
+      </div>
+
+      {/* Contact info */}
+      <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 10 }}>CONTACT</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {supplier.email && (
+            <a href={`mailto:${supplier.email}`} style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
+              <span style={{ width: 28, height: 28, borderRadius: 8, background: "#FEF2F2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>📧</span>
+              <span style={{ fontSize: 13, color: "#DC2626", fontWeight: 600 }}>{supplier.email}</span>
+            </a>
+          )}
+          {supplier.whatsapp && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 28, height: 28, borderRadius: 8, background: "#F0FDF4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>💬</span>
+              <span style={{ fontSize: 13, color: "#16A34A", fontWeight: 600 }}>{supplier.whatsapp}</span>
+            </div>
+          )}
+          {[
+            { label: "Location",  value: supplier.location },
+            { label: "Currency",  value: supplier.currency },
+            { label: "Payment",   value: supplier.payment_method },
+          ].filter(it => it.value).map(it => (
+            <div key={it.label} style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: "#94A3B8" }}>{it.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#0F172A" }}>{it.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {[
+          { label: "Total deals",  value: supDeals.length, color: "#6366F1", bg: "#EEF2FF" },
+          { label: "Won / closed", value: wonDeal,         color: "#059669", bg: "#ECFDF5" },
+          { label: "Total value",  value: totalAED >= 1000 ? `AED ${(totalAED/1000).toFixed(0)}k` : `AED ${Math.round(totalAED)}`, color: "#D97706", bg: "#FFFBEB" },
+        ].map(s => (
+          <div key={s.label} style={{ background: s.bg, borderRadius: 12, padding: "10px 12px", textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: s.color, opacity: 0.8, marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Notes (editable) */}
+      <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>NOTES / PAYMENT TERMS</div>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          rows={3}
+          placeholder="Payment terms, bid schedule, reliability notes…"
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0",
+                   fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical",
+                   fontFamily: "inherit", lineHeight: 1.5 }}
+        />
+        {notes !== (supplier.notes || "") && (
+          <button onClick={saveNotes} disabled={savingNote} style={{
+            marginTop: 8, padding: "6px 16px", borderRadius: 8, border: "none",
+            background: savingNote ? "#E2E8F0" : "#6366F1",
+            color: savingNote ? "#94A3B8" : "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          }}>
+            {savingNote ? "Saving…" : "Save Notes"}
+          </button>
+        )}
+      </div>
+
+      {/* Deal history */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>
+        DEAL HISTORY ({supDeals.length})
+      </div>
+
+      {supDeals.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, padding: 28, textAlign: "center",
+                      color: "#CBD5E1", fontSize: 13, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          No deals with this supplier yet
+        </div>
+      ) : (
+        supDeals.map(d => {
+          const st     = STAGE_MAP[d.status] || STAGE_MAP["evaluating"];
+          const purUSD = Number(d.our_bid_usd||0) * Number(d.units_bid||0);
+          return (
+            <div key={d.id} onClick={() => onSelectDeal(d.id)}
+              style={{ background: "#fff", borderRadius: 14, padding: "12px 14px",
+                       boxShadow: "0 1px 4px rgba(0,0,0,0.06)", cursor: "pointer",
+                       borderLeft: `3px solid ${st.color}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {d.lot_name || "—"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
+                    {d.units_bid ? `${Number(d.units_bid).toLocaleString()} units` : "—"}
+                    {purUSD > 0 ? ` · ${fmtUSD(purUSD)}` : ""}
+                  </div>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: st.color, background: st.bg,
+                               padding: "2px 8px", borderRadius: 8, whiteSpace: "nowrap" }}>
+                  {st.emoji} {st.label}
+                </span>
+              </div>
+              <div style={{ fontSize: 10, color: "#CBD5E1", textAlign: "right" }}>{timeAgo(d.created_at)}</div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SUPPLIERS LIST
+// ══════════════════════════════════════════════════════════════════════════════
+function SuppliersList({ suppliers, deals, rate, onSelect, onAdd }) {
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+      <button onClick={onAdd} style={{
+        padding: "11px 16px", borderRadius: 12, border: "1.5px dashed #C7D2FE",
+        background: "#EEF2FF", color: "#6366F1", fontWeight: 700, fontSize: 13, cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+      }}>
+        <span style={{ fontSize: 18 }}>+</span> Add Supplier
+      </button>
+
+      {suppliers.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, padding: 36, textAlign: "center",
+                      color: "#CBD5E1", fontSize: 13, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 32, marginBottom: 10 }}>👥</div>
+          No suppliers yet.<br />
+          <span style={{ fontSize: 12 }}>Run the setup SQL or tap Add Supplier.</span>
+        </div>
+      ) : (
+        suppliers.map(s => {
+          const supDeals = deals.filter(d => d.supplier_id === s.id || d.supplier_name === s.name);
+          const active   = supDeals.filter(d => !["in_stock","evaluating"].includes(d.status)).length;
+          const won      = supDeals.filter(d => ["bid_won","payment_due","paid","in_transit","in_customs","arrived","in_stock"].includes(d.status)).length;
+          const totalUSD = supDeals.reduce((acc, d) => acc + Number(d.our_bid_usd||0)*Number(d.units_bid||0), 0);
+          const lastDeal = [...supDeals].sort((a,b) => new Date(b.created_at)-new Date(a.created_at))[0];
+
+          return (
+            <div key={s.id} onClick={() => onSelect(s.id)} style={{
+              background: "#fff", borderRadius: 16, padding: 14,
+              boxShadow: "0 1px 4px rgba(0,0,0,0.06)", cursor: "pointer",
+            }}>
+              {/* Name + location */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
+                    {s.location || "—"} · {s.currency || "USD"}
+                  </div>
+                </div>
+                {active > 0 && (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", background: "#EEF2FF",
+                                 padding: "2px 8px", borderRadius: 8, flexShrink: 0 }}>
+                    {active} active
+                  </span>
+                )}
+              </div>
+
+              {/* Email */}
+              {s.email && (
+                <div style={{ fontSize: 11, color: "#DC2626", marginBottom: 6,
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  📧 {s.email}
+                </div>
+              )}
+
+              {/* Stats row */}
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <div style={{ flex: 1, background: "#F8FAFC", borderRadius: 8, padding: "5px 8px", textAlign: "center" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{supDeals.length}</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: "#94A3B8" }}>DEALS</div>
+                </div>
+                <div style={{ flex: 1, background: "#F8FAFC", borderRadius: 8, padding: "5px 8px", textAlign: "center" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#059669" }}>{won}</div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: "#94A3B8" }}>WON</div>
+                </div>
+                <div style={{ flex: 2, background: "#F8FAFC", borderRadius: 8, padding: "5px 8px", textAlign: "center" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#D97706" }}>
+                    {totalUSD > 0 ? `$${totalUSD >= 1000 ? (totalUSD/1000).toFixed(0)+"k" : Math.round(totalUSD)}` : "—"}
+                  </div>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: "#94A3B8" }}>TOTAL SOURCED</div>
+                </div>
+                {lastDeal && (
+                  <div style={{ flex: 2, background: "#F8FAFC", borderRadius: 8, padding: "5px 8px", textAlign: "center" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B" }}>{timeAgo(lastDeal.created_at)}</div>
+                    <div style={{ fontSize: 9, fontWeight: 600, color: "#94A3B8" }}>LAST DEAL</div>
+                  </div>
+                )}
+              </div>
+
+              {s.notes && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#64748B", lineHeight: 1.4,
+                              overflow: "hidden", display: "-webkit-box",
+                              WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                  {s.notes}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ADD SUPPLIER MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+function AddSupplierModal({ onClose, onCreate }) {
+  const [form, setForm] = useState({
+    name: "", email: "", whatsapp: "", location: "", currency: "USD", payment_method: "", notes: "",
+  });
+  const f = form;
+
+  async function save() {
+    if (!f.name.trim()) { alert("Name is required"); return; }
+    const { data, error } = await supabase.from("suppliers").insert({
+      name:           f.name.trim(),
+      email:          f.email.trim()   || null,
+      whatsapp:       f.whatsapp.trim()|| null,
+      location:       f.location.trim()|| null,
+      currency:       f.currency || "USD",
+      payment_method: f.payment_method.trim() || null,
+      notes:          f.notes.trim()   || null,
+    }).select().single();
+    if (error) { alert("Failed: " + error.message); return; }
+    onCreate(data);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 440 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>Add Supplier</span>
+            <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+          </div>
+
+          {[
+            { label: "NAME *",          key: "name",           ph: "e.g. Electro Computer Warehouse" },
+            { label: "EMAIL",           key: "email",          ph: "e.g. sobia@example.com" },
+            { label: "WHATSAPP",        key: "whatsapp",       ph: "e.g. +1 555 000 0000" },
+            { label: "LOCATION",        key: "location",       ph: "e.g. Texas, USA" },
+            { label: "PAYMENT METHOD",  key: "payment_method", ph: "e.g. Wire transfer, PayPal" },
+          ].map(({ label, key, ph }) => (
+            <div key={key} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+              <input value={f[key]} onChange={e => setForm(v => ({ ...v, [key]: e.target.value }))} placeholder={ph}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+          ))}
+
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>CURRENCY</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["USD", "GBP", "EUR", "AED"].map(c => (
+                <button key={c} onClick={() => setForm(v => ({ ...v, currency: c }))} style={{
+                  flex: 1, padding: "7px 0", borderRadius: 10, border: "none",
+                  fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  background: f.currency === c ? "#6366F1" : "#F1F5F9",
+                  color:      f.currency === c ? "#fff"    : "#64748B",
+                }}>{c}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>NOTES / PAYMENT TERMS</div>
+            <textarea value={f.notes} onChange={e => setForm(v => ({ ...v, notes: e.target.value }))} rows={3}
+              placeholder="e.g. Wire transfer before release. Bid deadline Mondays 12PM CDT."
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+            <button onClick={save}   style={{ flex: 2, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Add Supplier</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 export default function SourcingModule({ anthropicKey, onAddToStock }) {
-  const [deals,     setDeals]     = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [loading,   setLoading]   = useState(false);
-  const [selected,  setSelected]  = useState(null);
-  const [showNew,   setShowNew]   = useState(false);
-  const [showGmail, setShowGmail] = useState(false);
-  const [rate]                    = useState(DEFAULT_RATE);
+  const [deals,       setDeals]       = useState([]);
+  const [suppliers,   setSuppliers]   = useState([]);
+  const [loading,     setLoading]     = useState(false);
+  const [section,     setSection]     = useState("deals");   // "deals" | "suppliers"
+  const [selected,    setSelected]    = useState(null);      // deal id
+  const [selectedSup, setSelectedSup] = useState(null);      // supplier id
+  const [showNew,     setShowNew]     = useState(false);
+  const [showAddSup,  setShowAddSup]  = useState(false);
+  const [showGmail,   setShowGmail]   = useState(false);
+  const [rate]                        = useState(DEFAULT_RATE);
   const [prefillForm, setPrefillForm] = useState(null);
 
   const loadDeals = useCallback(async () => {
@@ -1469,7 +1838,9 @@ export default function SourcingModule({ anthropicKey, onAddToStock }) {
   useEffect(() => { loadDeals(); loadSuppliers(); }, [loadDeals, loadSuppliers]);
 
   const selectedDeal = deals.find(d => d.id === selected);
+  const selectedSupplier = suppliers.find(s => s.id === selectedSup);
 
+  // ── deal detail (from either section) ─────────────────────────────────────
   if (selectedDeal) {
     return (
       <DealDetail
@@ -1486,18 +1857,49 @@ export default function SourcingModule({ anthropicKey, onAddToStock }) {
     );
   }
 
+  // ── supplier detail ────────────────────────────────────────────────────────
+  if (selectedSupplier) {
+    return (
+      <SupplierDetail
+        supplier={selectedSupplier}
+        deals={deals}
+        rate={rate}
+        onBack={() => setSelectedSup(null)}
+        onSelectDeal={id => setSelected(id)}
+        onUpdate={updated => setSuppliers(ss => ss.map(s => s.id === updated.id ? updated : s))}
+      />
+    );
+  }
+
+  // ── suppliers list ─────────────────────────────────────────────────────────
+  if (section === "suppliers") {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Section toggle header */}
+        <SectionToggle section={section} setSection={setSection} deals={deals} suppliers={suppliers} />
+        <SuppliersList
+          suppliers={suppliers}
+          deals={deals}
+          rate={rate}
+          onSelect={id => setSelectedSup(id)}
+          onAdd={() => setShowAddSup(true)}
+        />
+        {showAddSup && (
+          <AddSupplierModal
+            onClose={() => setShowAddSup(false)}
+            onCreate={s => { setSuppliers(ss => [...ss, s].sort((a,b) => a.name.localeCompare(b.name))); setShowAddSup(false); }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ── deals pipeline ─────────────────────────────────────────────────────────
   const grouped      = Object.fromEntries(STAGES.map(s => [s.id, deals.filter(d => d.status === s.id)]));
   const inStockCount = grouped["in_stock"]?.length || 0;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 100px", display: "flex", flexDirection: "column", gap: 14 }}>
-
-      <div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A" }}>🌍 Sourcing</div>
-        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-          {deals.length} deal{deals.length !== 1 ? "s" : ""} · 1 USD = {rate} AED
-        </div>
-      </div>
 
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={() => setShowGmail(true)} style={{
