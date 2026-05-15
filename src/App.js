@@ -644,6 +644,179 @@ function PartSaleModal({ part, onClose, onComplete }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  SPEC UPGRADE MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+function parseGB(str) {
+  if (!str) return 0;
+  const tb = str.match(/(\d+)\s*TB/i);
+  if (tb) return parseInt(tb[1]) * 1024;
+  const gb = str.match(/(\d+)/);
+  return gb ? parseInt(gb[1]) : 0;
+}
+function labelGB(gb) {
+  if (!gb) return "";
+  return gb >= 1024 ? `${gb / 1024}TB` : `${gb}GB`;
+}
+
+function SpecUpgradeModal({ item, onClose, onApply }) {
+  const RAM_TIERS = [8, 16, 32, 64];
+  const SSD_TIERS = [256, 512, 1024, 2048];
+
+  const curRam = parseGB(item.ram);
+  const curSsd = parseGB(item.ssd);
+
+  const ramOptions = RAM_TIERS.filter(g => g > curRam);
+  const ssdOptions = SSD_TIERS.filter(g => g > curSsd);
+
+  const [selRam,    setSelRam]    = useState(null);
+  const [ramPrices, setRamPrices] = useState({});
+  const [selSsd,    setSelSsd]    = useState(null);
+  const [ssdPrices, setSsdPrices] = useState({});
+
+  const base     = Number(item.max_price) || 0;
+  const ramCost  = selRam ? (Number(ramPrices[selRam]) || 0) : 0;
+  const ssdCost  = selSsd ? (Number(ssdPrices[selSsd]) || 0) : 0;
+  const final    = base + ramCost + ssdCost;
+  const hasUpgrade = selRam || selSsd;
+
+  const upgradeNote = [
+    selRam ? `RAM ${item.ram || "?"} → ${labelGB(selRam)}` : null,
+    selSsd ? `Storage ${item.ssd || "?"} → ${labelGB(selSsd)}` : null,
+  ].filter(Boolean).join(", ");
+
+  function apply(option) {
+    onApply(option, {
+      newRam:      selRam ? labelGB(selRam) : item.ram,
+      newSsd:      selSsd ? labelGB(selSsd) : item.ssd,
+      finalPrice:  final,
+      upgradeNote: upgradeNote || null,
+    });
+  }
+
+  const OptionRow = ({ label, options, sel, setSel, prices, setPrices, cur }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div onClick={() => setSel(null)}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10,
+                   border: `1.5px solid ${sel === null ? "#6366F1" : "#F1F5F9"}`,
+                   background: sel === null ? "#EEF2FF" : "#F8FAFC", cursor: "pointer" }}>
+          <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${sel === null ? "#6366F1" : "#CBD5E1"}`,
+                        background: sel === null ? "#6366F1" : "transparent", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: sel === null ? "#6366F1" : "#64748B" }}>
+            {cur > 0 ? labelGB(cur) : "Current"} — no change
+          </span>
+        </div>
+        {options.map(gb => (
+          <div key={gb} onClick={() => setSel(gb)}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10,
+                     border: `1.5px solid ${sel === gb ? "#F59E0B" : "#F1F5F9"}`,
+                     background: sel === gb ? "#FFFBEB" : "#F8FAFC", cursor: "pointer" }}>
+            <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${sel === gb ? "#F59E0B" : "#CBD5E1"}`,
+                          background: sel === gb ? "#F59E0B" : "transparent", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 700, flex: 1, color: sel === gb ? "#D97706" : "#0F172A" }}>
+              {labelGB(gb)}
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "#94A3B8" }}>+AED</span>
+              <input type="number" placeholder="0" value={prices[gb] ?? ""}
+                onClick={e => { e.stopPropagation(); setSel(gb); }}
+                onChange={e => { setSel(gb); setPrices(p => ({ ...p, [gb]: e.target.value })); }}
+                style={{ width: 72, padding: "4px 8px", borderRadius: 8, border: "1.5px solid #FDE68A",
+                         fontSize: 13, fontWeight: 700, textAlign: "right", outline: "none", color: "#D97706" }} />
+            </div>
+          </div>
+        ))}
+        {options.length === 0 && (
+          <div style={{ fontSize: 12, color: "#CBD5E1", padding: "6px 12px" }}>Already at max tier</div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
+          {/* Header */}
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>⬆ Spec Upgrade</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+                {[item.brand, item.model].filter(Boolean).join(" ") || "Device"}
+              </div>
+            </div>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+          </div>
+
+          <div style={{ padding: 16 }}>
+            {/* Current specs */}
+            <div style={{ padding: "10px 14px", background: "#F8FAFC", borderRadius: 12, marginBottom: 16, display: "flex", gap: 16, flexWrap: "wrap" }}>
+              {[
+                { label: "Base Price", value: `AED ${base.toLocaleString()}` },
+                item.ram     && { label: "RAM",     value: item.ram },
+                item.ssd     && { label: "Storage", value: item.ssd },
+                item.condition && { label: "Condition", value: item.condition },
+              ].filter(Boolean).map(f => (
+                <div key={f.label}>
+                  <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700, letterSpacing: 0.4 }}>{f.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{f.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <OptionRow label="RAM UPGRADE" options={ramOptions} sel={selRam} setSel={setSelRam}
+              prices={ramPrices} setPrices={setRamPrices} cur={curRam} />
+            <OptionRow label="STORAGE UPGRADE" options={ssdOptions} sel={selSsd} setSel={setSelSsd}
+              prices={ssdPrices} setPrices={setSsdPrices} cur={curSsd} />
+
+            {/* Price breakdown */}
+            <div style={{ padding: "12px 14px", background: "#FFFBEB", borderRadius: 12, marginBottom: 14, border: "1px solid #FDE68A" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#92400E", marginBottom: 4 }}>
+                <span>Base price</span><span>AED {base.toLocaleString()}</span>
+              </div>
+              {selRam && ramCost > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#92400E", marginBottom: 4 }}>
+                  <span>+ RAM {labelGB(selRam)}</span><span>AED {ramCost.toLocaleString()}</span>
+                </div>
+              )}
+              {selSsd && ssdCost > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#92400E", marginBottom: 4 }}>
+                  <span>+ Storage {labelGB(selSsd)}</span><span>AED {ssdCost.toLocaleString()}</span>
+                </div>
+              )}
+              <div style={{ borderTop: "1px solid #FDE68A", paddingTop: 6, display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 800, color: "#D97706" }}>
+                <span>Final price</span><span>AED {final.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button onClick={() => apply("update_stock")} disabled={!hasUpgrade}
+                style={{ padding: 13, borderRadius: 12, border: "none", fontSize: 13, fontWeight: 800,
+                         cursor: hasUpgrade ? "pointer" : "not-allowed",
+                         background: hasUpgrade ? "#6366F1" : "#E2E8F0",
+                         color: hasUpgrade ? "#fff" : "#94A3B8" }}>
+                💾 Update Stock Specs + Sell
+              </button>
+              <button onClick={() => apply("price_only")} disabled={!hasUpgrade}
+                style={{ padding: 13, borderRadius: 12, border: "1.5px solid #6366F1", fontSize: 13, fontWeight: 800,
+                         cursor: hasUpgrade ? "pointer" : "not-allowed",
+                         background: "#fff", color: hasUpgrade ? "#6366F1" : "#94A3B8" }}>
+                ⚡ Sell at AED {final.toLocaleString()} (keep stock as-is)
+              </button>
+              {!hasUpgrade && (
+                <div style={{ textAlign: "center", fontSize: 11, color: "#94A3B8" }}>Select an upgrade above to continue</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  RESERVATION MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 function ReservationModal({ customer, deal, stock, onClose, onDone }) {
@@ -852,11 +1025,12 @@ function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
   const [name,           setName]           = useState(prefill?.name || "");
   const [number,         setNumber]         = useState(prefill?.number || "");
   const [addToContacts,  setAddToContacts]  = useState(false);
-  const [prices,         setPrices]         = useState(prefill?.item ? { [prefill.item.id]: prefill.item.max_price ?? "" } : {});
+  const [prices,         setPrices]         = useState(prefill?.item ? { [prefill.item.id]: prefill.overridePrice ?? prefill.item.max_price ?? "" } : {});
   const [paymentMethod,  setPaymentMethod]  = useState("Cash");
   const [amountReceived, setAmountReceived] = useState("");
   const [saving,         setSaving]         = useState(false);
   const [result,         setResult]         = useState(null);
+  const [inlineUpgrades, setInlineUpgrades] = useState({}); // { [itemId]: { expanded, selRam, ramPrices, selSsd, ssdPrices } }
 
   const available = stock.filter(s => s.status === "available");
   const filteredStock = search
@@ -892,6 +1066,12 @@ function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
         await supabase.from("stock").update({
           status: "sold", sold_price: soldPrice, sold_at: soldAt,
         }).eq("id", item.id);
+        const inlineUpg = inlineUpgrades[item.id];
+        const inlineNote = inlineUpg ? [
+          inlineUpg.selRam ? `RAM → ${labelGB(inlineUpg.selRam)}` : null,
+          inlineUpg.selSsd ? `Storage → ${labelGB(inlineUpg.selSsd)}` : null,
+        ].filter(Boolean).join(", ") : null;
+        const dealNote = [prefill?.upgradeNote, inlineNote].filter(Boolean).join("; ") || null;
         await supabase.from("deals").insert({
           sale_type: "walkin", stage: "closed", closed_at: soldAt,
           value: soldPrice, walk_in_name: customerName,
@@ -900,6 +1080,7 @@ function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
           brand: item.brand || null, model: item.model || null,
           ram: item.ram || null, storage: item.ssd || null,
           condition: item.condition || null,
+          ...(dealNote ? { notes: dealNote } : {}),
         });
       }
 
@@ -1138,6 +1319,73 @@ For any issues contact us on WhatsApp.
                         Profit: AED {prof.toLocaleString()} ({marg}%)
                       </span>
                     </div>
+
+                    {/* Inline upgrade section */}
+                    {(() => {
+                      const upg = inlineUpgrades[item.id] || {};
+                      const curRam = parseGB(item.ram);
+                      const curSsd = parseGB(item.ssd);
+                      const ramOpts = [8,16,32,64].filter(g => g > curRam);
+                      const ssdOpts = [256,512,1024].filter(g => g > curSsd);
+                      if (ramOpts.length === 0 && ssdOpts.length === 0) return null;
+                      return (
+                        <div style={{ marginTop: 8 }}>
+                          {!upg.expanded ? (
+                            <button onClick={() => setInlineUpgrades(u => ({ ...u, [item.id]: { ...upg, expanded: true } }))}
+                              style={{ fontSize: 11, fontWeight: 700, color: "#D97706", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>
+                              ⬆ Add Upgrades
+                            </button>
+                          ) : (
+                            <div style={{ padding: "10px 12px", background: "#FFFBEB", borderRadius: 10, border: "1px solid #FDE68A" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: "#D97706" }}>UPGRADES</span>
+                                <button onClick={() => setInlineUpgrades(u => ({ ...u, [item.id]: { expanded: false } }))}
+                                  style={{ fontSize: 10, color: "#94A3B8", border: "none", background: "none", cursor: "pointer" }}>✕</button>
+                              </div>
+                              {[
+                                { label: "RAM", opts: ramOpts, key: "selRam", priceKey: "ramPrices", cur: curRam },
+                                { label: "Storage", opts: ssdOpts, key: "selSsd", priceKey: "ssdPrices", cur: curSsd },
+                              ].map(({ label, opts, key, priceKey, cur }) => opts.length > 0 && (
+                                <div key={label} style={{ marginBottom: 8 }}>
+                                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, marginBottom: 4 }}>{label.toUpperCase()} UPGRADE</div>
+                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                    <button onClick={() => {
+                                      const newUpg = { ...inlineUpgrades[item.id], [key]: null };
+                                      const ramAdd = newUpg.selRam ? (Number((newUpg.ramPrices||{})[newUpg.selRam]) || 0) : 0;
+                                      const ssdAdd = newUpg.selSsd ? (Number((newUpg.ssdPrices||{})[newUpg.selSsd]) || 0) : 0;
+                                      setPrices(p => ({ ...p, [item.id]: String((Number(item.max_price)||0) + ramAdd + ssdAdd) }));
+                                      setInlineUpgrades(u => ({ ...u, [item.id]: newUpg }));
+                                    }} style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${upg[key] == null ? "#F59E0B" : "#E2E8F0"}`, background: upg[key] == null ? "#F59E0B" : "#fff", color: upg[key] == null ? "#fff" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                      {labelGB(cur) || "Current"}
+                                    </button>
+                                    {opts.map(gb => (
+                                      <div key={gb} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                        <button onClick={() => setInlineUpgrades(u => ({ ...u, [item.id]: { ...u[item.id], [key]: gb } }))}
+                                          style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${upg[key] === gb ? "#F59E0B" : "#E2E8F0"}`, background: upg[key] === gb ? "#F59E0B" : "#fff", color: upg[key] === gb ? "#fff" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                          {labelGB(gb)}
+                                        </button>
+                                        {upg[key] === gb && (
+                                          <input type="number" placeholder="+AED" value={(upg[priceKey]||{})[gb] ?? ""}
+                                            onChange={e => {
+                                              const newPrices = { ...(upg[priceKey]||{}), [gb]: e.target.value };
+                                              const newUpg = { ...inlineUpgrades[item.id], [priceKey]: newPrices };
+                                              const ramAdd = (key === "selRam" ? Number(e.target.value) : Number((newUpg.ramPrices||{})[newUpg.selRam])) || 0;
+                                              const ssdAdd = (key === "selSsd" ? Number(e.target.value) : Number((newUpg.ssdPrices||{})[newUpg.selSsd])) || 0;
+                                              setPrices(p => ({ ...p, [item.id]: String((Number(item.max_price)||0) + ramAdd + ssdAdd) }));
+                                              setInlineUpgrades(u => ({ ...u, [item.id]: newUpg }));
+                                            }}
+                                            style={{ width: 72, padding: "4px 6px", borderRadius: 6, border: "1px solid #FDE68A", fontSize: 12, fontWeight: 700, textAlign: "right", outline: "none", color: "#D97706" }} />
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -1339,6 +1587,10 @@ export default function App() {
 
   // ── reservation ──
   const [showReservation, setShowReservation] = useState(false);
+
+  // ── spec upgrade ──
+  const [showUpgrade,   setShowUpgrade]   = useState(false);
+  const [upgradeTarget, setUpgradeTarget] = useState(null);
 
   // ── part sale ──
   const [showPartSale,     setShowPartSale]     = useState(false);
@@ -1599,6 +1851,24 @@ export default function App() {
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
     if (stageId === "confirmed_pending_pickup") setShowReservation(true);
+  }
+
+  async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
+    const item = upgradeTarget;
+    if (!item) return;
+    if (option === "update_stock") {
+      const update = { max_price: finalPrice };
+      if (newRam) update.ram = newRam;
+      if (newSsd) update.ssd = newSsd;
+      await supabase.from("stock").update(update).eq("id", item.id);
+      await loadStock();
+      setQuickSalePrefill({ item: { ...item, ...update }, upgradeNote });
+    } else {
+      setQuickSalePrefill({ item, overridePrice: finalPrice, upgradeNote });
+    }
+    setShowUpgrade(false);
+    setUpgradeTarget(null);
+    setShowQuickSale(true);
   }
 
   // ── message actions ──
@@ -4352,17 +4622,29 @@ For any issues please contact us on WhatsApp.
                     )}
 
                     {/* Actions */}
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button onClick={() => {
                         setEditingStock(item);
                         setStockForm({ ...EMPTY_STOCK, ...item, cost_price: item.cost_price ?? "", min_price: item.min_price ?? "", max_price: item.max_price ?? "" });
                         setShowAddStock(true);
                       }}
-                        style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                        style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                         ✏️ Edit
                       </button>
+                      {isAvail && (
+                        <button onClick={() => { setUpgradeTarget(item); setShowUpgrade(true); }}
+                          style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #FDE68A", background: "#FFFBEB", color: "#D97706", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                          ⬆ Upgrade
+                        </button>
+                      )}
+                      {isAvail && (
+                        <button onClick={() => { setQuickSalePrefill({ item }); setShowQuickSale(true); }}
+                          style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                          ⚡ Sell
+                        </button>
+                      )}
                       <button onClick={() => { if (window.confirm(`Delete ${[item.brand, item.model].filter(Boolean).join(" ") || "this item"}?`)) deleteStockItem(item.id); }}
-                        style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+                        style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
                         🗑
                       </button>
                     </div>
@@ -4964,6 +5246,15 @@ For any issues please contact us on WhatsApp.
       {/* ── SOURCING TAB ── */}
       {activeTab === "sourcing" && (
         <SourcingModule anthropicKey={anthropicKey} onAddToStock={() => { loadStock(); refreshCachedStock(); }} />
+      )}
+
+      {/* ── SPEC UPGRADE MODAL ── */}
+      {showUpgrade && upgradeTarget && (
+        <SpecUpgradeModal
+          item={upgradeTarget}
+          onClose={() => { setShowUpgrade(false); setUpgradeTarget(null); }}
+          onApply={handleUpgradeApply}
+        />
       )}
 
       {/* ── PART SALE MODAL ── */}
