@@ -3991,6 +3991,52 @@ For any issues please contact us on WhatsApp.
             </div>
           )}
 
+          {/* ⚡ CONFIRM SALE — always visible above inputs */}
+          <div style={{ marginBottom: 8 }}>
+            <button
+              onClick={() => {
+                if (activeDeal) {
+                  setLinkStockDeal(activeDeal);
+                  setShowLinkStock(true);
+                } else {
+                  // Auto-create deal then open modal
+                  if (activeCustomer?.id) {
+                    supabase.from("deals").insert({
+                      customer_id: activeCustomer.id,
+                      stage: "new_inquiry",
+                      brand: "", model: "",
+                    }).select().single().then(({ data }) => {
+                      if (data) {
+                        setActiveDealId(data.id);
+                        setLinkStockDeal(data);
+                        setShowLinkStock(true);
+                        loadCustomers();
+                      }
+                    });
+                  }
+                }
+              }}
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 12,
+                border: "none",
+                background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                boxShadow: "0 2px 8px rgba(245,158,11,0.3)",
+              }}
+            >
+              ⚡ Confirm Sale — Link Inventory
+            </button>
+          </div>
+
           {/* TOP ROW — paste client's incoming message */}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8 }}>
             <textarea
