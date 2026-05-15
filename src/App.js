@@ -101,7 +101,7 @@ ALWAYS return valid JSON only — no markdown, no explanation:
   "charger": "yes|no|unknown",
   "box": "yes|no|unknown",
   "notes": "any extra context",
-  "suggestedStage": "new_inquiry|requirement_noted|searching|device_found|negotiation|confirmed_pending_pickup|closed|lost",
+  "suggestedStage": "new_inquiry|requirement_noted|searching|device_found|negotiation|closed|lost",
   "stageReason": "one line reason",
   "reply": "ready to send WhatsApp reply"
 }
@@ -152,7 +152,6 @@ STAGE LOGIC:
 - searching: actively looking
 - device_found: matching device located
 - negotiation: price being discussed
-- confirmed_pending_pickup: client confirmed purchase, coming to collect — use when client says "I'll take it", "confirmed", "I'll come", "picking up", "will buy"
 - closed: sale confirmed and completed
 - lost: deal fell through`;
 
@@ -485,8 +484,9 @@ function Spinner() {
 function ReservationModal({ customer, deal, stock, onClose, onDone }) {
   const [search,        setSearch]        = useState("");
   const [selectedItem,  setSelectedItem]  = useState(null);
+  const [agreedPrice,   setAgreedPrice]   = useState("");
   const [pickupDate,    setPickupDate]    = useState("");
-  const [depositType,   setDepositType]   = useState("none"); // none | partial | full
+  const [depositType,   setDepositType]   = useState("none");
   const [depositAmount, setDepositAmount] = useState("");
   const [notes,         setNotes]         = useState("");
   const [saving,        setSaving]        = useState(false);
@@ -498,11 +498,20 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
           .toLowerCase().includes(search.toLowerCase()))
     : available;
 
-  const fullAmount  = Number(deal?.value || deal?.budget || 0);
-  const depositAmt  = depositType === "full"    ? fullAmount
+  function selectDevice(item) {
+    setSelectedItem(item);
+    setAgreedPrice(String(item.max_price || ""));
+  }
+
+  const agreedNum   = Number(agreedPrice) || 0;
+  const costNum     = Number(selectedItem?.cost_price) || 0;
+  const priceProfit = agreedNum - costNum;
+  const priceMarg   = agreedNum > 0 ? Math.round((priceProfit / agreedNum) * 100) : 0;
+
+  const depositAmt  = depositType === "full"    ? agreedNum
                     : depositType === "partial"  ? (Number(depositAmount) || 0)
                     : 0;
-  const balanceDue  = Math.max(0, fullAmount - depositAmt);
+  const balanceDue  = Math.max(0, agreedNum - depositAmt);
 
   async function save() {
     if (!pickupDate) { alert("Pickup date is required"); return; }
@@ -518,6 +527,7 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
       }
       await supabase.from("deals").update({
         stage:              "confirmed_pending_pickup",
+        value:              agreedNum || undefined,
         deposit_amount:     depositAmt,
         balance_due:        balanceDue,
         pickup_date:        pickupDate,
@@ -562,7 +572,7 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
                   const isSel  = selectedItem?.id === item.id;
                   const specs  = [item.processor, item.ram, item.ssd].filter(Boolean).join(" · ");
                   return (
-                    <div key={item.id} onClick={() => setSelectedItem(isSel ? null : item)}
+                    <div key={item.id} onClick={() => isSel ? setSelectedItem(null) : selectDevice(item)}
                       style={{ padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${isSel ? "#F59E0B" : "#F1F5F9"}`,
                                background: isSel ? "#FFFBEB" : "#F8FAFC", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${isSel ? "#F59E0B" : "#CBD5E1"}`,
@@ -580,7 +590,27 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
               </div>
             </div>
 
-            {/* 2. Pickup date */}
+            {/* 2. Agreed price — only shown once a device is selected */}
+            {selectedItem && (
+              <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <div style={{ flex: 1, fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>AGREED PRICE (AED)</div>
+                  <input type="number" value={agreedPrice} onChange={e => setAgreedPrice(e.target.value)}
+                    style={{ width: 130, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 15, fontWeight: 800, outline: "none", textAlign: "right", color: "#6366F1" }} />
+                </div>
+                <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#94A3B8" }}>
+                  <span>Listed: AED {Number(selectedItem.max_price || 0).toLocaleString()}</span>
+                  {costNum > 0 && <span>Cost: AED {costNum.toLocaleString()}</span>}
+                  {agreedNum > 0 && costNum > 0 && (
+                    <span style={{ fontWeight: 700, color: priceProfit >= 0 ? "#10B981" : "#EF4444" }}>
+                      Profit: AED {priceProfit.toLocaleString()} ({priceMarg}%)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Pickup date */}
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>PICKUP DATE *</div>
               <input type="date" value={pickupDate} onChange={e => setPickupDate(e.target.value)}
@@ -593,7 +623,7 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
               <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>DEPOSIT RECEIVED</div>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                 {[["none","No Deposit"],["partial","Partial Deposit"],["full","Full Payment"]].map(([k,l]) => (
-                  <button key={k} onClick={() => { setDepositType(k); if (k === "full") setDepositAmount(String(fullAmount)); }}
+                  <button key={k} onClick={() => { setDepositType(k); if (k === "full") setDepositAmount(String(agreedNum)); }}
                     style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
                              background: depositType === k ? "#F59E0B" : "#F1F5F9", color: depositType === k ? "#fff" : "#64748B" }}>
                     {l}
@@ -605,7 +635,7 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
                   placeholder="Amount received (AED)"
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #FDE68A", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
               )}
-              {depositType !== "none" && depositAmt > 0 && fullAmount > 0 && (
+              {depositType !== "none" && depositAmt > 0 && agreedNum > 0 && (
                 <div style={{ marginTop: 6, fontSize: 12, color: "#92400E", fontWeight: 600 }}>
                   Balance due: AED {balanceDue.toLocaleString()}
                 </div>
@@ -2885,22 +2915,16 @@ For any issues please contact us on WhatsApp.
 
             {/* AI stage suggestion */}
             {pendingSuggestion && (
-              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12,
-                            background: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#FFFBEB" : "#EEF2FF",
-                            border: `1px solid ${pendingSuggestion.stage === "confirmed_pending_pickup" ? "#FDE68A" : "#C7D2FE"}` }}>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 3,
-                              color: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#D97706" : "#6366F1" }}>🤖 AI Suggests</div>
-                <div style={{ fontSize: 12, color: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#92400E" : "#4338CA", marginBottom: 8 }}>
-                  {pendingSuggestion.reason}
-                </div>
+              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, background: "#EEF2FF", border: "1px solid #C7D2FE" }}>
+                <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, marginBottom: 3 }}>🤖 AI Suggests</div>
+                <div style={{ fontSize: 12, color: "#4338CA", marginBottom: 8 }}>{pendingSuggestion.reason}</div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={() => moveStage(pendingSuggestion.stage)}
-                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
-                             background: pendingSuggestion.stage === "confirmed_pending_pickup" ? "#F59E0B" : "#6366F1", color: "#fff" }}>
-                    {pendingSuggestion.stage === "confirmed_pending_pickup" ? "🔒 Reserve Device" : `Move → ${STAGES.find(s => s.id === pendingSuggestion.stage)?.label}`}
+                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    Move → {STAGES.find(s => s.id === pendingSuggestion.stage)?.label}
                   </button>
                   <button onClick={() => setPendingSuggestion(null)}
-                    style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${pendingSuggestion.stage === "confirmed_pending_pickup" ? "#FDE68A" : "#C7D2FE"}`, background: "#fff", color: "#6366F1", fontSize: 11, cursor: "pointer" }}>
+                    style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #C7D2FE", background: "#fff", color: "#6366F1", fontSize: 11, cursor: "pointer" }}>
                     Ignore
                   </button>
                 </div>
