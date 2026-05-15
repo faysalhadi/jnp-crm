@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import * as XLSX from "xlsx";
 import SourcingModule, { useSourcingAlerts } from "./SourcingModule";
@@ -505,15 +505,23 @@ function PartSaleModal({ part, onClose, onComplete }) {
       const newQty = maxQty - qtyToSell;
       await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", part.id);
       const partLabel = [part.category, part.specs].filter(Boolean).join(" — ");
-      await supabase.from("deals").insert({
-        sale_type:    "parts",
-        stage:        "closed",
-        closed_at:    new Date().toISOString(),
-        value:        totalRev || null,
-        walk_in_name: customerName.trim() || "Walk-in",
+      const { error: dealError } = await supabase.from("parts_sales").insert({
+        part_id:        part.id,
+        category:       part.category || "",
+        specs:          part.specs || "",
+        compatible_with: part.compatible_with || "",
+        quantity_sold:  qtyToSell,
+        sell_price:     priceN,
+        cost_price:     costN,
+        total_revenue:  totalRev,
+        total_cost:     totalCost,
+        profit:         profit,
+        customer_name:  customerName.trim() || "Walk-in",
         payment_method: payMethod,
-        notes:        `${partLabel} ×${qtyToSell}`,
+        sold_at:        new Date().toISOString(),
+        notes:          `${partLabel} ×${qtyToSell}`,
       });
+      if (dealError) throw new Error(dealError.message);
       setResult({ qtyToSell, profit, margin, newQty, partLabel });
       onComplete();
     } catch (e) {
@@ -1788,8 +1796,8 @@ export default function App() {
 
   // ── link stock (close deal) ──
   const [showLinkStock,    setShowLinkStock]    = useState(false);
-  const [linkStockDeal,    setLinkStockDeal]    = useState(null); // snapshot of deal at modal open
-  const [linkStockCustomer,setLinkStockCustomer]= useState(null); // snapshot of customer
+  const [linkStockDeal,    setLinkStockDeal]    = useState(null);
+  const [linkStockCustomer,setLinkStockCustomer]= useState(null);
 
   // ── sold deal map (stockItemId → deal, for sold view) ──
   const [soldDealMap, setSoldDealMap] = useState({});
@@ -2045,6 +2053,23 @@ export default function App() {
   }
 
   async function moveStage(stageId) {
+    // Auto-create deal if none exists
+    if (!activeDealId && activeCustomer?.id) {
+      const { data: newDeal } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: stageId,
+        brand: "", model: "",
+        ...(stageId === "closed" ? { closed_at: new Date().toISOString() } : {}),
+      }).select().single();
+      if (newDeal) {
+        setActiveDealId(newDeal.id);
+        await loadCustomers();
+        if (stageId === "lost") setShowLossReason(true);
+        if (stageId === "confirmed_pending_pickup") { setLinkStockDeal(newDeal); setLinkStockCustomer({ ...activeCustomer }); setShowReservation(true); }
+        if (stageId === "closed") { setLinkStockDeal(newDeal); setLinkStockCustomer({ ...activeCustomer }); setShowLinkStock(true); }
+      }
+      return;
+    }
     // Snapshot deal + customer BEFORE any async so modals have stable data
     if (stageId === "closed" || stageId === "confirmed_pending_pickup") {
       setLinkStockDeal(activeDeal ? { ...activeDeal } : null);
@@ -2057,8 +2082,8 @@ export default function App() {
     await updateCustomer({ tier: autoTier(updatedDeals) });
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
-    if (stageId === "confirmed_pending_pickup") setShowReservation(true);
-    if (stageId === "closed") setShowLinkStock(true);
+    if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }
+    if (stageId === "closed") { setLinkStockDeal({ ...activeDeal, ...fields }); setShowLinkStock(true); }
   }
 
   async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
@@ -2085,7 +2110,22 @@ export default function App() {
 
   // Step 1: add an incoming client message (saves as role=customer, shows LEFT)
   async function addIncomingMessage() {
-    if (!incomingText.trim() || !activeDealId) return;
+    if (!incomingText.trim()) return;
+    // Auto-create a deal if no active deal exists (e.g. new contact from floating button)
+    let dealId = activeDealId;
+    if (!dealId && activeCustomer?.id) {
+      const { data: newDeal } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: "new_inquiry",
+        brand: "", model: "",
+      }).select().single();
+      if (newDeal) {
+        dealId = newDeal.id;
+        setActiveDealId(newDeal.id);
+        await loadCustomers();
+      }
+    }
+    if (!dealId) return;
     const content = incomingText.trim();
     setIncomingText("");
     const isVoice  = content.toLowerCase().startsWith("voice note:");
@@ -2189,11 +2229,26 @@ export default function App() {
 
   // Mode 1 — Type Message: save owner's own typed text directly (no AI)
   async function sendDirectMessage() {
-    if (!msgInput.trim() || !activeDealId) return;
+    if (!msgInput.trim()) return;
+    // Auto-create a deal if no active deal exists
+    let dealId = activeDealId;
+    if (!dealId && activeCustomer?.id) {
+      const { data: newDeal } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: "new_inquiry",
+        brand: "", model: "",
+      }).select().single();
+      if (newDeal) {
+        dealId = newDeal.id;
+        setActiveDealId(newDeal.id);
+        await loadCustomers();
+      }
+    }
+    if (!dealId) return;
     const content = msgInput.trim();
     setMsgInput("");
     const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId,
+      deal_id: dealId,
       role: "assistant",
       content,
       sent: content,
@@ -2354,8 +2409,8 @@ Return JSON with only a "reply" field containing the message.`;
   useEffect(() => {
     if (stockFilter !== "parts_sold") return;
     setPartsSoldLoading(true);
-    supabase.from("deals").select("*").eq("sale_type", "parts").eq("stage", "closed")
-      .order("closed_at", { ascending: false })
+    supabase.from("parts_sales").select("*")
+      .order("sold_at", { ascending: false })
       .then(({ data }) => { setPartsSold(data || []); setPartsSoldLoading(false); });
   }, [stockFilter]);
 
@@ -4643,17 +4698,17 @@ For any issues please contact us on WhatsApp.
                   <div key={d.id || i} style={{ background:"#fff", borderRadius:14, padding:"12px 14px", boxShadow:"0 1px 4px rgba(0,0,0,0.06)" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
                       <div>
-                        <div style={{ fontSize:13, fontWeight:700, color:"#0F172A" }}>🔧 {d.notes || "Part sale"}</div>
-                        <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>{d.walk_in_name || "Walk-in"}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:"#0F172A" }}>🔧 {d.notes || `${d.category} ${d.specs || ""}`|| "Part sale"}</div>
+                        <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>{d.customer_name || "Walk-in"} · ×{d.quantity_sold || 1}</div>
                       </div>
                       <div style={{ textAlign:"right" }}>
                         {d.value && <div style={{ fontSize:14, fontWeight:800, color:"#8B5CF6" }}>AED {Number(d.value).toLocaleString()}</div>}
                         <div style={{ fontSize:10, color:"#94A3B8" }}>{d.payment_method || "—"}</div>
                       </div>
                     </div>
-                    {d.closed_at && (
+                    {(d.sold_at || d.closed_at) && (
                       <div style={{ fontSize:11, color:"#CBD5E1" }}>
-                        {new Date(d.closed_at).toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" })}
+                        {new Date(d.sold_at || d.closed_at).toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" })}
                       </div>
                     )}
                   </div>
@@ -5522,10 +5577,10 @@ For any issues please contact us on WhatsApp.
       {/* ── LINK STOCK MODAL ── */}
       {showLinkStock && linkStockDeal && (
         <LinkStockModal
-          customer={linkStockCustomer}
+          customer={linkStockCustomer || activeCustomer}
           deal={linkStockDeal}
-          onClose={() => setShowLinkStock(false)}
-          onDone={() => { setShowLinkStock(false); loadStock(); loadCustomers(); refreshCachedStock(); }}
+          onClose={() => { setShowLinkStock(false); setLinkStockDeal(null); }}
+          onDone={() => { setShowLinkStock(false); setLinkStockDeal(null); loadStock(); loadCustomers(); refreshCachedStock(); }}
         />
       )}
 
@@ -5548,10 +5603,10 @@ For any issues please contact us on WhatsApp.
       )}
 
       {/* ── RESERVATION MODAL ── */}
-      {showReservation && linkStockDeal && (
+      {showReservation && (linkStockDeal || activeDeal) && (
         <ReservationModal
-          customer={linkStockCustomer}
-          deal={linkStockDeal}
+          customer={linkStockCustomer || activeCustomer}
+          deal={linkStockDeal || activeDeal}
           stock={stock}
           onClose={() => setShowReservation(false)}
           onDone={() => { setShowReservation(false); loadStock(); loadCustomers(); }}
