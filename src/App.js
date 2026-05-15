@@ -644,6 +644,200 @@ function PartSaleModal({ part, onClose, onComplete }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  LINK STOCK MODAL  (shown when closing a deal — link to device or spare part)
+// ══════════════════════════════════════════════════════════════════════════════
+function LinkStockModal({ customer, deal, onClose, onDone }) {
+  const [devices,      setDevices]      = useState([]);
+  const [parts,        setParts]        = useState([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+  const [search,       setSearch]       = useState("");
+  const [selType,      setSelType]      = useState(null); // "device" | "part"
+  const [selItem,      setSelItem]      = useState(null);
+  const [agreedPrice,  setAgreedPrice]  = useState("");
+  const [saving,       setSaving]       = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("stock").select("*").eq("status", "available").order("brand"),
+      supabase.from("stock_parts").select("*").gt("quantity", 0).order("category"),
+    ]).then(([{ data: d }, { data: p }]) => {
+      setDevices(d || []);
+      setParts(p   || []);
+      setLoadingItems(false);
+    });
+  }, []);
+
+  function selectDevice(item) {
+    setSelType("device"); setSelItem(item);
+    setAgreedPrice(String(item.max_price || ""));
+  }
+  function selectPart(item) {
+    setSelType("part"); setSelItem(item);
+    setAgreedPrice(String(item.sell_price || ""));
+  }
+
+  const agreedN  = Number(agreedPrice) || 0;
+  const costN    = selType === "device"
+    ? Number(selItem?.cost_price) || 0
+    : Number(selItem?.cost_price) || 0;
+  const profit   = agreedN - costN;
+  const margin   = agreedN > 0 ? Math.round((profit / agreedN) * 100) : 0;
+
+  const q = search.toLowerCase();
+  const filtDevices = devices.filter(d =>
+    [d.brand, d.model, d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
+  const filtParts = parts.filter(p =>
+    [p.category, p.specs, p.compatible_with, p.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
+
+  async function confirm() {
+    if (!selItem) return;
+    setSaving(true);
+    try {
+      const soldAt = new Date().toISOString();
+      if (selType === "device") {
+        await supabase.from("stock").update({
+          status: "sold", sold_price: agreedN, sold_at: soldAt,
+          ...(customer?.id ? { sold_to_customer_id: customer.id } : {}),
+        }).eq("id", selItem.id);
+        await supabase.from("deals").update({
+          value: agreedN, stock_item_id: selItem.id,
+        }).eq("id", deal.id);
+      } else {
+        const newQty = (selItem.quantity || 0) - 1;
+        await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", selItem.id);
+        const partLabel = [selItem.category, selItem.specs].filter(Boolean).join(" — ");
+        await supabase.from("deals").update({
+          value: agreedN,
+          notes: deal.notes ? `${deal.notes} | Part: ${partLabel}` : `Part: ${partLabel}`,
+        }).eq("id", deal.id);
+      }
+      onDone();
+    } catch (e) {
+      alert("Error linking stock: " + (e.message || "Unknown error"));
+    }
+    setSaving(false);
+  }
+
+  const ItemRow = ({ item, type, selected, onSelect, priceField }) => {
+    const isSel = selected;
+    const label = type === "device"
+      ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
+      : `${item.category}${item.specs ? ` · ${item.specs}` : ""}`;
+    const sub = type === "device"
+      ? [item.processor, item.ram, item.ssd, item.condition].filter(Boolean).join(" · ")
+      : [item.compatible_with, item.condition, `×${item.quantity} in stock`].filter(Boolean).join(" · ");
+    const price = Number(item[priceField]) || 0;
+    return (
+      <div onClick={onSelect} style={{
+        padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+        border: `1.5px solid ${isSel ? "#6366F1" : "#F1F5F9"}`,
+        background: isSel ? "#EEF2FF" : "#F8FAFC",
+        display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <div style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+                      border: `2px solid ${isSel ? "#6366F1" : "#CBD5E1"}`,
+                      background: isSel ? "#6366F1" : "transparent" }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{label}</div>
+          {sub && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{sub}</div>}
+        </div>
+        {price > 0 && (
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>
+            AED {price.toLocaleString()}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
+          {/* Header */}
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✅ Link Stock to Deal</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+                {customer?.name || "Customer"} — {[deal?.brand, deal?.model].filter(Boolean).join(" ") || "Open deal"}
+              </div>
+            </div>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+          </div>
+
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Search */}
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search devices or parts…"
+              style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+
+            {loadingItems ? <Spinner /> : (
+              <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Devices */}
+                {filtDevices.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>DEVICES</div>
+                    {filtDevices.map(d => (
+                      <ItemRow key={d.id} item={d} type="device" priceField="max_price"
+                        selected={selType === "device" && selItem?.id === d.id}
+                        onSelect={() => selectDevice(d)} />
+                    ))}
+                  </>
+                )}
+                {/* Spare parts */}
+                {filtParts.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginTop: 4 }}>SPARE PARTS</div>
+                    {filtParts.map(p => (
+                      <ItemRow key={p.id} item={p} type="part" priceField="sell_price"
+                        selected={selType === "part" && selItem?.id === p.id}
+                        onSelect={() => selectPart(p)} />
+                    ))}
+                  </>
+                )}
+                {filtDevices.length === 0 && filtParts.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>
+                    {search ? "No matches" : "No available stock"}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Agreed price + profit — only when something is selected */}
+            {selItem && (
+              <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ flex: 1, fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>AGREED PRICE (AED)</div>
+                  <input type="number" value={agreedPrice} onChange={e => setAgreedPrice(e.target.value)}
+                    style={{ width: 120, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 15, fontWeight: 800, outline: "none", textAlign: "right", color: "#6366F1" }} />
+                </div>
+                {costN > 0 && agreedN > 0 && (
+                  <div style={{ fontSize: 12, color: profit >= 0 ? "#10B981" : "#EF4444", fontWeight: 700 }}>
+                    Profit: AED {profit.toLocaleString()} ({margin}%)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <button onClick={confirm} disabled={saving || !selItem}
+              style={{ padding: 13, borderRadius: 12, border: "none", fontSize: 14, fontWeight: 800,
+                       cursor: saving || !selItem ? "not-allowed" : "pointer",
+                       background: saving || !selItem ? "#E2E8F0" : "#10B981",
+                       color: saving || !selItem ? "#94A3B8" : "#fff" }}>
+              {saving ? "Saving…" : "✅ Confirm Sale & Link Stock"}
+            </button>
+            <button onClick={() => onDone()}
+              style={{ padding: 11, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>
+              Not from stock — close deal only
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  SPEC UPGRADE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 function parseGB(str) {
@@ -1592,6 +1786,12 @@ export default function App() {
   const [showUpgrade,   setShowUpgrade]   = useState(false);
   const [upgradeTarget, setUpgradeTarget] = useState(null);
 
+  // ── link stock (close deal) ──
+  const [showLinkStock, setShowLinkStock] = useState(false);
+
+  // ── sold deal map (stockItemId → deal, for sold view) ──
+  const [soldDealMap, setSoldDealMap] = useState({});
+
   // ── part sale ──
   const [showPartSale,     setShowPartSale]     = useState(false);
   const [partSaleTarget,   setPartSaleTarget]   = useState(null);
@@ -1851,6 +2051,7 @@ export default function App() {
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
     if (stageId === "confirmed_pending_pickup") setShowReservation(true);
+    if (stageId === "closed") setShowLinkStock(true);
   }
 
   async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
@@ -2150,6 +2351,19 @@ Return JSON with only a "reply" field containing the message.`;
       .order("closed_at", { ascending: false })
       .then(({ data }) => { setPartsSold(data || []); setPartsSoldLoading(false); });
   }, [stockFilter]);
+
+  useEffect(() => {
+    if (stockFilter !== "sold") return;
+    const soldIds = stock.filter(s => s.status === "sold" && s.id).map(s => s.id);
+    if (!soldIds.length) return;
+    supabase.from("deals").select("id, stock_item_id, walk_in_name, payment_method, value")
+      .in("stock_item_id", soldIds)
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach(d => { if (d.stock_item_id) map[d.stock_item_id] = d; });
+        setSoldDealMap(map);
+      });
+  }, [stockFilter, stock]);
 
   async function loadParts() {
     setPartsLoading(true);
@@ -4539,21 +4753,24 @@ For any issues please contact us on WhatsApp.
 
                 {/* Sold details panel — shown for sold items */}
                 {item.status === "sold" && (() => {
-                  const soldPrice  = Number(item.sold_price || item.max_price) || 0;
-                  const costPrice  = Number(item.cost_price) || 0;
-                  const profit     = soldPrice - costPrice;
-                  const marginPct  = soldPrice > 0 ? Math.round((profit / soldPrice) * 100) : 0;
-                  const soldToName = item.sold_to_customer_id
+                  const linkedDeal  = soldDealMap[item.id];
+                  const soldPrice   = Number(item.sold_price || linkedDeal?.value || item.max_price) || 0;
+                  const costPrice   = Number(item.cost_price) || 0;
+                  const profit      = soldPrice - costPrice;
+                  const marginPct   = soldPrice > 0 ? Math.round((profit / soldPrice) * 100) : 0;
+                  const custName    = item.sold_to_customer_id
                     ? (customers.find(c => c.id === item.sold_to_customer_id)?.name || "Customer")
-                    : "Walk-in Customer";
+                    : null;
+                  const soldToName  = custName || linkedDeal?.walk_in_name || "Walk-in Customer";
+                  const payMethod   = linkedDeal?.payment_method || null;
                   const soldDateStr = item.sold_at
                     ? new Date(item.sold_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
                     : null;
                   const rows = [
-                    { label: "SOLD TO",   value: soldToName,                              bold: false },
-                    soldDateStr && { label: "SOLD DATE", value: soldDateStr,              bold: false },
-                    soldPrice  && { label: "SOLD PRICE", value: `AED ${soldPrice.toLocaleString()}`, bold: true,  color: "#6366F1" },
-                    costPrice  && { label: "COST PRICE", value: `AED ${costPrice.toLocaleString()}`, bold: false },
+                    { label: "SOLD TO",    value: soldToName,                                         bold: false },
+                    soldDateStr && { label: "SOLD DATE",  value: soldDateStr,                         bold: false },
+                    soldPrice   && { label: "SOLD PRICE", value: `AED ${soldPrice.toLocaleString()}`, bold: true,  color: "#6366F1" },
+                    costPrice   && { label: "COST",       value: `AED ${costPrice.toLocaleString()}`, bold: false },
                     (soldPrice && costPrice) && { label: "PROFIT", value: `AED ${profit.toLocaleString()} (${marginPct}%)`, bold: true, color: profit >= 0 ? "#10B981" : "#EF4444" },
                   ].filter(Boolean);
                   return (
@@ -4564,6 +4781,16 @@ For any issues please contact us on WhatsApp.
                           <span style={{ fontSize: r.bold ? 13 : 12, fontWeight: r.bold ? 800 : 600, color: r.color || "#475569" }}>{r.value}</span>
                         </div>
                       ))}
+                      {payMethod && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.4 }}>PAYMENT</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 8,
+                                         background: payMethod === "Cash" ? "#ECFDF5" : "#EFF6FF",
+                                         color: payMethod === "Cash" ? "#059669" : "#2563EB" }}>
+                            {payMethod}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -5246,6 +5473,16 @@ For any issues please contact us on WhatsApp.
       {/* ── SOURCING TAB ── */}
       {activeTab === "sourcing" && (
         <SourcingModule anthropicKey={anthropicKey} onAddToStock={() => { loadStock(); refreshCachedStock(); }} />
+      )}
+
+      {/* ── LINK STOCK MODAL ── */}
+      {showLinkStock && activeCustomer && activeDeal && (
+        <LinkStockModal
+          customer={activeCustomer}
+          deal={activeDeal}
+          onClose={() => setShowLinkStock(false)}
+          onDone={() => { setShowLinkStock(false); loadStock(); loadCustomers(); refreshCachedStock(); }}
+        />
       )}
 
       {/* ── SPEC UPGRADE MODAL ── */}
