@@ -652,6 +652,289 @@ function PartSaleModal({ part, onClose, onComplete }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  CONFIRM SALE MODAL — unified sale/reservation confirmation with inventory link
+// ══════════════════════════════════════════════════════════════════════════════
+function ConfirmSaleModal({ customer, deal, onClose, onDone }) {
+  const [devices,     setDevices]     = useState([]);
+  const [parts,       setParts]       = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [search,      setSearch]      = useState("");
+  const [selType,     setSelType]     = useState(null);
+  const [selItem,     setSelItem]     = useState(null);
+  const [agreedPrice, setAgreedPrice] = useState("");
+  const [outcome,     setOutcome]     = useState("sold");
+  const [saving,      setSaving]      = useState(false);
+  const [result,      setResult]      = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("stock").select("*").eq("status","available").order("brand"),
+      supabase.from("stock_parts").select("*").gt("quantity",0).order("category"),
+    ]).then(([{data:d},{data:p}]) => { setDevices(d||[]); setParts(p||[]); setLoading(false); });
+  }, []);
+
+  function selectDevice(item) { setSelType("device"); setSelItem(item); setAgreedPrice(String(item.max_price||"")); }
+  function selectPart(item)   { setSelType("part");   setSelItem(item); setAgreedPrice(String(item.sell_price||"")); }
+  function deselect()         { setSelType(null); setSelItem(null); setAgreedPrice(""); }
+
+  const agreedN = Number(agreedPrice)||0;
+  const costN   = Number(selItem?.cost_price)||0;
+  const profit  = agreedN - costN;
+  const margin  = agreedN>0 ? Math.round((profit/agreedN)*100) : 0;
+
+  const q = search.toLowerCase();
+  const filtDevices = devices.filter(d =>
+    [d.brand,d.model,d.processor,d.ram,d.ssd,d.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
+  const filtParts = parts.filter(p =>
+    [p.category,p.specs,p.compatible_with,p.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
+
+  async function confirmWithInventory() {
+    setSaving(true);
+    try {
+      const now = new Date().toISOString();
+      if (selType === "device") {
+        if (outcome === "sold") {
+          await supabase.from("stock").update({
+            status:"sold", sold_price:agreedN, sold_at:now,
+            ...(customer?.id ? {sold_to_customer_id:customer.id} : {}),
+          }).eq("id",selItem.id);
+          await supabase.from("deals").update({
+            stage:"closed", value:agreedN, closed_at:now, stock_item_id:selItem.id,
+          }).eq("id",deal.id);
+          setResult({type:"sold_device", label:[selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device", profit, margin, agreedN});
+        } else {
+          await supabase.from("stock").update({
+            status:"reserved", reserved_for_customer_id:customer?.id||null, reserved_at:now,
+          }).eq("id",selItem.id);
+          await supabase.from("deals").update({
+            stage:"confirmed_pending_pickup", value:agreedN, stock_item_id:selItem.id,
+          }).eq("id",deal.id);
+          setResult({type:"reserved", label:[selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device", name:customer?.name||"Customer"});
+        }
+      } else {
+        const newQty = (selItem.quantity||0)-1;
+        await supabase.from("stock_parts").update({quantity:newQty}).eq("id",selItem.id);
+        const partLabel = [selItem.category,selItem.specs].filter(Boolean).join(" — ");
+        await supabase.from("deals").update({
+          stage:"closed", value:agreedN, closed_at:now,
+          notes: deal.notes ? `${deal.notes} | Part: ${partLabel}` : `Part: ${partLabel}`,
+        }).eq("id",deal.id);
+        setResult({type:"sold_device", label:partLabel||"Part", profit, margin, agreedN});
+      }
+      onDone();
+    } catch(e) { alert("Error: "+(e.message||"Unknown")); }
+    setSaving(false);
+  }
+
+  async function confirmSkip() {
+    setSaving(true);
+    try {
+      const now = new Date().toISOString();
+      if (outcome==="sold") {
+        await supabase.from("deals").update({stage:"closed",closed_at:now}).eq("id",deal.id);
+      } else {
+        await supabase.from("deals").update({stage:"confirmed_pending_pickup"}).eq("id",deal.id);
+      }
+      setResult({type:outcome==="sold"?"closed_only":"reserved_only"});
+      onDone();
+    } catch(e) { alert("Error: "+e.message); }
+    setSaving(false);
+  }
+
+  // ── Success screen ──
+  if (result) {
+    const isSuccess = result.type==="sold_device";
+    const isReserved = result.type==="reserved";
+    return (
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"#fff",borderRadius:20,padding:24,maxWidth:380,width:"100%",textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:8}}>{isReserved?"🔒":"✅"}</div>
+          <div style={{fontSize:19,fontWeight:800,color:"#0F172A",marginBottom:4}}>
+            {isReserved?"Device Reserved!" : result.type==="closed_only"?"Deal Closed" : "Sale Complete!"}
+          </div>
+          {isSuccess && result.label && <div style={{fontSize:13,color:"#64748B",marginBottom:10}}>{result.label}</div>}
+          {isReserved && <div style={{fontSize:13,color:"#64748B",marginBottom:10}}>Held for {result.name}</div>}
+          {isSuccess && result.profit!==undefined && (
+            <div style={{padding:"10px 16px",background:"#ECFDF5",borderRadius:12,marginBottom:12}}>
+              <div style={{fontSize:15,fontWeight:800,color:"#059669"}}>
+                Profit: AED {result.profit.toLocaleString()} ({result.margin}%)
+              </div>
+              <div style={{fontSize:12,color:"#10B981",marginTop:2}}>Sold: AED {result.agreedN?.toLocaleString()}</div>
+            </div>
+          )}
+          <button onClick={onClose}
+            style={{width:"100%",padding:13,borderRadius:12,border:"none",
+                     background:isReserved?"#F59E0B":"#6366F1",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>
+            Done
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,overflowY:"auto"}}>
+      <div style={{minHeight:"100%",padding:"16px 12px 40px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:480}}>
+
+          {/* Header */}
+          <div style={{padding:"16px 20px",borderBottom:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <div style={{fontSize:17,fontWeight:800,color:"#0F172A"}}>⚡ Confirm Sale</div>
+              <div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>{customer?.name||"Customer"}</div>
+            </div>
+            <button onClick={onClose} style={{width:30,height:30,borderRadius:8,border:"none",background:"#F1F5F9",cursor:"pointer"}}>✕</button>
+          </div>
+
+          <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+
+            {/* Outcome selector */}
+            <div style={{display:"flex",gap:8}}>
+              {[["sold","✅ Sold","paid and collected","#10B981","#ECFDF5"],
+                ["reserved","🔒 Reserved","confirming, picking up later","#F59E0B","#FFFBEB"]
+              ].map(([val,label,sub,color,bg]) => (
+                <div key={val} onClick={() => setOutcome(val)}
+                  style={{flex:1,padding:"11px 12px",borderRadius:14,border:`2px solid ${outcome===val?color:"#F1F5F9"}`,
+                           background:outcome===val?bg:"#fff",cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                    <div style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${outcome===val?color:"#CBD5E1"}`,
+                                  background:outcome===val?color:"transparent",flexShrink:0}}/>
+                    <span style={{fontSize:12,fontWeight:800,color:outcome===val?color:"#0F172A"}}>{label}</span>
+                  </div>
+                  <div style={{fontSize:10,color:"#94A3B8",paddingLeft:20}}>{sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Inventory selector */}
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginBottom:6}}>
+                SELECT INVENTORY (OPTIONAL)
+              </div>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search devices or parts…"
+                style={{width:"100%",padding:"9px 13px",borderRadius:10,border:"1.5px solid #E2E8F0",fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+
+              {loading ? <Spinner/> : (
+                <div style={{maxHeight:240,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+                  {selItem && (
+                    <div style={{padding:"8px 12px",borderRadius:10,background:"#EEF2FF",border:"1.5px solid #6366F1",
+                                  display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:"#6366F1"}}>
+                        {selType==="device"
+                          ? [selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device"
+                          : selItem.category+(selItem.specs?` · ${selItem.specs}`:"")}
+                      </span>
+                      <button onClick={deselect}
+                        style={{fontSize:11,color:"#6366F1",border:"none",background:"none",cursor:"pointer",fontWeight:700}}>
+                        ✕ Clear
+                      </button>
+                    </div>
+                  )}
+
+                  {filtDevices.length>0 && (
+                    <>
+                      <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5}}>LAPTOPS</div>
+                      {filtDevices.map(d => {
+                        const isSel = selType==="device" && selItem?.id===d.id;
+                        return (
+                          <div key={d.id} onClick={() => isSel ? deselect() : selectDevice(d)}
+                            style={{padding:"10px 12px",borderRadius:10,border:`1.5px solid ${isSel?"#6366F1":"#F1F5F9"}`,
+                                     background:isSel?"#EEF2FF":"#F8FAFC",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${isSel?"#6366F1":"#CBD5E1"}`,
+                                          background:isSel?"#6366F1":"transparent",flexShrink:0}}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:700,color:"#0F172A"}}>
+                                {[d.brand,d.model].filter(Boolean).join(" ")||"Device"}
+                              </div>
+                              <div style={{fontSize:11,color:"#94A3B8"}}>
+                                {[d.processor,d.ram,d.ssd,d.condition].filter(Boolean).join(" · ")}
+                              </div>
+                            </div>
+                            {d.max_price && <div style={{fontSize:13,fontWeight:800,color:"#6366F1",flexShrink:0}}>AED {Number(d.max_price).toLocaleString()}</div>}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {filtParts.length>0 && (
+                    <>
+                      <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginTop:4}}>SPARE PARTS</div>
+                      {filtParts.map(p => {
+                        const isSel = selType==="part" && selItem?.id===p.id;
+                        return (
+                          <div key={p.id} onClick={() => isSel ? deselect() : selectPart(p)}
+                            style={{padding:"10px 12px",borderRadius:10,border:`1.5px solid ${isSel?"#6366F1":"#F1F5F9"}`,
+                                     background:isSel?"#EEF2FF":"#F8FAFC",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${isSel?"#6366F1":"#CBD5E1"}`,
+                                          background:isSel?"#6366F1":"transparent",flexShrink:0}}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:700,color:"#0F172A"}}>
+                                {p.category}{p.specs?` · ${p.specs}`:""}
+                              </div>
+                              <div style={{fontSize:11,color:"#94A3B8"}}>
+                                {[p.compatible_with,p.condition,`×${p.quantity} in stock`].filter(Boolean).join(" · ")}
+                              </div>
+                            </div>
+                            {p.sell_price && <div style={{fontSize:13,fontWeight:800,color:"#6366F1",flexShrink:0}}>AED {Number(p.sell_price).toLocaleString()}</div>}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {filtDevices.length===0 && filtParts.length===0 && !selItem && (
+                    <div style={{textAlign:"center",padding:"16px 0",color:"#CBD5E1",fontSize:12}}>
+                      {search?"No matches":"No available stock"}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Agreed price — only when item selected */}
+            {selItem && (
+              <div style={{padding:"12px 14px",background:"#F8FAFC",borderRadius:12,border:"1px solid #F1F5F9"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <div style={{flex:1,fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5}}>AGREED PRICE (AED)</div>
+                  <input type="number" value={agreedPrice} onChange={e=>setAgreedPrice(e.target.value)}
+                    style={{width:130,padding:"7px 10px",borderRadius:8,border:"1.5px solid #E2E8F0",fontSize:15,fontWeight:800,
+                             outline:"none",textAlign:"right",color:"#6366F1"}}/>
+                </div>
+                {costN>0 && agreedN>0 && (
+                  <div style={{display:"flex",gap:12,fontSize:12}}>
+                    <span style={{color:"#94A3B8"}}>Cost: AED {costN.toLocaleString()}</span>
+                    <span style={{fontWeight:700,color:profit>=0?"#10B981":"#EF4444"}}>
+                      Profit: AED {profit.toLocaleString()} ({margin}%)
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <button onClick={selItem ? confirmWithInventory : confirmSkip} disabled={saving}
+              style={{padding:14,borderRadius:12,border:"none",fontSize:14,fontWeight:800,
+                       cursor:saving?"not-allowed":"pointer",
+                       background:saving?"#E2E8F0":outcome==="reserved"?"#F59E0B":"#6366F1",
+                       color:saving?"#94A3B8":"#fff"}}>
+              {saving?"Saving…":"⚡ Confirm"}
+            </button>
+            {selItem && (
+              <button onClick={confirmSkip} disabled={saving}
+                style={{padding:8,borderRadius:10,border:"none",background:"none",
+                         color:"#94A3B8",fontSize:12,cursor:"pointer"}}>
+                Skip — no inventory link
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  LINK STOCK MODAL  (shown when closing a deal — link to device or spare part)
 // ══════════════════════════════════════════════════════════════════════════════
 function LinkStockModal({ customer, deal, onClose, onDone }) {
@@ -1794,6 +2077,9 @@ export default function App() {
   const [showUpgrade,   setShowUpgrade]   = useState(false);
   const [upgradeTarget, setUpgradeTarget] = useState(null);
 
+  // ── confirm sale ──
+  const [showConfirmSale, setShowConfirmSale] = useState(false);
+
   // ── link stock (close deal) ──
   const [showLinkStock,    setShowLinkStock]    = useState(false);
   const [linkStockDeal,    setLinkStockDeal]    = useState(null);
@@ -2065,15 +2351,8 @@ export default function App() {
         setActiveDealId(newDeal.id);
         await loadCustomers();
         if (stageId === "lost") setShowLossReason(true);
-        if (stageId === "confirmed_pending_pickup") { setLinkStockDeal(newDeal); setLinkStockCustomer({ ...activeCustomer }); setShowReservation(true); }
-        if (stageId === "closed") { setLinkStockDeal(newDeal); setLinkStockCustomer({ ...activeCustomer }); setShowLinkStock(true); }
       }
       return;
-    }
-    // Snapshot deal + customer BEFORE any async so modals have stable data
-    if (stageId === "closed" || stageId === "confirmed_pending_pickup") {
-      setLinkStockDeal(activeDeal ? { ...activeDeal } : null);
-      setLinkStockCustomer(activeCustomer ? { ...activeCustomer } : null);
     }
     const fields = { stage: stageId };
     if (stageId === "closed") fields.closed_at = new Date().toISOString();
@@ -2082,8 +2361,6 @@ export default function App() {
     await updateCustomer({ tier: autoTier(updatedDeals) });
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
-    if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }
-    if (stageId === "closed") { setLinkStockDeal({ ...activeDeal, ...fields }); setShowLinkStock(true); }
   }
 
   async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
@@ -3680,16 +3957,7 @@ For any issues please contact us on WhatsApp.
               <div style={{ fontSize: 10, color: "#CBD5E1", fontWeight: 700, marginBottom: 5, letterSpacing: 0.5 }}>MOVE STAGE</div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                 {STAGES.map(s => (
-                  <button key={s.id} onClick={() => {
-                    // For modal-triggering stages: snapshot immediately, show modal instantly
-                    if (s.id === "closed" || s.id === "confirmed_pending_pickup") {
-                      setLinkStockDeal({ ...activeDeal });
-                      setLinkStockCustomer({ ...activeCustomer });
-                      if (s.id === "closed") setShowLinkStock(true);
-                      if (s.id === "confirmed_pending_pickup") setShowReservation(true);
-                    }
-                    moveStage(s.id);
-                  }}
+                  <button key={s.id} onClick={() => moveStage(s.id)}
                     style={{ padding: "4px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", background: s.id === activeDeal.stage ? s.color : s.bg, color: s.id === activeDeal.stage ? "#fff" : s.color, transition: "all 0.15s" }}>
                     {s.label}
                   </button>
@@ -3697,14 +3965,16 @@ For any issues please contact us on WhatsApp.
               </div>
             </div>
 
-            {/* Always-visible link inventory button */}
-            <button onClick={() => {
-              setLinkStockDeal({ ...activeDeal });
-              setLinkStockCustomer({ ...activeCustomer });
-              setShowLinkStock(true);
-            }} style={{ marginTop: 8, width: "100%", padding: "7px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              📦 Link Inventory Item
-            </button>
+            {/* ⚡ Confirm Sale — visible on all active deals */}
+            {activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
+              <button onClick={() => setShowConfirmSale(true)}
+                style={{ marginTop: 6, width: "100%", padding: "11px 14px", borderRadius: 12, border: "none",
+                          background: "#F59E0B", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          boxShadow: "0 2px 10px rgba(245,158,11,0.35)" }}>
+                ⚡ Confirm Sale
+              </button>
+            )}
 
             {/* loss reason */}
             {activeDeal.stage === "lost" && (
@@ -4004,22 +4274,13 @@ For any issues please contact us on WhatsApp.
         </div>
         </div>{/* end detail content wrapper */}
 
-        {/* ── Modals inside detail view (early return can't reach main return) ── */}
-        {showLinkStock && linkStockDeal && (
-          <LinkStockModal
-            customer={linkStockCustomer}
-            deal={linkStockDeal}
-            onClose={() => setShowLinkStock(false)}
-            onDone={() => { setShowLinkStock(false); loadStock(); loadCustomers(); refreshCachedStock(); }}
-          />
-        )}
-        {showReservation && linkStockDeal && (
-          <ReservationModal
-            customer={linkStockCustomer}
-            deal={linkStockDeal}
-            stock={stock}
-            onClose={() => setShowReservation(false)}
-            onDone={() => { setShowReservation(false); loadStock(); loadCustomers(); }}
+        {/* ── ConfirmSaleModal inside detail view (early return can't reach main return) ── */}
+        {showConfirmSale && activeDeal && (
+          <ConfirmSaleModal
+            customer={activeCustomer}
+            deal={activeDeal}
+            onClose={() => setShowConfirmSale(false)}
+            onDone={() => { setShowConfirmSale(false); loadStock(); loadCustomers(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); }}
           />
         )}
       </div>
