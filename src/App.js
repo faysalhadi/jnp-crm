@@ -1787,7 +1787,9 @@ export default function App() {
   const [upgradeTarget, setUpgradeTarget] = useState(null);
 
   // ── link stock (close deal) ──
-  const [showLinkStock, setShowLinkStock] = useState(false);
+  const [showLinkStock,    setShowLinkStock]    = useState(false);
+  const [linkStockDeal,    setLinkStockDeal]    = useState(null); // snapshot of deal at modal open
+  const [linkStockCustomer,setLinkStockCustomer]= useState(null); // snapshot of customer
 
   // ── sold deal map (stockItemId → deal, for sold view) ──
   const [soldDealMap, setSoldDealMap] = useState({});
@@ -2043,6 +2045,11 @@ export default function App() {
   }
 
   async function moveStage(stageId) {
+    // Snapshot deal + customer BEFORE any async so modals have stable data
+    if (stageId === "closed" || stageId === "confirmed_pending_pickup") {
+      setLinkStockDeal(activeDeal ? { ...activeDeal } : null);
+      setLinkStockCustomer(activeCustomer ? { ...activeCustomer } : null);
+    }
     const fields = { stage: stageId };
     if (stageId === "closed") fields.closed_at = new Date().toISOString();
     await updateDeal(fields);
@@ -3618,13 +3625,31 @@ For any issues please contact us on WhatsApp.
               <div style={{ fontSize: 10, color: "#CBD5E1", fontWeight: 700, marginBottom: 5, letterSpacing: 0.5 }}>MOVE STAGE</div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                 {STAGES.map(s => (
-                  <button key={s.id} onClick={() => moveStage(s.id)}
+                  <button key={s.id} onClick={() => {
+                    // For modal-triggering stages: snapshot immediately, show modal instantly
+                    if (s.id === "closed" || s.id === "confirmed_pending_pickup") {
+                      setLinkStockDeal({ ...activeDeal });
+                      setLinkStockCustomer({ ...activeCustomer });
+                      if (s.id === "closed") setShowLinkStock(true);
+                      if (s.id === "confirmed_pending_pickup") setShowReservation(true);
+                    }
+                    moveStage(s.id);
+                  }}
                     style={{ padding: "4px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", background: s.id === activeDeal.stage ? s.color : s.bg, color: s.id === activeDeal.stage ? "#fff" : s.color, transition: "all 0.15s" }}>
                     {s.label}
                   </button>
                 ))}
               </div>
             </div>
+
+            {/* Always-visible link inventory button */}
+            <button onClick={() => {
+              setLinkStockDeal({ ...activeDeal });
+              setLinkStockCustomer({ ...activeCustomer });
+              setShowLinkStock(true);
+            }} style={{ marginTop: 8, width: "100%", padding: "7px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              📦 Link Inventory Item
+            </button>
 
             {/* loss reason */}
             {activeDeal.stage === "lost" && (
@@ -3923,6 +3948,25 @@ For any issues please contact us on WhatsApp.
           </div>
         </div>
         </div>{/* end detail content wrapper */}
+
+        {/* ── Modals inside detail view (early return can't reach main return) ── */}
+        {showLinkStock && linkStockDeal && (
+          <LinkStockModal
+            customer={linkStockCustomer}
+            deal={linkStockDeal}
+            onClose={() => setShowLinkStock(false)}
+            onDone={() => { setShowLinkStock(false); loadStock(); loadCustomers(); refreshCachedStock(); }}
+          />
+        )}
+        {showReservation && linkStockDeal && (
+          <ReservationModal
+            customer={linkStockCustomer}
+            deal={linkStockDeal}
+            stock={stock}
+            onClose={() => setShowReservation(false)}
+            onDone={() => { setShowReservation(false); loadStock(); loadCustomers(); }}
+          />
+        )}
       </div>
     );
   }
@@ -5476,10 +5520,10 @@ For any issues please contact us on WhatsApp.
       )}
 
       {/* ── LINK STOCK MODAL ── */}
-      {showLinkStock && activeCustomer && activeDeal && (
+      {showLinkStock && linkStockDeal && (
         <LinkStockModal
-          customer={activeCustomer}
-          deal={activeDeal}
+          customer={linkStockCustomer}
+          deal={linkStockDeal}
           onClose={() => setShowLinkStock(false)}
           onDone={() => { setShowLinkStock(false); loadStock(); loadCustomers(); refreshCachedStock(); }}
         />
@@ -5504,10 +5548,10 @@ For any issues please contact us on WhatsApp.
       )}
 
       {/* ── RESERVATION MODAL ── */}
-      {showReservation && activeCustomer && activeDeal && (
+      {showReservation && linkStockDeal && (
         <ReservationModal
-          customer={activeCustomer}
-          deal={activeDeal}
+          customer={linkStockCustomer}
+          deal={linkStockDeal}
           stock={stock}
           onClose={() => setShowReservation(false)}
           onDone={() => { setShowReservation(false); loadStock(); loadCustomers(); }}
