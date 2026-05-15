@@ -652,7 +652,7 @@ function PartSaleModal({ part, onClose, onComplete }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  CONFIRM SALE MODAL — unified sale/reservation confirmation with inventory link
+//  CONFIRM SALE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 function ConfirmSaleModal({ customer, deal, onClose, onDone }) {
   const [devices,     setDevices]     = useState([]);
@@ -686,85 +686,82 @@ function ConfirmSaleModal({ customer, deal, onClose, onDone }) {
   const filtDevices = devices.filter(d =>
     [d.brand,d.model,d.processor,d.ram,d.ssd,d.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
   const filtParts = parts.filter(p =>
-    [p.category,p.specs,p.compatible_with,p.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
+    [p.category,p.specs,p.compatible_with].filter(Boolean).join(" ").toLowerCase().includes(q));
 
-  async function confirmWithInventory() {
+  async function handleConfirm() {
     setSaving(true);
     try {
       const now = new Date().toISOString();
-      if (selType === "device") {
-        if (outcome === "sold") {
-          await supabase.from("stock").update({
-            status:"sold", sold_price:agreedN, sold_at:now,
-            ...(customer?.id ? {sold_to_customer_id:customer.id} : {}),
-          }).eq("id",selItem.id);
-          await supabase.from("deals").update({
-            stage:"closed", value:agreedN, closed_at:now, stock_item_id:selItem.id,
-          }).eq("id",deal.id);
-          setResult({type:"sold_device", label:[selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device", profit, margin, agreedN});
+      if (selItem) {
+        if (selType === "device") {
+          if (outcome === "sold") {
+            await supabase.from("stock").update({
+              status:"sold", sold_price:agreedN, sold_at:now,
+              ...(customer?.id ? {sold_to_customer_id:customer.id} : {}),
+            }).eq("id",selItem.id);
+            await supabase.from("deals").update({
+              stage:"closed", value:agreedN, stock_item_id:selItem.id, closed_at:now,
+            }).eq("id",deal.id);
+            setResult({type:"sold", label:[selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device", profit, margin, agreedN});
+          } else {
+            await supabase.from("stock").update({
+              status:"reserved", reserved_for_customer_id:customer?.id||null,
+            }).eq("id",selItem.id);
+            await supabase.from("deals").update({
+              stage:"confirmed_pending_pickup", value:agreedN, stock_item_id:selItem.id,
+            }).eq("id",deal.id);
+            setResult({type:"reserved", name:customer?.name||"Customer"});
+          }
         } else {
-          await supabase.from("stock").update({
-            status:"reserved", reserved_for_customer_id:customer?.id||null, reserved_at:now,
-          }).eq("id",selItem.id);
+          const newQty = (selItem.quantity||0)-1;
+          await supabase.from("stock_parts").update({quantity:newQty}).eq("id",selItem.id);
+          const partLabel = [selItem.category,selItem.specs].filter(Boolean).join(" — ");
+          await supabase.from("parts_sales").insert({
+            part_id:selItem.id, category:selItem.category||"", specs:selItem.specs||"",
+            compatible_with:selItem.compatible_with||"", quantity_sold:1,
+            sell_price:agreedN, cost_price:costN, total_revenue:agreedN, total_cost:costN,
+            profit:profit, customer_name:customer?.name||"Walk-in",
+            payment_method:"cash", sold_at:now, notes:partLabel,
+          });
           await supabase.from("deals").update({
-            stage:"confirmed_pending_pickup", value:agreedN, stock_item_id:selItem.id,
+            stage:"closed", value:agreedN, closed_at:now,
           }).eq("id",deal.id);
-          setResult({type:"reserved", label:[selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device", name:customer?.name||"Customer"});
+          setResult({type:"sold", label:partLabel||"Part", profit, margin, agreedN});
         }
       } else {
-        const newQty = (selItem.quantity||0)-1;
-        await supabase.from("stock_parts").update({quantity:newQty}).eq("id",selItem.id);
-        const partLabel = [selItem.category,selItem.specs].filter(Boolean).join(" — ");
-        await supabase.from("deals").update({
-          stage:"closed", value:agreedN, closed_at:now,
-          notes: deal.notes ? `${deal.notes} | Part: ${partLabel}` : `Part: ${partLabel}`,
-        }).eq("id",deal.id);
-        setResult({type:"sold_device", label:partLabel||"Part", profit, margin, agreedN});
+        if (outcome==="sold") {
+          await supabase.from("deals").update({stage:"closed",value:agreedN||undefined,closed_at:now}).eq("id",deal.id);
+        } else {
+          await supabase.from("deals").update({stage:"confirmed_pending_pickup",value:agreedN||undefined}).eq("id",deal.id);
+        }
+        setResult({type:outcome==="sold"?"closed_only":"reserved_only"});
       }
       onDone();
     } catch(e) { alert("Error: "+(e.message||"Unknown")); }
     setSaving(false);
   }
 
-  async function confirmSkip() {
-    setSaving(true);
-    try {
-      const now = new Date().toISOString();
-      if (outcome==="sold") {
-        await supabase.from("deals").update({stage:"closed",closed_at:now}).eq("id",deal.id);
-      } else {
-        await supabase.from("deals").update({stage:"confirmed_pending_pickup"}).eq("id",deal.id);
-      }
-      setResult({type:outcome==="sold"?"closed_only":"reserved_only"});
-      onDone();
-    } catch(e) { alert("Error: "+e.message); }
-    setSaving(false);
-  }
-
-  // ── Success screen ──
   if (result) {
-    const isSuccess = result.type==="sold_device";
     const isReserved = result.type==="reserved";
     return (
-      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-        <div style={{background:"#fff",borderRadius:20,padding:24,maxWidth:380,width:"100%",textAlign:"center"}}>
-          <div style={{fontSize:48,marginBottom:8}}>{isReserved?"🔒":"✅"}</div>
-          <div style={{fontSize:19,fontWeight:800,color:"#0F172A",marginBottom:4}}>
-            {isReserved?"Device Reserved!" : result.type==="closed_only"?"Deal Closed" : "Sale Complete!"}
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:310,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"#fff",borderRadius:20,padding:28,maxWidth:360,width:"100%",textAlign:"center"}}>
+          <div style={{fontSize:52,marginBottom:10}}>{isReserved?"🔒":"✅"}</div>
+          <div style={{fontSize:20,fontWeight:800,color:"#0F172A",marginBottom:4}}>
+            {isReserved ? "Reserved!" : result.type==="closed_only" ? "Deal Closed" : "Sale Complete!"}
           </div>
-          {isSuccess && result.label && <div style={{fontSize:13,color:"#64748B",marginBottom:10}}>{result.label}</div>}
-          {isReserved && <div style={{fontSize:13,color:"#64748B",marginBottom:10}}>Held for {result.name}</div>}
-          {isSuccess && result.profit!==undefined && (
-            <div style={{padding:"10px 16px",background:"#ECFDF5",borderRadius:12,marginBottom:12}}>
-              <div style={{fontSize:15,fontWeight:800,color:"#059669"}}>
+          {result.label && <div style={{fontSize:13,color:"#64748B",marginBottom:8}}>{result.label}</div>}
+          {isReserved && <div style={{fontSize:14,color:"#D97706",fontWeight:700,marginBottom:8}}>🔒 Held for {result.name}</div>}
+          {result.type==="sold" && result.profit!==undefined && (
+            <div style={{padding:"10px 16px",background:"#ECFDF5",borderRadius:12,marginBottom:16}}>
+              <div style={{fontSize:16,fontWeight:800,color:"#059669"}}>
                 Profit: AED {result.profit.toLocaleString()} ({result.margin}%)
               </div>
               <div style={{fontSize:12,color:"#10B981",marginTop:2}}>Sold: AED {result.agreedN?.toLocaleString()}</div>
             </div>
           )}
-          <button onClick={onClose}
-            style={{width:"100%",padding:13,borderRadius:12,border:"none",
-                     background:isReserved?"#F59E0B":"#6366F1",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>
+          <button onClick={onClose} style={{width:"100%",padding:13,borderRadius:12,border:"none",
+                   background:isReserved?"#F59E0B":"#6366F1",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>
             Done
           </button>
         </div>
@@ -776,350 +773,129 @@ function ConfirmSaleModal({ customer, deal, onClose, onDone }) {
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,overflowY:"auto"}}>
       <div style={{minHeight:"100%",padding:"16px 12px 40px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:480}}>
-
-          {/* Header */}
           <div style={{padding:"16px 20px",borderBottom:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div>
               <div style={{fontSize:17,fontWeight:800,color:"#0F172A"}}>⚡ Confirm Sale</div>
               <div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>{customer?.name||"Customer"}</div>
             </div>
-            <button onClick={onClose} style={{width:30,height:30,borderRadius:8,border:"none",background:"#F1F5F9",cursor:"pointer"}}>✕</button>
+            <button onClick={onClose} style={{width:30,height:30,borderRadius:8,border:"none",background:"#F1F5F9",cursor:"pointer",fontSize:16}}>✕</button>
           </div>
+          <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
 
-          <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-
-            {/* Outcome selector */}
-            <div style={{display:"flex",gap:8}}>
-              {[["sold","✅ Sold","paid and collected","#10B981","#ECFDF5"],
-                ["reserved","🔒 Reserved","confirming, picking up later","#F59E0B","#FFFBEB"]
-              ].map(([val,label,sub,color,bg]) => (
-                <div key={val} onClick={() => setOutcome(val)}
-                  style={{flex:1,padding:"11px 12px",borderRadius:14,border:`2px solid ${outcome===val?color:"#F1F5F9"}`,
-                           background:outcome===val?bg:"#fff",cursor:"pointer"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                    <div style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${outcome===val?color:"#CBD5E1"}`,
-                                  background:outcome===val?color:"transparent",flexShrink:0}}/>
-                    <span style={{fontSize:12,fontWeight:800,color:outcome===val?color:"#0F172A"}}>{label}</span>
-                  </div>
-                  <div style={{fontSize:10,color:"#94A3B8",paddingLeft:20}}>{sub}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Inventory selector */}
+            {/* SECTION 1 — Inventory */}
             <div>
-              <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginBottom:6}}>
-                SELECT INVENTORY (OPTIONAL)
-              </div>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search devices or parts…"
-                style={{width:"100%",padding:"9px 13px",borderRadius:10,border:"1.5px solid #E2E8F0",fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
-
+              <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginBottom:8}}>SELECT INVENTORY (OPTIONAL)</div>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search devices or parts..."
+                style={{width:"100%",padding:"9px 13px",borderRadius:10,border:"1.5px solid #E2E8F0",fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:10}}/>
               {loading ? <Spinner/> : (
-                <div style={{maxHeight:240,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+                <div style={{maxHeight:280,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
                   {selItem && (
-                    <div style={{padding:"8px 12px",borderRadius:10,background:"#EEF2FF",border:"1.5px solid #6366F1",
-                                  display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div style={{padding:"8px 12px",borderRadius:10,background:"#EEF2FF",border:"1.5px solid #6366F1",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
                       <span style={{fontSize:13,fontWeight:700,color:"#6366F1"}}>
-                        {selType==="device"
-                          ? [selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device"
-                          : selItem.category+(selItem.specs?` · ${selItem.specs}`:"")}
+                        {selType==="device" ? [selItem.brand,selItem.model].filter(Boolean).join(" ")||"Device" : selItem.category+(selItem.specs?" · "+selItem.specs:"")}
                       </span>
-                      <button onClick={deselect}
-                        style={{fontSize:11,color:"#6366F1",border:"none",background:"none",cursor:"pointer",fontWeight:700}}>
-                        ✕ Clear
-                      </button>
+                      <button onClick={deselect} style={{fontSize:11,color:"#6366F1",border:"none",background:"none",cursor:"pointer",fontWeight:700}}>✕ Clear</button>
                     </div>
                   )}
-
                   {filtDevices.length>0 && (
                     <>
-                      <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5}}>LAPTOPS</div>
+                      <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5}}>💻 LAPTOPS</div>
                       {filtDevices.map(d => {
                         const isSel = selType==="device" && selItem?.id===d.id;
+                        const specs = [d.processor,d.ram,d.ssd,d.condition].filter(Boolean).join(" · ");
                         return (
                           <div key={d.id} onClick={() => isSel ? deselect() : selectDevice(d)}
-                            style={{padding:"10px 12px",borderRadius:10,border:`1.5px solid ${isSel?"#6366F1":"#F1F5F9"}`,
-                                     background:isSel?"#EEF2FF":"#F8FAFC",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                            <div style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${isSel?"#6366F1":"#CBD5E1"}`,
-                                          background:isSel?"#6366F1":"transparent",flexShrink:0}}/>
+                            style={{padding:"11px 12px",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",gap:10,
+                                     border:"1.5px solid "+(isSel?"#6366F1":"#F1F5F9"),background:isSel?"#EEF2FF":"#F8FAFC"}}>
+                            <div style={{width:14,height:14,borderRadius:"50%",flexShrink:0,border:"2px solid "+(isSel?"#6366F1":"#CBD5E1"),background:isSel?"#6366F1":"transparent"}}/>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:13,fontWeight:700,color:"#0F172A"}}>
-                                {[d.brand,d.model].filter(Boolean).join(" ")||"Device"}
-                              </div>
-                              <div style={{fontSize:11,color:"#94A3B8"}}>
-                                {[d.processor,d.ram,d.ssd,d.condition].filter(Boolean).join(" · ")}
-                              </div>
+                              <div style={{fontSize:13,fontWeight:800,color:"#0F172A"}}>{[d.brand,d.model].filter(Boolean).join(" ")||"Device"}</div>
+                              {specs && <div style={{fontSize:11,color:"#94A3B8",marginTop:1}}>{specs}</div>}
+                              {d.cost_price && <div style={{fontSize:10,color:"#CBD5E1",marginTop:1}}>Cost: AED {Number(d.cost_price).toLocaleString()}</div>}
                             </div>
-                            {d.max_price && <div style={{fontSize:13,fontWeight:800,color:"#6366F1",flexShrink:0}}>AED {Number(d.max_price).toLocaleString()}</div>}
+                            {d.max_price && <div style={{fontSize:14,fontWeight:800,color:"#6366F1",flexShrink:0}}>AED {Number(d.max_price).toLocaleString()}</div>}
                           </div>
                         );
                       })}
                     </>
                   )}
-
                   {filtParts.length>0 && (
                     <>
-                      <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginTop:4}}>SPARE PARTS</div>
+                      <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginTop:4}}>🔧 SPARE PARTS</div>
                       {filtParts.map(p => {
                         const isSel = selType==="part" && selItem?.id===p.id;
                         return (
                           <div key={p.id} onClick={() => isSel ? deselect() : selectPart(p)}
-                            style={{padding:"10px 12px",borderRadius:10,border:`1.5px solid ${isSel?"#6366F1":"#F1F5F9"}`,
-                                     background:isSel?"#EEF2FF":"#F8FAFC",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                            <div style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${isSel?"#6366F1":"#CBD5E1"}`,
-                                          background:isSel?"#6366F1":"transparent",flexShrink:0}}/>
+                            style={{padding:"11px 12px",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",gap:10,
+                                     border:"1.5px solid "+(isSel?"#6366F1":"#F1F5F9"),background:isSel?"#EEF2FF":"#F8FAFC"}}>
+                            <div style={{width:14,height:14,borderRadius:"50%",flexShrink:0,border:"2px solid "+(isSel?"#6366F1":"#CBD5E1"),background:isSel?"#6366F1":"transparent"}}/>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:13,fontWeight:700,color:"#0F172A"}}>
-                                {p.category}{p.specs?` · ${p.specs}`:""}
-                              </div>
-                              <div style={{fontSize:11,color:"#94A3B8"}}>
-                                {[p.compatible_with,p.condition,`×${p.quantity} in stock`].filter(Boolean).join(" · ")}
-                              </div>
+                              <div style={{fontSize:13,fontWeight:800,color:"#0F172A"}}>{p.category}{p.specs?" · "+p.specs:""}</div>
+                              {p.compatible_with && <div style={{fontSize:11,color:"#94A3B8",marginTop:1}}>For: {p.compatible_with}</div>}
+                              <div style={{fontSize:10,color:"#CBD5E1",marginTop:1}}>×{p.quantity} in stock</div>
                             </div>
-                            {p.sell_price && <div style={{fontSize:13,fontWeight:800,color:"#6366F1",flexShrink:0}}>AED {Number(p.sell_price).toLocaleString()}</div>}
+                            {p.sell_price && <div style={{fontSize:14,fontWeight:800,color:"#6366F1",flexShrink:0}}>AED {Number(p.sell_price).toLocaleString()}</div>}
                           </div>
                         );
                       })}
                     </>
                   )}
-
-                  {filtDevices.length===0 && filtParts.length===0 && !selItem && (
-                    <div style={{textAlign:"center",padding:"16px 0",color:"#CBD5E1",fontSize:12}}>
-                      {search?"No matches":"No available stock"}
-                    </div>
+                  {!selItem && filtDevices.length===0 && filtParts.length===0 && (
+                    <div style={{textAlign:"center",padding:"20px 0",color:"#CBD5E1",fontSize:12}}>{search?"No matches":"No available stock"}</div>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Agreed price — only when item selected */}
-            {selItem && (
-              <div style={{padding:"12px 14px",background:"#F8FAFC",borderRadius:12,border:"1px solid #F1F5F9"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                  <div style={{flex:1,fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5}}>AGREED PRICE (AED)</div>
-                  <input type="number" value={agreedPrice} onChange={e=>setAgreedPrice(e.target.value)}
-                    style={{width:130,padding:"7px 10px",borderRadius:8,border:"1.5px solid #E2E8F0",fontSize:15,fontWeight:800,
-                             outline:"none",textAlign:"right",color:"#6366F1"}}/>
-                </div>
-                {costN>0 && agreedN>0 && (
-                  <div style={{display:"flex",gap:12,fontSize:12}}>
-                    <span style={{color:"#94A3B8"}}>Cost: AED {costN.toLocaleString()}</span>
-                    <span style={{fontWeight:700,color:profit>=0?"#10B981":"#EF4444"}}>
-                      Profit: AED {profit.toLocaleString()} ({margin}%)
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <button onClick={selItem ? confirmWithInventory : confirmSkip} disabled={saving}
-              style={{padding:14,borderRadius:12,border:"none",fontSize:14,fontWeight:800,
-                       cursor:saving?"not-allowed":"pointer",
-                       background:saving?"#E2E8F0":outcome==="reserved"?"#F59E0B":"#6366F1",
-                       color:saving?"#94A3B8":"#fff"}}>
-              {saving?"Saving…":"⚡ Confirm"}
-            </button>
-            {selItem && (
-              <button onClick={confirmSkip} disabled={saving}
-                style={{padding:8,borderRadius:10,border:"none",background:"none",
-                         color:"#94A3B8",fontSize:12,cursor:"pointer"}}>
-                Skip — no inventory link
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  LINK STOCK MODAL  (shown when closing a deal — link to device or spare part)
-// ══════════════════════════════════════════════════════════════════════════════
-function LinkStockModal({ customer, deal, onClose, onDone }) {
-  const [devices,      setDevices]      = useState([]);
-  const [parts,        setParts]        = useState([]);
-  const [loadingItems, setLoadingItems] = useState(true);
-  const [search,       setSearch]       = useState("");
-  const [selType,      setSelType]      = useState(null); // "device" | "part"
-  const [selItem,      setSelItem]      = useState(null);
-  const [agreedPrice,  setAgreedPrice]  = useState("");
-  const [saving,       setSaving]       = useState(false);
-
-  useEffect(() => {
-    Promise.all([
-      supabase.from("stock").select("*").eq("status", "available").order("brand"),
-      supabase.from("stock_parts").select("*").gt("quantity", 0).order("category"),
-    ]).then(([{ data: d }, { data: p }]) => {
-      setDevices(d || []);
-      setParts(p   || []);
-      setLoadingItems(false);
-    });
-  }, []);
-
-  function selectDevice(item) {
-    setSelType("device"); setSelItem(item);
-    setAgreedPrice(String(item.max_price || ""));
-  }
-  function selectPart(item) {
-    setSelType("part"); setSelItem(item);
-    setAgreedPrice(String(item.sell_price || ""));
-  }
-
-  const agreedN  = Number(agreedPrice) || 0;
-  const costN    = selType === "device"
-    ? Number(selItem?.cost_price) || 0
-    : Number(selItem?.cost_price) || 0;
-  const profit   = agreedN - costN;
-  const margin   = agreedN > 0 ? Math.round((profit / agreedN) * 100) : 0;
-
-  const q = search.toLowerCase();
-  const filtDevices = devices.filter(d =>
-    [d.brand, d.model, d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
-  const filtParts = parts.filter(p =>
-    [p.category, p.specs, p.compatible_with, p.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
-
-  async function confirm() {
-    if (!selItem) return;
-    setSaving(true);
-    try {
-      const soldAt = new Date().toISOString();
-      if (selType === "device") {
-        await supabase.from("stock").update({
-          status: "sold", sold_price: agreedN, sold_at: soldAt,
-          ...(customer?.id ? { sold_to_customer_id: customer.id } : {}),
-        }).eq("id", selItem.id);
-        await supabase.from("deals").update({
-          value: agreedN, stock_item_id: selItem.id,
-        }).eq("id", deal.id);
-      } else {
-        const newQty = (selItem.quantity || 0) - 1;
-        await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", selItem.id);
-        const partLabel = [selItem.category, selItem.specs].filter(Boolean).join(" — ");
-        await supabase.from("deals").update({
-          value: agreedN,
-          notes: deal.notes ? `${deal.notes} | Part: ${partLabel}` : `Part: ${partLabel}`,
-        }).eq("id", deal.id);
-      }
-      onDone();
-    } catch (e) {
-      alert("Error linking stock: " + (e.message || "Unknown error"));
-    }
-    setSaving(false);
-  }
-
-  const ItemRow = ({ item, type, selected, onSelect, priceField }) => {
-    const isSel = selected;
-    const label = type === "device"
-      ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
-      : `${item.category}${item.specs ? ` · ${item.specs}` : ""}`;
-    const sub = type === "device"
-      ? [item.processor, item.ram, item.ssd, item.condition].filter(Boolean).join(" · ")
-      : [item.compatible_with, item.condition, `×${item.quantity} in stock`].filter(Boolean).join(" · ");
-    const price = Number(item[priceField]) || 0;
-    return (
-      <div onClick={onSelect} style={{
-        padding: "10px 12px", borderRadius: 10, cursor: "pointer",
-        border: `1.5px solid ${isSel ? "#6366F1" : "#F1F5F9"}`,
-        background: isSel ? "#EEF2FF" : "#F8FAFC",
-        display: "flex", alignItems: "center", gap: 10,
-      }}>
-        <div style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
-                      border: `2px solid ${isSel ? "#6366F1" : "#CBD5E1"}`,
-                      background: isSel ? "#6366F1" : "transparent" }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{label}</div>
-          {sub && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{sub}</div>}
-        </div>
-        {price > 0 && (
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>
-            AED {price.toLocaleString()}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
-      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
-          {/* Header */}
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            {/* SECTION 2 — Agreed price */}
             <div>
-              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✅ Link Stock to Deal</div>
-              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-                {customer?.name || "Customer"} — {[deal?.brand, deal?.model].filter(Boolean).join(" ") || "Open deal"}
+              <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginBottom:6}}>AGREED PRICE (AED)</div>
+              <input type="number" value={agreedPrice} onChange={e=>setAgreedPrice(e.target.value)} placeholder="Enter price"
+                style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1.5px solid #E2E8F0",fontSize:16,fontWeight:800,outline:"none",boxSizing:"border-box",color:"#6366F1"}}/>
+              {costN>0 && agreedN>0 && (
+                <div style={{display:"flex",gap:12,fontSize:12,marginTop:6}}>
+                  <span style={{color:"#94A3B8"}}>Cost: AED {costN.toLocaleString()}</span>
+                  <span style={{fontWeight:700,color:profit>=0?"#10B981":"#EF4444"}}>Profit: AED {profit.toLocaleString()} ({margin}%)</span>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 3 — Outcome */}
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",letterSpacing:0.5,marginBottom:8}}>OUTCOME</div>
+              <div style={{display:"flex",gap:10}}>
+                {[
+                  {val:"reserved",icon:"🔒",title:"Reserved",sub:"Customer confirmed — picking up later",color:"#F59E0B",bg:"#FFFBEB"},
+                  {val:"sold",icon:"✅",title:"Sold",sub:"Paid and collected now",color:"#10B981",bg:"#ECFDF5"},
+                ].map(({val,icon,title,sub,color,bg}) => (
+                  <div key={val} onClick={() => setOutcome(val)}
+                    style={{flex:1,padding:"14px 10px",borderRadius:14,cursor:"pointer",textAlign:"center",transition:"all 0.15s",
+                             border:"2px solid "+(outcome===val?color:"#E2E8F0"),background:outcome===val?bg:"#fff"}}>
+                    <div style={{fontSize:26,marginBottom:4}}>{icon}</div>
+                    <div style={{fontSize:13,fontWeight:800,color:outcome===val?color:"#0F172A"}}>{title}</div>
+                    <div style={{fontSize:10,color:"#94A3B8",marginTop:3,lineHeight:1.4}}>{sub}</div>
+                  </div>
+                ))}
               </div>
             </div>
-            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
-          </div>
 
-          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Search */}
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search devices or parts…"
-              style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-
-            {loadingItems ? <Spinner /> : (
-              <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-                {/* Devices */}
-                {filtDevices.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>DEVICES</div>
-                    {filtDevices.map(d => (
-                      <ItemRow key={d.id} item={d} type="device" priceField="max_price"
-                        selected={selType === "device" && selItem?.id === d.id}
-                        onSelect={() => selectDevice(d)} />
-                    ))}
-                  </>
-                )}
-                {/* Spare parts */}
-                {filtParts.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginTop: 4 }}>SPARE PARTS</div>
-                    {filtParts.map(p => (
-                      <ItemRow key={p.id} item={p} type="part" priceField="sell_price"
-                        selected={selType === "part" && selItem?.id === p.id}
-                        onSelect={() => selectPart(p)} />
-                    ))}
-                  </>
-                )}
-                {filtDevices.length === 0 && filtParts.length === 0 && (
-                  <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>
-                    {search ? "No matches" : "No available stock"}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Agreed price + profit — only when something is selected */}
-            {selItem && (
-              <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <div style={{ flex: 1, fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>AGREED PRICE (AED)</div>
-                  <input type="number" value={agreedPrice} onChange={e => setAgreedPrice(e.target.value)}
-                    style={{ width: 120, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 15, fontWeight: 800, outline: "none", textAlign: "right", color: "#6366F1" }} />
-                </div>
-                {costN > 0 && agreedN > 0 && (
-                  <div style={{ fontSize: 12, color: profit >= 0 ? "#10B981" : "#EF4444", fontWeight: 700 }}>
-                    Profit: AED {profit.toLocaleString()} ({margin}%)
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Actions */}
-            <button onClick={confirm} disabled={saving || !selItem}
-              style={{ padding: 13, borderRadius: 12, border: "none", fontSize: 14, fontWeight: 800,
-                       cursor: saving || !selItem ? "not-allowed" : "pointer",
-                       background: saving || !selItem ? "#E2E8F0" : "#10B981",
-                       color: saving || !selItem ? "#94A3B8" : "#fff" }}>
-              {saving ? "Saving…" : "✅ Confirm Sale & Link Stock"}
+            {/* SECTION 4 — Buttons */}
+            <button onClick={handleConfirm} disabled={saving}
+              style={{padding:14,borderRadius:12,border:"none",fontSize:14,fontWeight:800,cursor:saving?"not-allowed":"pointer",
+                       background:saving?"#E2E8F0":"#6366F1",color:saving?"#94A3B8":"#fff"}}>
+              {saving?"Saving…":"⚡ Confirm"}
             </button>
-            <button onClick={() => onDone()}
-              style={{ padding: 11, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>
-              Not from stock — close deal only
+            <button onClick={async ()=>{
+              setSaving(true);
+              try {
+                const now=new Date().toISOString();
+                if(outcome==="sold") await supabase.from("deals").update({stage:"closed",value:agreedN||undefined,closed_at:now}).eq("id",deal.id);
+                else await supabase.from("deals").update({stage:"confirmed_pending_pickup",value:agreedN||undefined}).eq("id",deal.id);
+                onDone(); onClose();
+              } catch(e){alert("Error: "+e.message);}
+              setSaving(false);
+            }} style={{padding:8,borderRadius:10,border:"none",background:"none",color:"#94A3B8",fontSize:12,cursor:"pointer",textAlign:"center"}}>
+              Skip — close deal without linking inventory
             </button>
           </div>
         </div>
@@ -1128,7 +904,6 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
 //  SPEC UPGRADE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 function parseGB(str) {
@@ -2079,11 +1854,6 @@ export default function App() {
 
   // ── confirm sale ──
   const [showConfirmSale, setShowConfirmSale] = useState(false);
-
-  // ── link stock (close deal) ──
-  const [showLinkStock,    setShowLinkStock]    = useState(false);
-  const [linkStockDeal,    setLinkStockDeal]    = useState(null);
-  const [linkStockCustomer,setLinkStockCustomer]= useState(null);
 
   // ── sold deal map (stockItemId → deal, for sold view) ──
   const [soldDealMap, setSoldDealMap] = useState({});
@@ -5835,16 +5605,6 @@ For any issues please contact us on WhatsApp.
         <SourcingModule anthropicKey={anthropicKey} onAddToStock={() => { loadStock(); refreshCachedStock(); }} />
       )}
 
-      {/* ── LINK STOCK MODAL ── */}
-      {showLinkStock && linkStockDeal && (
-        <LinkStockModal
-          customer={linkStockCustomer || activeCustomer}
-          deal={linkStockDeal}
-          onClose={() => { setShowLinkStock(false); setLinkStockDeal(null); }}
-          onDone={() => { setShowLinkStock(false); setLinkStockDeal(null); loadStock(); loadCustomers(); refreshCachedStock(); }}
-        />
-      )}
-
       {/* ── SPEC UPGRADE MODAL ── */}
       {showUpgrade && upgradeTarget && (
         <SpecUpgradeModal
@@ -5864,10 +5624,10 @@ For any issues please contact us on WhatsApp.
       )}
 
       {/* ── RESERVATION MODAL ── */}
-      {showReservation && (linkStockDeal || activeDeal) && (
+      {showReservation && activeDeal && (
         <ReservationModal
-          customer={linkStockCustomer || activeCustomer}
-          deal={linkStockDeal || activeDeal}
+          customer={activeCustomer}
+          deal={activeDeal}
           stock={stock}
           onClose={() => setShowReservation(false)}
           onDone={() => { setShowReservation(false); loadStock(); loadCustomers(); }}
