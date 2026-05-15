@@ -690,24 +690,14 @@ function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
     try {
       const soldAt       = new Date().toISOString();
       const customerName = name.trim() || "Walk-in Customer";
-      let   customerId   = null;
 
-      if (addToContacts) {
-        const { data: cust } = await supabase.from("customers").insert({
-          name: customerName, number: number.trim() || null,
-          tier: "cold", urgent: false, contact_type: "client",
-        }).select().single();
-        customerId = cust?.id || null;
-      }
-
+      // Step 1: Complete the sale — stock + deals must succeed regardless of contact creation
       for (const item of selected) {
         const soldPrice = Number(prices[item.id]) || Number(item.max_price) || 0;
         await supabase.from("stock").update({
           status: "sold", sold_price: soldPrice, sold_at: soldAt,
-          ...(customerId ? { sold_to_customer_id: customerId } : {}),
         }).eq("id", item.id);
         await supabase.from("deals").insert({
-          ...(customerId ? { customer_id: customerId } : {}),
           sale_type: "walkin", stage: "closed", closed_at: soldAt,
           value: soldPrice, walk_in_name: customerName,
           walk_in_number: number.trim() || null,
@@ -716,6 +706,23 @@ function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
           ram: item.ram || null, storage: item.ssd || null,
           condition: item.condition || null,
         });
+      }
+
+      // Step 2: Optionally create contact — failure here does NOT block the sale
+      if (addToContacts) {
+        try {
+          const { data: cust } = await supabase.from("customers").insert({
+            name: customerName, number: number.trim() || null,
+            tier: "cold", urgent: false, contact_type: "client",
+          }).select().single();
+          if (cust?.id) {
+            for (const item of selected) {
+              await supabase.from("stock").update({ sold_to_customer_id: cust.id }).eq("id", item.id);
+            }
+          }
+        } catch {
+          // Contact creation failed — sale is already complete, continue
+        }
       }
 
       const resultItems = selected.map(i => ({ ...i, soldPrice: Number(prices[i.id]) || 0 }));
