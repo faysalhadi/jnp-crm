@@ -3874,6 +3874,30 @@ For any issues please contact us on WhatsApp.
 
           {stockLoading && <Spinner />}
 
+          {/* Sold summary bar */}
+          {!stockLoading && stockFilter === "sold" && filteredStock.length > 0 && (() => {
+            const totalRev    = filteredStock.reduce((s, i) => s + (Number(i.sold_price || i.max_price) || 0), 0);
+            const totalProfit = filteredStock.reduce((s, i) => s + ((Number(i.sold_price || i.max_price) || 0) - (Number(i.cost_price) || 0)), 0);
+            const avgProfit   = Math.round(totalProfit / filteredStock.length);
+            return (
+              <div style={{ padding: "10px 16px", background: "#EEF2FF", borderRadius: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
+                  {filteredStock.length} device{filteredStock.length !== 1 ? "s" : ""} sold
+                </span>
+                {totalRev > 0 && (
+                  <span style={{ fontSize: 12, color: "#4338CA", fontWeight: 600 }}>
+                    · Revenue AED {totalRev.toLocaleString()}
+                  </span>
+                )}
+                {avgProfit !== 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: avgProfit >= 0 ? "#10B981" : "#EF4444" }}>
+                    · Avg profit AED {avgProfit.toLocaleString()}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Empty state */}
           {!stockLoading && filteredStock.length === 0 && (
             <div style={{ textAlign: "center", padding: "60px 20px" }}>
@@ -3905,7 +3929,7 @@ For any issues please contact us on WhatsApp.
               <div key={item.id} style={{ background: "#fff", borderRadius: 18,
                 border: `1.5px solid ${isReserved ? (isOverdue ? "#FCA5A5" : "#FDE68A") : isAvail ? "#E2E8F0" : "#F1F5F9"}`,
                 boxShadow: isReserved ? "0 1px 6px rgba(245,158,11,0.15)" : "0 1px 6px rgba(0,0,0,0.05)",
-                overflow: "hidden", opacity: isAvail || isReserved ? 1 : 0.7 }}>
+                overflow: "hidden", opacity: isAvail || isReserved || stockFilter === "sold" ? 1 : 0.7 }}>
               {/* Reserved banner */}
               {isReserved && (
                 <div style={{ padding: "8px 14px", background: isOverdue ? "#FEF2F2" : "#FFFBEB", borderBottom: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -3982,6 +4006,37 @@ For any issues please contact us on WhatsApp.
                     {matches.length > 0 && <Badge color="#F59E0B" bg="#FFFBEB" small>👥 {matches.length} match{matches.length !== 1 ? "es" : ""}</Badge>}
                   </div>
                 </div>
+
+                {/* Sold details panel — shown for sold items */}
+                {item.status === "sold" && (() => {
+                  const soldPrice  = Number(item.sold_price || item.max_price) || 0;
+                  const costPrice  = Number(item.cost_price) || 0;
+                  const profit     = soldPrice - costPrice;
+                  const marginPct  = soldPrice > 0 ? Math.round((profit / soldPrice) * 100) : 0;
+                  const soldToName = item.sold_to_customer_id
+                    ? (customers.find(c => c.id === item.sold_to_customer_id)?.name || "Customer")
+                    : "Walk-in Customer";
+                  const soldDateStr = item.sold_at
+                    ? new Date(item.sold_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+                    : null;
+                  const rows = [
+                    { label: "SOLD TO",   value: soldToName,                              bold: false },
+                    soldDateStr && { label: "SOLD DATE", value: soldDateStr,              bold: false },
+                    soldPrice  && { label: "SOLD PRICE", value: `AED ${soldPrice.toLocaleString()}`, bold: true,  color: "#6366F1" },
+                    costPrice  && { label: "COST PRICE", value: `AED ${costPrice.toLocaleString()}`, bold: false },
+                    (soldPrice && costPrice) && { label: "PROFIT", value: `AED ${profit.toLocaleString()} (${marginPct}%)`, bold: true, color: profit >= 0 ? "#10B981" : "#EF4444" },
+                  ].filter(Boolean);
+                  return (
+                    <div style={{ borderTop: "1px solid #F1F5F9", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6, background: "#FAFBFF" }}>
+                      {rows.map(r => (
+                        <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.4 }}>{r.label}</span>
+                          <span style={{ fontSize: r.bold ? 13 : 12, fontWeight: r.bold ? 800 : 600, color: r.color || "#475569" }}>{r.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Expanded details */}
                 {isExpanded && (
