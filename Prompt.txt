@@ -1,53 +1,60 @@
 Read src/App.js fully before making any changes.
 
-Fix the Confirm Sale button. Three exact changes needed:
+Search the file for the text "handleConfirmSale". If it does NOT exist in the file, that means the previous fix was never applied. Apply it now.
 
 CHANGE 1 — Add handleConfirmSale function
-Find the ⚡ Confirm Sale button in the chat window (inside the detail view render). Its onClick currently does something like: setLinkStockDeal(activeDeal); setShowLinkStock(true);
+Find this line in the file (it is inside the App component, near moveStage and sendDirectReply):
 
-Replace that onClick with: onClick={handleConfirmSale}
+  async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
 
-Then add this function near the other async handler functions (near moveStage or sendDirectReply):
+Add this new function DIRECTLY BEFORE that line:
 
-async function handleConfirmSale() {
-  let deal = activeDeal;
-  if (!deal && activeCustomer?.id) {
-    const { data: newD } = await supabase.from("deals").insert({
-      customer_id: activeCustomer.id,
-      stage: "new_inquiry",
-      brand: "", model: "",
-    }).select().single();
-    if (newD) {
-      deal = newD;
-      setActiveDealId(newD.id);
-      await loadCustomers();
+  async function handleConfirmSale() {
+    let deal = activeDeal;
+    if (!deal && activeCustomer?.id) {
+      const { data: newD } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: "new_inquiry",
+        brand: "", model: "",
+      }).select().single();
+      if (newD) {
+        deal = newD;
+        setActiveDealId(newD.id);
+        await loadCustomers();
+      }
     }
+    if (!deal) return;
+    setLinkStockDeal(deal);
+    setShowLinkStock(true);
   }
-  if (!deal) return;
-  setLinkStockDeal(deal);
-  setShowLinkStock(true);
-}
 
-CHANGE 2 — Fix onDone callback on LinkStockModal
-Find where <LinkStockModal is rendered (inside the JSX, where showLinkStock === true).
-Change the onDone prop to:
+CHANGE 2 — Find the Confirm Sale button and wire it to handleConfirmSale
+Search the file for the text "Confirm Sale" inside a button element. It will look something like:
+  onClick={() => { setLinkStockDeal(activeDeal); setShowLinkStock(true); }}
+OR similar. Replace that entire onClick with:
+  onClick={handleConfirmSale}
 
-onDone={() => {
-  setShowLinkStock(false);
-  setLinkStockDeal(null);
-  loadCustomers();
-  loadStock();
-  refreshCachedStock();
-  loadTodaySales();
-}}
+CHANGE 3 — Fix onDone on LinkStockModal
+Find where <LinkStockModal is rendered in the JSX. It will have an onDone prop.
+Replace whatever is currently in onDone with:
 
-CHANGE 3 — Guard against null deal inside LinkStockModal confirm()
-Inside the LinkStockModal component, find the confirm() async function.
-At the very top, after the check for !selItem, add:
+  onDone={() => {
+    setShowLinkStock(false);
+    setLinkStockDeal(null);
+    loadCustomers();
+    loadStock();
+    refreshCachedStock();
+    loadTodaySales();
+  }}
 
-if (!deal?.id) {
-  alert("No active deal found. Please try again.");
-  return;
-}
+CHANGE 4 — Guard against null deal inside LinkStockModal.confirm()
+Inside the LinkStockModal component function (NOT inside App), find the confirm() async function.
+After the line:
+  if (!selItem) return;
+Add:
+  if (!deal?.id) {
+    alert("No active deal found. Please try again.");
+    return;
+  }
 
-After all three changes: run npm run build, fix any ESLint errors, then git add -A && git commit -m "fix: Confirm Sale button - auto-create deal, refresh on done, null guard" && git push
+After all changes: run npm run build, fix any ESLint errors, then git add -A && git commit -m "fix: Confirm Sale button wired correctly" && git push origin main --force
