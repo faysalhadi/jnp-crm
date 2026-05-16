@@ -4020,19 +4020,14 @@ For any issues please contact us on WhatsApp.
               onClick={handleConfirmSale}
               style={{
                 width: "100%",
-                padding: "11px 16px",
+                padding: "12px 16px",
                 borderRadius: 12,
                 border: "none",
-                background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                background: "#6366F1",
                 color: "#fff",
                 fontSize: 14,
                 fontWeight: 800,
                 cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                boxShadow: "0 2px 8px rgba(245,158,11,0.3)",
               }}
             >
               ⚡ Confirm Sale — Link Inventory
