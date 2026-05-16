@@ -652,215 +652,149 @@ function PartSaleModal({ part, onClose, onComplete }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  CONFIRM SALE MODAL
+//  LINK STOCK MODAL  (shown when closing a deal — link to device or spare part)
 // ══════════════════════════════════════════════════════════════════════════════
-function ConfirmSaleModal({ customer, deal, onClose, onDone, prefillDevice }) {
-  const [tab,      setTab]      = useState("laptops");
-  const [devices,  setDevices]  = useState([]);
-  const [parts,    setParts]    = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [lpSearch, setLpSearch] = useState("");
-  const [ptSearch, setPtSearch] = useState("");
-  const [selDev,   setSelDev]   = useState({});   // { [id]: { item, salePrice } }
-  const [selPart,  setSelPart]  = useState({});   // { [id]: { item, qtyToSell, salePrice } }
-  const [outcome,  setOutcome]  = useState("sold");
-  const [saving,   setSaving]   = useState(false);
-  const [result,   setResult]   = useState(null);
+function LinkStockModal({ customer, deal, onClose, onDone }) {
+  const [devices,      setDevices]      = useState([]);
+  const [parts,        setParts]        = useState([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+  const [search,       setSearch]       = useState("");
+  const [selType,      setSelType]      = useState(null); // "device" | "part"
+  const [selItem,      setSelItem]      = useState(null);
+  const [agreedPrice,  setAgreedPrice]  = useState("");
+  const [saving,       setSaving]       = useState(false);
 
   useEffect(() => {
     Promise.all([
-      supabase.from("stock").select("*").eq("status","available").order("brand"),
-      supabase.from("stock_parts").select("*").gt("quantity",0).order("category"),
-    ]).then(([{data:d},{data:p}]) => {
-      let devList = d || [];
-      if (prefillDevice && !devList.find(x => x.id === prefillDevice.id)) {
-        devList = [prefillDevice, ...devList];
-      }
-      setDevices(devList);
-      setParts(p||[]);
-      if (prefillDevice) {
-        setSelDev({ [prefillDevice.id]: { item: prefillDevice, salePrice: String(prefillDevice.max_price||"") } });
-      }
-      setLoading(false);
+      supabase.from("stock").select("*").eq("status", "available").order("brand"),
+      supabase.from("stock_parts").select("*").gt("quantity", 0).order("category"),
+    ]).then(([{ data: d }, { data: p }]) => {
+      setDevices(d || []);
+      setParts(p   || []);
+      setLoadingItems(false);
     });
   }, []);
 
-  function toggleDev(item) {
-    setSelDev(s => {
-      if (s[item.id]) { const n={...s}; delete n[item.id]; return n; }
-      return { ...s, [item.id]: { item, salePrice: String(item.max_price||"") } };
-    });
+  function selectDevice(item) {
+    setSelType("device"); setSelItem(item);
+    setAgreedPrice(String(item.max_price || ""));
   }
-  function togglePart(item) {
-    setSelPart(s => {
-      if (s[item.id]) { const n={...s}; delete n[item.id]; return n; }
-      return { ...s, [item.id]: { item, qtyToSell: 1, salePrice: String(item.sell_price||"") } };
-    });
+  function selectPart(item) {
+    setSelType("part"); setSelItem(item);
+    setAgreedPrice(String(item.sell_price || ""));
   }
 
-  const filtDev  = devices.filter(d => [d.brand,d.model,d.processor,d.ram,d.ssd,d.condition].filter(Boolean).join(" ").toLowerCase().includes(lpSearch.toLowerCase()));
-  const filtPart = parts.filter(p  => [p.category,p.specs,p.compatible_with].filter(Boolean).join(" ").toLowerCase().includes(ptSearch.toLowerCase()));
+  const agreedN  = Number(agreedPrice) || 0;
+  const costN    = selType === "device"
+    ? Number(selItem?.cost_price) || 0
+    : Number(selItem?.cost_price) || 0;
+  const profit   = agreedN - costN;
+  const margin   = agreedN > 0 ? Math.round((profit / agreedN) * 100) : 0;
 
-  const laptopTotal = Object.values(selDev).reduce((s,{salePrice}) => s+(Number(salePrice)||0), 0);
-  const partsTotal  = Object.values(selPart).reduce((s,{salePrice,qtyToSell}) => s+(Number(salePrice)||0)*qtyToSell, 0);
-  const grandTotal  = laptopTotal + partsTotal;
-  const totalCost   = Object.values(selDev).reduce((s,{item}) => s+(Number(item.cost_price)||0), 0)
-                    + Object.values(selPart).reduce((s,{item,qtyToSell}) => s+(Number(item.cost_price)||0)*qtyToSell, 0);
-  const totalProfit = grandTotal - totalCost;
-  const firstLaptop = Object.values(selDev)[0]?.item || null;
-  const selDevCount = Object.keys(selDev).length;
-  const selPartCount = Object.keys(selPart).length;
+  const q = search.toLowerCase();
+  const filtDevices = devices.filter(d =>
+    [d.brand, d.model, d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
+  const filtParts = parts.filter(p =>
+    [p.category, p.specs, p.compatible_with, p.condition].filter(Boolean).join(" ").toLowerCase().includes(q));
 
-  async function handleConfirm() {
+  async function confirm() {
+    if (!selItem) return;
     if (!deal?.id) {
       alert("No active deal found. Please try again.");
       return;
     }
     setSaving(true);
     try {
-      const now = new Date().toISOString();
-      if (outcome === "sold") {
-        for (const {item, salePrice} of Object.values(selDev)) {
-          await supabase.from("stock").update({
-            status:"sold", sold_price:Number(salePrice)||0, sold_at:now,
-            ...(customer?.id ? {sold_to_customer_id:customer.id} : {}),
-          }).eq("id",item.id);
-        }
-        for (const {item, qtyToSell, salePrice} of Object.values(selPart)) {
-          const newQty = item.quantity - qtyToSell;
-          await supabase.from("stock_parts").update({quantity:newQty}).eq("id",item.id);
-          await supabase.from("parts_sales").insert({
-            part_id:item.id, category:item.category||"", specs:item.specs||"",
-            compatible_with:item.compatible_with||"", quantity_sold:qtyToSell,
-            sell_price:Number(salePrice), cost_price:Number(item.cost_price)||0,
-            total_revenue:Number(salePrice)*qtyToSell, total_cost:(Number(item.cost_price)||0)*qtyToSell,
-            profit:(Number(salePrice)-(Number(item.cost_price)||0))*qtyToSell,
-            customer_name:customer?.name||"Walk-in", payment_method:"cash",
-            sold_at:now, notes:[item.category,item.specs].filter(Boolean).join(" — "),
-          });
-        }
-        if (deal?.id) {
-          await supabase.from("deals").update({
-            stage:"closed", value:grandTotal||undefined, closed_at:now,
-            ...(firstLaptop ? {stock_item_id:firstLaptop.id} : {}),
-          }).eq("id",deal.id);
-        }
-        setResult({type:"sold", totalProfit, grandTotal});
+      const soldAt = new Date().toISOString();
+      if (selType === "device") {
+        // Mark stock as sold with customer info
+        const { error: stockErr } = await supabase.from("stock").update({
+          status: "sold",
+          sold_price: agreedN,
+          sold_at: soldAt,
+          sold_to_customer_id: customer?.id || null,
+        }).eq("id", selItem.id);
+        if (stockErr) throw new Error(stockErr.message);
+
+        // Update deal: close it + link stock item
+        const { error: dealErr } = await supabase.from("deals").update({
+          stage: "closed",
+          closed_at: soldAt,
+          value: agreedN,
+          stock_item_id: selItem.id,
+        }).eq("id", deal.id);
+        if (dealErr) throw new Error(dealErr.message);
+
       } else {
-        for (const {item} of Object.values(selDev)) {
-          await supabase.from("stock").update({
-            status:"reserved", reserved_for_customer_id:customer?.id||null,
-          }).eq("id",item.id);
-        }
-        if (deal?.id) {
-          await supabase.from("deals").update({
-            stage:"confirmed_pending_pickup", value:grandTotal||undefined,
-            ...(firstLaptop ? {stock_item_id:firstLaptop.id} : {}),
-          }).eq("id",deal.id);
-        }
-        setResult({type:"reserved", name:customer?.name||"Customer"});
+        // Spare part sale
+        const newQty = (selItem.quantity || 0) - 1;
+        await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", selItem.id);
+
+        const partLabel = [selItem.category, selItem.specs].filter(Boolean).join(" — ");
+
+        // Save to parts_sales table for sold parts history
+        const { error: partErr } = await supabase.from("parts_sales").insert({
+          part_id: selItem.id,
+          category: selItem.category || "",
+          specs: selItem.specs || "",
+          compatible_with: selItem.compatible_with || "",
+          quantity_sold: 1,
+          sell_price: agreedN,
+          cost_price: Number(selItem.cost_price) || 0,
+          total_revenue: agreedN,
+          total_cost: Number(selItem.cost_price) || 0,
+          profit: agreedN - (Number(selItem.cost_price) || 0),
+          customer_name: customer?.name || "Customer",
+          customer_id: customer?.id || null,
+          payment_method: "cash",
+          sold_at: soldAt,
+          notes: partLabel,
+        });
+        if (partErr) console.error("parts_sales insert error:", partErr.message);
+
+        // Update deal: close it
+        await supabase.from("deals").update({
+          stage: "closed",
+          closed_at: soldAt,
+          value: agreedN,
+          notes: deal.notes ? `${deal.notes} | Part: ${partLabel}` : `Part: ${partLabel}`,
+        }).eq("id", deal.id);
       }
+      // Show success message briefly before closing
+      setSaving(false);
       onDone();
-    } catch(e) { alert("Error: "+(e.message||"Unknown")); }
-    setSaving(false);
+    } catch (e) {
+      setSaving(false);
+      alert("Error: " + (e.message || "Unknown error"));
+    }
   }
 
-  async function handleSkip() {
-    setSaving(true);
-    try {
-      const now = new Date().toISOString();
-      if (deal?.id) {
-        if (outcome==="sold") await supabase.from("deals").update({stage:"closed",value:grandTotal||undefined,closed_at:now}).eq("id",deal.id);
-        else await supabase.from("deals").update({stage:"confirmed_pending_pickup",value:grandTotal||undefined}).eq("id",deal.id);
-      }
-      onDone(); onClose();
-    } catch(e){alert("Error: "+e.message);}
-    setSaving(false);
-  }
-
-  // ── Success screen ──
-  if (result) {
-    const isRes = result.type === "reserved";
+  const ItemRow = ({ item, type, selected, onSelect, priceField }) => {
+    const isSel = selected;
+    const label = type === "device"
+      ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
+      : `${item.category}${item.specs ? ` · ${item.specs}` : ""}`;
+    const sub = type === "device"
+      ? [item.processor, item.ram, item.ssd, item.condition].filter(Boolean).join(" · ")
+      : [item.compatible_with, item.condition, `×${item.quantity} in stock`].filter(Boolean).join(" · ");
+    const price = Number(item[priceField]) || 0;
     return (
-      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:310,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-        <div style={{background:"#fff",borderRadius:20,padding:28,maxWidth:360,width:"100%",textAlign:"center"}}>
-          <div style={{fontSize:52,marginBottom:10}}>{isRes?"🔒":"✅"}</div>
-          <div style={{fontSize:20,fontWeight:800,color:"#0F172A",marginBottom:4}}>
-            {isRes?"Reserved!":"Sale Complete!"}
-          </div>
-          {isRes && <div style={{fontSize:14,color:"#D97706",fontWeight:700,marginBottom:10}}>Held for {result.name}</div>}
-          {!isRes && result.grandTotal>0 && (
-            <div style={{padding:"10px 16px",background:"#ECFDF5",borderRadius:12,marginBottom:12}}>
-              <div style={{fontSize:15,fontWeight:800,color:"#059669"}}>
-                Profit: AED {result.totalProfit.toLocaleString()}
-              </div>
-              <div style={{fontSize:12,color:"#10B981",marginTop:2}}>Total: AED {result.grandTotal.toLocaleString()}</div>
-            </div>
-          )}
-          <button onClick={onClose} style={{width:"100%",padding:13,borderRadius:12,border:"none",
-            background:isRes?"#F59E0B":"#6366F1",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>
-            Done
-          </button>
+      <div onClick={onSelect} style={{
+        padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+        border: `1.5px solid ${isSel ? "#6366F1" : "#F1F5F9"}`,
+        background: isSel ? "#EEF2FF" : "#F8FAFC",
+        display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <div style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+                      border: `2px solid ${isSel ? "#6366F1" : "#CBD5E1"}`,
+                      background: isSel ? "#6366F1" : "transparent" }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{label}</div>
+          {sub && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{sub}</div>}
         </div>
-      </div>
-    );
-  }
-
-  const LaptopCard = ({item}) => {
-    const isSel = !!selDev[item.id];
-    const specs = [item.processor,item.ram,item.ssd,item.condition].filter(Boolean).join(" · ");
-    return (
-      <div style={{borderRadius:12,border:"1.5px solid "+(isSel?"#6366F1":"#F1F5F9"),background:isSel?"#EEF2FF":"#F8FAFC",marginBottom:8,overflow:"hidden"}}>
-        <div onClick={() => toggleDev(item)} style={{padding:"11px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:18,height:18,borderRadius:4,border:"2px solid "+(isSel?"#6366F1":"#CBD5E1"),
-                        background:isSel?"#6366F1":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            {isSel && <span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:800,color:"#0F172A"}}>{[item.brand,item.model].filter(Boolean).join(" ")||"Device"}</div>
-            {specs && <div style={{fontSize:11,color:"#94A3B8",marginTop:1}}>{specs}</div>}
-            {item.cost_price && <div style={{fontSize:10,color:"#CBD5E1",marginTop:1}}>Cost: AED {Number(item.cost_price).toLocaleString()}</div>}
-          </div>
-          <div style={{fontSize:14,fontWeight:800,color:isSel?"#6366F1":"#94A3B8",flexShrink:0}}>AED {Number(item.max_price||0).toLocaleString()}</div>
-        </div>
-        {isSel && (
-          <div style={{padding:"0 12px 10px",display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:11,color:"#64748B",fontWeight:600,flexShrink:0}}>Sale price: AED</span>
-            <input type="number" value={selDev[item.id].salePrice}
-              onChange={e => setSelDev(s => ({...s,[item.id]:{...s[item.id],salePrice:e.target.value}}))}
-              style={{flex:1,padding:"6px 10px",borderRadius:8,border:"1.5px solid #C7D2FE",fontSize:14,fontWeight:800,outline:"none",color:"#6366F1"}}/>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const PartCard = ({item}) => {
-    const isSel = !!selPart[item.id];
-    return (
-      <div style={{borderRadius:12,border:"1.5px solid "+(isSel?"#6366F1":"#F1F5F9"),background:isSel?"#EEF2FF":"#F8FAFC",marginBottom:8,overflow:"hidden"}}>
-        <div onClick={() => togglePart(item)} style={{padding:"11px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:18,height:18,borderRadius:4,border:"2px solid "+(isSel?"#6366F1":"#CBD5E1"),
-                        background:isSel?"#6366F1":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            {isSel && <span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:800,color:"#0F172A"}}>{item.category}{item.specs?" · "+item.specs:""}</div>
-            {item.compatible_with && <div style={{fontSize:11,color:"#94A3B8",marginTop:1}}>For: {item.compatible_with}</div>}
-            <div style={{fontSize:10,color:"#CBD5E1",marginTop:1}}>×{item.quantity} in stock</div>
-          </div>
-          <div style={{fontSize:14,fontWeight:800,color:isSel?"#6366F1":"#94A3B8",flexShrink:0}}>AED {Number(item.sell_price||0).toLocaleString()}</div>
-        </div>
-        {isSel && (
-          <div style={{padding:"0 12px 10px",display:"flex",gap:8,alignItems:"center"}}>
-            <span style={{fontSize:11,color:"#64748B",fontWeight:600,flexShrink:0}}>Qty:</span>
-            <input type="number" min={1} max={item.quantity} value={selPart[item.id].qtyToSell}
-              onChange={e => setSelPart(s => ({...s,[item.id]:{...s[item.id],qtyToSell:Math.min(item.quantity,Math.max(1,parseInt(e.target.value)||1))}}))}
-              style={{width:60,padding:"6px 8px",borderRadius:8,border:"1.5px solid #C7D2FE",fontSize:13,fontWeight:700,outline:"none",textAlign:"center"}}/>
-            <span style={{fontSize:11,color:"#64748B",fontWeight:600,flexShrink:0}}>Price: AED</span>
-            <input type="number" value={selPart[item.id].salePrice}
-              onChange={e => setSelPart(s => ({...s,[item.id]:{...s[item.id],salePrice:e.target.value}}))}
-              style={{flex:1,padding:"6px 10px",borderRadius:8,border:"1.5px solid #C7D2FE",fontSize:14,fontWeight:800,outline:"none",color:"#6366F1"}}/>
+        {price > 0 && (
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>
+            AED {price.toLocaleString()}
           </div>
         )}
       </div>
@@ -868,118 +802,100 @@ function ConfirmSaleModal({ customer, deal, onClose, onDone, prefillDevice }) {
   };
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",flexDirection:"column"}}>
-      <div style={{flex:1,overflowY:"auto",padding:"12px 12px 0",display:"flex",flexDirection:"column",alignItems:"center"}}>
-        <div style={{background:"#fff",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:480}}>
-
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
           {/* Header */}
-          <div style={{padding:"16px 18px 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{fontSize:17,fontWeight:800,color:"#0F172A"}}>⚡ Confirm Sale</div>
-              <div style={{fontSize:12,color:"#94A3B8",marginTop:1}}>{customer?.name||"Customer"}</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✅ Link Stock to Deal</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+                {customer?.name || "Customer"} — {[deal?.brand, deal?.model].filter(Boolean).join(" ") || "Open deal"}
+              </div>
             </div>
-            <button onClick={onClose} style={{width:30,height:30,borderRadius:8,border:"none",background:"#F1F5F9",cursor:"pointer",fontSize:16}}>✕</button>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
           </div>
 
-          {/* Tabs */}
-          <div style={{display:"flex",gap:0,margin:"12px 18px 0",borderBottom:"2px solid #F1F5F9"}}>
-            {[["laptops","💻 Laptops"],["parts","🔧 Parts"]].map(([t,l]) => (
-              <button key={t} onClick={() => setTab(t)}
-                style={{flex:1,padding:"10px 4px",border:"none",background:"none",fontWeight:700,fontSize:13,cursor:"pointer",
-                         color:tab===t?"#6366F1":"#94A3B8",borderBottom:tab===t?"2px solid #6366F1":"2px solid transparent",marginBottom:-2}}>
-                {l}
-                {t==="laptops" && selDevCount>0 && <span style={{marginLeft:5,background:"#6366F1",color:"#fff",borderRadius:10,padding:"1px 6px",fontSize:10}}>{selDevCount}</span>}
-                {t==="parts" && selPartCount>0 && <span style={{marginLeft:5,background:"#6366F1",color:"#fff",borderRadius:10,padding:"1px 6px",fontSize:10}}>{selPartCount}</span>}
-              </button>
-            ))}
-          </div>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Search */}
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search devices or parts…"
+              style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
 
-          {/* Tab content */}
-          <div style={{padding:"12px 18px 8px"}}>
-            {tab==="laptops" && (
-              <>
-                <input value={lpSearch} onChange={e=>setLpSearch(e.target.value)} placeholder="Search laptops..."
-                  style={{width:"100%",padding:"9px 13px",borderRadius:10,border:"1.5px solid #E2E8F0",fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:10}}/>
-                {loading ? <Spinner/> : filtDev.length===0
-                  ? <div style={{textAlign:"center",padding:"20px 0",color:"#CBD5E1",fontSize:12}}>{lpSearch?"No matches":"No available stock"}</div>
-                  : filtDev.map(d => <LaptopCard key={d.id} item={d}/>)
-                }
-                {!loading && selDevCount>0 && (
-                  <div style={{padding:"6px 10px",background:"#EEF2FF",borderRadius:10,display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,color:"#6366F1"}}>
-                    <span>Selected: {selDevCount} laptop{selDevCount!==1?"s":""}</span>
-                    <span>AED {laptopTotal.toLocaleString()}</span>
+            {loadingItems ? <Spinner /> : (
+              <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Devices */}
+                {filtDevices.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>DEVICES</div>
+                    {filtDevices.map(d => (
+                      <ItemRow key={d.id} item={d} type="device" priceField="max_price"
+                        selected={selType === "device" && selItem?.id === d.id}
+                        onSelect={() => selectDevice(d)} />
+                    ))}
+                  </>
+                )}
+                {/* Spare parts */}
+                {filtParts.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginTop: 4 }}>SPARE PARTS</div>
+                    {filtParts.map(p => (
+                      <ItemRow key={p.id} item={p} type="part" priceField="sell_price"
+                        selected={selType === "part" && selItem?.id === p.id}
+                        onSelect={() => selectPart(p)} />
+                    ))}
+                  </>
+                )}
+                {filtDevices.length === 0 && filtParts.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>
+                    {search ? "No matches" : "No available stock"}
                   </div>
                 )}
-              </>
-            )}
-            {tab==="parts" && (
-              <>
-                <input value={ptSearch} onChange={e=>setPtSearch(e.target.value)} placeholder="Search parts..."
-                  style={{width:"100%",padding:"9px 13px",borderRadius:10,border:"1.5px solid #E2E8F0",fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:10}}/>
-                {loading ? <Spinner/> : filtPart.length===0
-                  ? <div style={{textAlign:"center",padding:"20px 0",color:"#CBD5E1",fontSize:12}}>{ptSearch?"No matches":"No parts in stock"}</div>
-                  : filtPart.map(p => <PartCard key={p.id} item={p}/>)
-                }
-                {!loading && selPartCount>0 && (
-                  <div style={{padding:"6px 10px",background:"#EEF2FF",borderRadius:10,display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,color:"#6366F1"}}>
-                    <span>Selected: {selPartCount} part{selPartCount!==1?"s":""}</span>
-                    <span>AED {partsTotal.toLocaleString()}</span>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom section — always visible */}
-      <div style={{background:"#fff",borderTop:"1px solid #F1F5F9",padding:"14px 18px",maxWidth:480,width:"100%",alignSelf:"center",boxSizing:"border-box"}}>
-        {/* Outcome cards */}
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
-          {[
-            {val:"reserved",icon:"🔒",title:"Reserved",sub:"Picking up later",color:"#F59E0B",bg:"#FFFBEB"},
-            {val:"sold",icon:"✅",title:"Sold",sub:"Paid & collected",color:"#10B981",bg:"#ECFDF5"},
-          ].map(({val,icon,title,sub,color,bg}) => (
-            <div key={val} onClick={() => setOutcome(val)}
-              style={{flex:1,padding:"10px 8px",borderRadius:14,cursor:"pointer",textAlign:"center",transition:"all 0.15s",
-                       border:"2px solid "+(outcome===val?color:"#E2E8F0"),background:outcome===val?bg:"#fff"}}>
-              <div style={{fontSize:20,marginBottom:2}}>{icon}</div>
-              <div style={{fontSize:12,fontWeight:800,color:outcome===val?color:"#0F172A"}}>{title}</div>
-              <div style={{fontSize:10,color:"#94A3B8",marginTop:1}}>{sub}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Grand total */}
-        {grandTotal>0 && (
-          <div style={{padding:"8px 12px",background:"#F8FAFC",borderRadius:10,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontSize:11,color:"#94A3B8",fontWeight:700}}>TOTAL</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#6366F1"}}>AED {grandTotal.toLocaleString()}</div>
-            </div>
-            {totalCost>0 && (
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:11,color:"#94A3B8",fontWeight:700}}>PROFIT</div>
-                <div style={{fontSize:16,fontWeight:800,color:totalProfit>=0?"#10B981":"#EF4444"}}>AED {totalProfit.toLocaleString()}</div>
               </div>
             )}
-          </div>
-        )}
 
-        {/* Confirm button */}
-        <button onClick={handleConfirm} disabled={saving}
-          style={{width:"100%",padding:14,borderRadius:12,border:"none",fontSize:14,fontWeight:800,cursor:saving?"not-allowed":"pointer",
-                   background:saving?"#E2E8F0":"#6366F1",color:saving?"#94A3B8":"#fff",marginBottom:8}}>
-          {saving?"Saving…":"⚡ Confirm Sale"}
-        </button>
-        <button onClick={handleSkip} disabled={saving}
-          style={{width:"100%",padding:6,borderRadius:10,border:"none",background:"none",color:"#94A3B8",fontSize:12,cursor:"pointer"}}>
-          Skip — close deal without linking inventory
-        </button>
+            {/* Agreed price + profit — only when something is selected */}
+            {selItem && (
+              <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ flex: 1, fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>AGREED PRICE (AED)</div>
+                  <input
+                    type="number"
+                    value={agreedPrice}
+                    onChange={e => setAgreedPrice(e.target.value)}
+                    onKeyDown={e => e.stopPropagation()}
+                    onWheel={e => e.preventDefault()}
+                    onClick={e => e.stopPropagation()}
+                    style={{ width: 120, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 15, fontWeight: 800, outline: "none", textAlign: "right", color: "#6366F1" }}
+                  />
+                </div>
+                {costN > 0 && agreedN > 0 && (
+                  <div style={{ fontSize: 12, color: profit >= 0 ? "#10B981" : "#EF4444", fontWeight: 700 }}>
+                    Profit: AED {profit.toLocaleString()} ({margin}%)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <button onClick={confirm} disabled={saving || !selItem}
+              style={{ padding: 13, borderRadius: 12, border: "none", fontSize: 14, fontWeight: 800,
+                       cursor: saving || !selItem ? "not-allowed" : "pointer",
+                       background: saving || !selItem ? "#E2E8F0" : "#10B981",
+                       color: saving || !selItem ? "#94A3B8" : "#fff" }}>
+              {saving ? "Saving…" : "✅ Confirm Sale & Link Stock"}
+            </button>
+            <button onClick={() => onDone()}
+              style={{ padding: 11, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>
+              Not from stock — close deal only
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  SPEC UPGRADE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 function parseGB(str) {
@@ -1928,16 +1844,12 @@ export default function App() {
   const [showUpgrade,   setShowUpgrade]   = useState(false);
   const [upgradeTarget, setUpgradeTarget] = useState(null);
 
-  // ── confirm sale ──
-  const [showConfirmSale,      setShowConfirmSale]      = useState(false);
-  const [confirmSaleDeal,      setConfirmSaleDeal]      = useState(null); // deal snapshot for ConfirmSaleModal
-  const [showConfirmSaleStock, setShowConfirmSaleStock] = useState(false);
-  const [confirmSaleStockCtx,  setConfirmSaleStockCtx]  = useState(null); // { customer, deal, prefillDevice }
+  // ── link stock (close deal) ──
+  const [showLinkStock, setShowLinkStock] = useState(false);
+  const [linkStockDeal, setLinkStockDeal] = useState(null);
 
   // ── sold deal map (stockItemId → deal, for sold view) ──
-  const [soldDealMap,      setSoldDealMap]      = useState({});
-  const [soldStockJoined,  setSoldStockJoined]  = useState([]); // sold stock with customer join
-  const [reservedStockJoined, setReservedStockJoined] = useState([]); // reserved with customer join
+  const [soldDealMap, setSoldDealMap] = useState({});
 
   // ── part sale ──
   const [showPartSale,     setShowPartSale]     = useState(false);
@@ -2189,31 +2101,6 @@ export default function App() {
     await loadCustomers();
   }
 
-  async function moveStage(stageId) {
-    // Auto-create deal if none exists
-    if (!activeDealId && activeCustomer?.id) {
-      const { data: newDeal } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: stageId,
-        brand: "", model: "",
-        ...(stageId === "closed" ? { closed_at: new Date().toISOString() } : {}),
-      }).select().single();
-      if (newDeal) {
-        setActiveDealId(newDeal.id);
-        await loadCustomers();
-        if (stageId === "lost") setShowLossReason(true);
-      }
-      return;
-    }
-    const fields = { stage: stageId };
-    if (stageId === "closed") fields.closed_at = new Date().toISOString();
-    await updateDeal(fields);
-    const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
-    await updateCustomer({ tier: autoTier(updatedDeals) });
-    setPendingSuggestion(null);
-    if (stageId === "lost") setShowLossReason(true);
-  }
-
   async function handleConfirmSale() {
     let deal = activeDeal;
     if (!deal && activeCustomer?.id) {
@@ -2229,8 +2116,37 @@ export default function App() {
       }
     }
     if (!deal) return;
-    setConfirmSaleDeal({ ...deal });
-    setShowConfirmSale(true);
+    setLinkStockDeal(deal);
+    setShowLinkStock(true);
+  }
+
+  async function moveStage(stageId) {
+    // Auto-create deal if none exists
+    if (!activeDealId && activeCustomer?.id) {
+      const { data: newDeal } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: stageId,
+        brand: "", model: "",
+        ...(stageId === "closed" ? { closed_at: new Date().toISOString() } : {}),
+      }).select().single();
+      if (newDeal) {
+        setActiveDealId(newDeal.id);
+        await loadCustomers();
+        if (stageId === "lost") setShowLossReason(true);
+        if (stageId === "confirmed_pending_pickup") { setLinkStockDeal(newDeal); setShowReservation(true); }
+        if (stageId === "closed") { setLinkStockDeal(newDeal); setShowLinkStock(true); }
+      }
+      return;
+    }
+    const fields = { stage: stageId };
+    if (stageId === "closed") fields.closed_at = new Date().toISOString();
+    await updateDeal(fields);
+    const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
+    await updateCustomer({ tier: autoTier(updatedDeals) });
+    setPendingSuggestion(null);
+    if (stageId === "lost") setShowLossReason(true);
+    if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }
+    if (stageId === "closed") { setLinkStockDeal({ ...activeDeal, ...fields }); setShowLinkStock(true); }
   }
 
   async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
@@ -2563,27 +2479,16 @@ Return JSON with only a "reply" field containing the message.`;
 
   useEffect(() => {
     if (stockFilter !== "sold") return;
-    // Join with customers for sold-to name
-    supabase.from("stock").select("*, customers(name, number)").eq("status","sold").order("sold_at",{ascending:false})
-      .then(({ data }) => setSoldStockJoined(data || []));
-    // Also load linked deals for walk_in_name / payment_method
     const soldIds = stock.filter(s => s.status === "sold" && s.id).map(s => s.id);
-    if (soldIds.length) {
-      supabase.from("deals").select("id, stock_item_id, walk_in_name, payment_method, value")
-        .in("stock_item_id", soldIds)
-        .then(({ data }) => {
-          const map = {};
-          (data || []).forEach(d => { if (d.stock_item_id) map[d.stock_item_id] = d; });
-          setSoldDealMap(map);
-        });
-    }
+    if (!soldIds.length) return;
+    supabase.from("deals").select("id, stock_item_id, walk_in_name, payment_method, value")
+      .in("stock_item_id", soldIds)
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach(d => { if (d.stock_item_id) map[d.stock_item_id] = d; });
+        setSoldDealMap(map);
+      });
   }, [stockFilter, stock]);
-
-  useEffect(() => {
-    if (stockFilter !== "reserved") return;
-    supabase.from("stock").select("*, customers(name, number)").eq("status","reserved").order("created_at",{ascending:false})
-      .then(({ data }) => setReservedStockJoined(data || []));
-  }, [stockFilter]);
 
   async function loadParts() {
     setPartsLoading(true);
@@ -3846,17 +3751,6 @@ For any issues please contact us on WhatsApp.
               </div>
             </div>
 
-            {/* ⚡ Confirm Sale — visible on all active deals */}
-            {activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
-              <button onClick={handleConfirmSale}
-                style={{ marginTop: 6, width: "100%", padding: "11px 14px", borderRadius: 12, border: "none",
-                          background: "#F59E0B", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer",
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                          boxShadow: "0 2px 10px rgba(245,158,11,0.35)" }}>
-                ⚡ Confirm Sale
-              </button>
-            )}
-
             {/* loss reason */}
             {activeDeal.stage === "lost" && (
               <div style={{ marginTop: 10 }}>
@@ -4120,6 +4014,31 @@ For any issues please contact us on WhatsApp.
             </div>
           )}
 
+          {/* ⚡ CONFIRM SALE — always visible above inputs */}
+          <div style={{ marginBottom: 8 }}>
+            <button
+              onClick={handleConfirmSale}
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 12,
+                border: "none",
+                background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                boxShadow: "0 2px 8px rgba(245,158,11,0.3)",
+              }}
+            >
+              ⚡ Confirm Sale — Link Inventory
+            </button>
+          </div>
+
           {/* TOP ROW — paste client's incoming message */}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8 }}>
             <textarea
@@ -4154,24 +4073,6 @@ For any issues please contact us on WhatsApp.
           </div>
         </div>
         </div>{/* end detail content wrapper */}
-
-        {/* ── ConfirmSaleModal inside detail view (early return can't reach main return) ── */}
-        {showConfirmSale && (confirmSaleDeal || activeDeal) && (
-          <ConfirmSaleModal
-            customer={activeCustomer}
-            deal={confirmSaleDeal || activeDeal}
-            onClose={() => { setShowConfirmSale(false); setConfirmSaleDeal(null); }}
-            onDone={() => {
-              setShowConfirmSale(false);
-              setConfirmSaleDeal(null);
-              loadCustomers();
-              loadStock();
-              refreshCachedStock();
-              loadTodaySales();
-              loadPartsRevMTD();
-            }}
-          />
-        )}
       </div>
     );
   }
@@ -4848,8 +4749,13 @@ For any issues please contact us on WhatsApp.
                   <div key={d.id || i} style={{ background:"#fff", borderRadius:14, padding:"12px 14px", boxShadow:"0 1px 4px rgba(0,0,0,0.06)" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
                       <div>
-                        <div style={{ fontSize:13, fontWeight:700, color:"#0F172A" }}>🔧 {d.notes || `${d.category} ${d.specs || ""}`|| "Part sale"}</div>
-                        <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>{d.customer_name || "Walk-in"} · ×{d.quantity_sold || 1}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:"#0F172A" }}>
+                          🔧 {d.category ? `${d.category}${d.specs ? ` — ${d.specs}` : ""}` : d.notes || "Part sale"}
+                        </div>
+                        <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>
+                          Sold to: {d.customer_name || "Walk-in"} · Qty: ×{d.quantity_sold || 1}
+                          {d.compatible_with ? ` · ${d.compatible_with}` : ""}
+                        </div>
                       </div>
                       <div style={{ textAlign:"right" }}>
                         {d.value && <div style={{ fontSize:14, fontWeight:800, color:"#8B5CF6" }}>AED {Number(d.value).toLocaleString()}</div>}
@@ -4869,18 +4775,24 @@ For any issues please contact us on WhatsApp.
 
           {/* Sold summary bar */}
           {!stockLoading && stockFilter === "sold" && filteredStock.length > 0 && (() => {
-            const src         = soldStockJoined.length ? soldStockJoined : filteredStock;
-            const totalRev    = src.reduce((s, i) => s + (Number(i.sold_price || i.max_price) || 0), 0);
-            const totalProfit = src.reduce((s, i) => s + ((Number(i.sold_price || i.max_price) || 0) - (Number(i.cost_price) || 0)), 0);
-            const avgProfit   = src.length ? Math.round(totalProfit / src.length) : 0;
+            const totalRev    = filteredStock.reduce((s, i) => s + (Number(i.sold_price || i.max_price) || 0), 0);
+            const totalProfit = filteredStock.reduce((s, i) => s + ((Number(i.sold_price || i.max_price) || 0) - (Number(i.cost_price) || 0)), 0);
+            const avgProfit   = Math.round(totalProfit / filteredStock.length);
             return (
               <div style={{ padding: "10px 16px", background: "#EEF2FF", borderRadius: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
-                  {src.length} sold
+                  {filteredStock.length} device{filteredStock.length !== 1 ? "s" : ""} sold
                 </span>
-                {totalRev > 0 && <span style={{ fontSize: 12, color: "#4338CA", fontWeight: 600 }}>· Revenue AED {totalRev.toLocaleString()}</span>}
-                {totalProfit !== 0 && <span style={{ fontSize: 12, fontWeight: 700, color: totalProfit >= 0 ? "#10B981" : "#EF4444" }}>· Profit AED {totalProfit.toLocaleString()}</span>}
-                {avgProfit !== 0 && <span style={{ fontSize: 12, color: "#64748B" }}>· Avg AED {avgProfit.toLocaleString()}</span>}
+                {totalRev > 0 && (
+                  <span style={{ fontSize: 12, color: "#4338CA", fontWeight: 600 }}>
+                    · Revenue AED {totalRev.toLocaleString()}
+                  </span>
+                )}
+                {avgProfit !== 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: avgProfit >= 0 ? "#10B981" : "#EF4444" }}>
+                    · Avg profit AED {avgProfit.toLocaleString()}
+                  </span>
+                )}
               </div>
             );
           })()}
@@ -4904,10 +4816,8 @@ For any issues please contact us on WhatsApp.
             const matches    = getMatchingClients(item);
             const isAvail    = item.status === "available";
             const isReserved = item.status === "reserved";
-            // Use joined customer data when available (from reservedStockJoined), fall back to customers array
-            const joinedReservedItem = isReserved ? (reservedStockJoined.find(r => r.id === item.id) || item) : item;
             const reservedFor = isReserved && item.reserved_for_customer_id
-              ? (joinedReservedItem.customers || customers.find(c => c.id === item.reserved_for_customer_id))
+              ? customers.find(c => c.id === item.reserved_for_customer_id)
               : null;
             const pickupLabel = item.pickup_date
               ? new Date(item.pickup_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
@@ -4933,14 +4843,7 @@ For any issues please contact us on WhatsApp.
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={e => {
-                      e.stopPropagation();
-                      const cust = reservedFor ? (typeof reservedFor.name === "string" ? reservedFor : customers.find(c => c.id === item.reserved_for_customer_id)) : null;
-                      const custDeals = cust?.deals || customers.find(c => c.id === item.reserved_for_customer_id)?.deals || [];
-                      const deal = custDeals.find(d => d.stage === "confirmed_pending_pickup") || custDeals[0] || null;
-                      setConfirmSaleStockCtx({ customer: cust, deal, prefillDevice: { ...item, status: "available" } });
-                      setShowConfirmSaleStock(true);
-                    }}
+                    <button onClick={e => { e.stopPropagation(); setQuickSalePrefill({ item, name: reservedFor?.name || "", number: reservedFor?.number || "", depositPaid: 0 }); setShowQuickSale(true); }}
                       style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
                       ✅ Complete Sale
                     </button>
@@ -5006,14 +4909,13 @@ For any issues please contact us on WhatsApp.
                 {/* Sold details panel — shown for sold items */}
                 {item.status === "sold" && (() => {
                   const linkedDeal  = soldDealMap[item.id];
-                  const joinedItem  = soldStockJoined.find(s => s.id === item.id) || item;
-                  const soldPrice   = Number(joinedItem.sold_price || linkedDeal?.value || joinedItem.max_price) || 0;
-                  const costPrice   = Number(joinedItem.cost_price) || 0;
+                  const soldPrice   = Number(item.sold_price || linkedDeal?.value || item.max_price) || 0;
+                  const costPrice   = Number(item.cost_price) || 0;
                   const profit      = soldPrice - costPrice;
                   const marginPct   = soldPrice > 0 ? Math.round((profit / soldPrice) * 100) : 0;
-                  // Use joined customer name first, then local customers array, then deal walk_in_name
-                  const custName    = joinedItem.customers?.name
-                    || (item.sold_to_customer_id ? customers.find(c => c.id === item.sold_to_customer_id)?.name : null);
+                  const custName    = item.sold_to_customer_id
+                    ? (customers.find(c => c.id === item.sold_to_customer_id)?.name || "Customer")
+                    : null;
                   const soldToName  = custName || linkedDeal?.walk_in_name || "Walk-in Customer";
                   const payMethod   = linkedDeal?.payment_method || null;
                   const soldDateStr = item.sold_at
@@ -5728,14 +5630,20 @@ For any issues please contact us on WhatsApp.
         <SourcingModule anthropicKey={anthropicKey} onAddToStock={() => { loadStock(); refreshCachedStock(); }} />
       )}
 
-      {/* ── CONFIRM SALE (from stock tab reserved items) ── */}
-      {showConfirmSaleStock && confirmSaleStockCtx && (
-        <ConfirmSaleModal
-          customer={confirmSaleStockCtx.customer}
-          deal={confirmSaleStockCtx.deal}
-          prefillDevice={confirmSaleStockCtx.prefillDevice}
-          onClose={() => { setShowConfirmSaleStock(false); setConfirmSaleStockCtx(null); }}
-          onDone={() => { setShowConfirmSaleStock(false); setConfirmSaleStockCtx(null); loadStock(); loadCustomers(); refreshCachedStock(); loadTodaySales(); }}
+      {/* ── LINK STOCK MODAL ── */}
+      {showLinkStock && activeCustomer && linkStockDeal && (
+        <LinkStockModal
+          customer={activeCustomer}
+          deal={linkStockDeal}
+          onClose={() => { setShowLinkStock(false); setLinkStockDeal(null); }}
+          onDone={() => {
+            setShowLinkStock(false);
+            setLinkStockDeal(null);
+            loadCustomers();
+            loadStock();
+            refreshCachedStock();
+            loadTodaySales();
+          }}
         />
       )}
 
@@ -5758,10 +5666,10 @@ For any issues please contact us on WhatsApp.
       )}
 
       {/* ── RESERVATION MODAL ── */}
-      {showReservation && activeDeal && (
+      {showReservation && activeCustomer && (linkStockDeal || activeDeal) && (
         <ReservationModal
           customer={activeCustomer}
-          deal={activeDeal}
+          deal={linkStockDeal || activeDeal}
           stock={stock}
           onClose={() => setShowReservation(false)}
           onDone={() => { setShowReservation(false); loadStock(); loadCustomers(); }}
