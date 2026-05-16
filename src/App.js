@@ -1136,11 +1136,20 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
   const [saving,        setSaving]        = useState(false);
 
   const available = stock.filter(s => s.status === "available");
-  const filtered  = search
+  const brandMatch = deal?.brand ?
+    available.filter(s => (s.brand || "").toLowerCase() === (deal.brand || "").toLowerCase())
+    : [];
+  const budgetMatch = deal?.budget ?
+    available.filter(s => Number(s.max_price || 0) <= Number(deal.budget) * 1.2 && !brandMatch.find(b => b.id === s.id))
+    : [];
+  const otherStock = available.filter(s =>
+    !brandMatch.find(b => b.id === s.id) && !budgetMatch.find(b => b.id === s.id)
+  );
+  const filtered = search
     ? available.filter(s =>
         [s.brand, s.model, s.processor, s.ram, s.ssd].filter(Boolean).join(" ")
           .toLowerCase().includes(search.toLowerCase()))
-    : available;
+    : [...brandMatch, ...budgetMatch, ...otherStock];
 
   function selectDevice(item) {
     setSelectedItem(item);
@@ -1212,11 +1221,19 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
                 {filtered.length === 0 && (
                   <div style={{ textAlign: "center", padding: "16px 0", color: "#CBD5E1", fontSize: 12 }}>No available stock</div>
                 )}
-                {filtered.map(item => {
+                {!search && brandMatch.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", letterSpacing: 0.5 }}>✅ Brand Match</div>}
+                {!search && budgetMatch.length > 0 && brandMatch.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "#F59E0B", letterSpacing: 0.5, marginTop: 4 }}>💰 Within Budget</div>}
+                {!search && budgetMatch.length > 0 && brandMatch.length === 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "#F59E0B", letterSpacing: 0.5 }}>💰 Within Budget</div>}
+                {filtered.map((item, idx) => {
                   const isSel  = selectedItem?.id === item.id;
                   const specs  = [item.processor, item.ram, item.ssd].filter(Boolean).join(" · ");
+                  const isFirst = idx === 0;
+                  const isFirstOther = !search && otherStock.length > 0 && item.id === otherStock[0]?.id;
+                  const showOtherLabel = isFirstOther && (brandMatch.length > 0 || budgetMatch.length > 0);
                   return (
-                    <div key={item.id} onClick={() => isSel ? setSelectedItem(null) : selectDevice(item)}
+                    <div key={item.id}>
+                    {showOtherLabel && <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginTop: 4, marginBottom: 2 }}>📦 Other Stock</div>}
+                    <div onClick={() => isSel ? setSelectedItem(null) : selectDevice(item)}
                       style={{ padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${isSel ? "#F59E0B" : "#F1F5F9"}`,
                                background: isSel ? "#FFFBEB" : "#F8FAFC", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${isSel ? "#F59E0B" : "#CBD5E1"}`,
@@ -1228,6 +1245,7 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
                         {specs && <div style={{ fontSize: 11, color: "#94A3B8" }}>{specs}</div>}
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#F59E0B", flexShrink: 0 }}>AED {Number(item.max_price || 0).toLocaleString()}</div>
+                    </div>
                     </div>
                   );
                 })}
@@ -1876,6 +1894,11 @@ export default function App() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptPaymentMethod, setReceiptPaymentMethod] = useState("Cash");
 
+  // ── edit reservation ──
+  const [showEditReservation,  setShowEditReservation]  = useState(false);
+  const [editReservationItem,  setEditReservationItem]  = useState(null);
+  const [editReservationForm,  setEditReservationForm]  = useState({ agreedPrice: "", pickupDate: "", depositAmount: "", balanceDue: "", notes: "" });
+
   // ── side drawer / sales history ──
   const [showSideDrawer,       setShowSideDrawer]       = useState(false);
   const [salesHistory,         setSalesHistory]         = useState([]);
@@ -2061,6 +2084,7 @@ export default function App() {
         specs: [stock.ram, stock.ssd, stock.condition].filter(Boolean).join(" · "),
         serialNumber: stock.serial_number || null,
         price: d.value || 0, paymentMethod: d.payment_method || "Cash",
+        depositAmount: d.deposit_amount || 0, balanceDue: d.balance_due || 0,
         brand: stock.brand, model: stock.model, processor: stock.processor,
         ram: stock.ram, ssd: stock.ssd, condition: stock.condition,
       });
@@ -3325,7 +3349,11 @@ ${sale.type === "part" ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nC
 `DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`}
 
 PAYMENT:
-Amount: AED ${Number(sale.price).toLocaleString()}
+${sale.depositAmount > 0 ?
+`Total: AED ${Number(sale.price).toLocaleString()}
+Deposit Paid: AED ${Number(sale.depositAmount).toLocaleString()}
+Balance Received: AED ${Number(sale.price - sale.depositAmount).toLocaleString()}` :
+`Amount: AED ${Number(sale.price).toLocaleString()}`}
 Method: ${sale.paymentMethod}
 
 Thank you for your purchase! 🙏
@@ -4182,24 +4210,48 @@ For any issues contact us on WhatsApp.
             </div>
           )}
 
-          {/* ⚡ CONFIRM SALE — always visible above inputs */}
+          {/* ── PRIMARY ACTION BAR ── */}
           <div style={{ marginBottom: 8 }}>
+            {/* Reserve — primary action for WhatsApp clients */}
             <button
-              onClick={handleConfirmSale}
+              onClick={() => {
+                if (!activeDeal && !activeCustomer?.id) return;
+                setLinkStockDeal(activeDeal);
+                setShowReservation(true);
+              }}
               style={{
                 width: "100%",
                 padding: "12px 16px",
                 borderRadius: 12,
                 border: "none",
-                background: "#6366F1",
+                background: "linear-gradient(135deg, #F59E0B, #D97706)",
                 color: "#fff",
                 fontSize: 14,
                 fontWeight: 800,
                 cursor: "pointer",
+                marginBottom: 6,
               }}
             >
-              ⚡ Confirm Sale — Link Inventory
+              🔒 Reserve Device
             </button>
+            {/* Confirm Sale — secondary action */}
+            <div style={{ textAlign: "center" }}>
+              <button
+                onClick={handleConfirmSale}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#6366F1",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  padding: "2px 8px",
+                }}
+              >
+                ⚡ Confirm Sale instead →
+              </button>
+            </div>
           </div>
 
           {/* TOP ROW — paste client's incoming message */}
@@ -5027,6 +5079,21 @@ For any issues contact us on WhatsApp.
                     <button onClick={e => { e.stopPropagation(); setQuickSalePrefill({ item, name: reservedFor?.name || "", number: reservedFor?.number || "", depositPaid: 0 }); setShowQuickSale(true); }}
                       style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
                       ✅ Complete Sale
+                    </button>
+                    <button onClick={e => {
+                      e.stopPropagation();
+                      setEditReservationItem(item);
+                      setEditReservationForm({
+                        agreedPrice: String(item.sold_price || item.max_price || ""),
+                        pickupDate: item.pickup_date ? item.pickup_date.split("T")[0] : "",
+                        depositAmount: "",
+                        balanceDue: "",
+                        notes: item.reservation_notes || "",
+                      });
+                      setShowEditReservation(true);
+                    }}
+                      style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      ✏️ Edit
                     </button>
                     <button onClick={async e => { e.stopPropagation(); if (!window.confirm("Release reservation and set item back to available?")) return; await supabase.from("stock").update({ status: "available", reserved_for_customer_id: null, reserved_at: null, pickup_date: null }).eq("id", item.id); loadStock(); }}
                       style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", color: "#D97706", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -6121,6 +6188,113 @@ For any issues contact us on WhatsApp.
                 }}
                   style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                   📱 WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT RESERVATION MODAL ── */}
+      {showEditReservation && editReservationItem && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✏️ Edit Reservation</div>
+                  <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+                    {[editReservationItem.brand, editReservationItem.model].filter(Boolean).join(" ") || "Device"}
+                  </div>
+                </div>
+                <button onClick={() => setShowEditReservation(false)}
+                  style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+              </div>
+              <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  { label: "AGREED PRICE (AED)", key: "agreedPrice", type: "number" },
+                  { label: "PICKUP DATE", key: "pickupDate", type: "date" },
+                ].map(({ label, key, type }) => (
+                  <div key={key}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+                    <input type={type} value={editReservationForm[key]}
+                      onChange={e => setEditReservationForm(f => ({ ...f, [key]: e.target.value }))}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>DEPOSIT PAID (AED)</div>
+                  <input type="number" value={editReservationForm.depositAmount}
+                    onChange={e => {
+                      const dep = Number(e.target.value) || 0;
+                      const bal = Math.max(0, (Number(editReservationForm.agreedPrice) || 0) - dep);
+                      setEditReservationForm(f => ({ ...f, depositAmount: e.target.value, balanceDue: String(bal) }));
+                    }}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>BALANCE DUE (AED)</div>
+                  <input type="number" value={editReservationForm.balanceDue}
+                    onChange={e => setEditReservationForm(f => ({ ...f, balanceDue: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>NOTES</div>
+                  <input value={editReservationForm.notes}
+                    onChange={e => setEditReservationForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="e.g. Client confirmed via WhatsApp"
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setShowEditReservation(false)}
+                    style={{ flex: 1, padding: 12, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>
+                    Cancel
+                  </button>
+                  <button onClick={async () => {
+                    const agreedN = Number(editReservationForm.agreedPrice) || 0;
+                    const depositN = Number(editReservationForm.depositAmount) || 0;
+                    const balanceN = Number(editReservationForm.balanceDue) || 0;
+                    await supabase.from("stock").update({
+                      pickup_date: editReservationForm.pickupDate || null,
+                      sold_price: agreedN || null,
+                    }).eq("id", editReservationItem.id);
+                    const { data: dealData } = await supabase.from("deals")
+                      .select("id").eq("stock_item_id", editReservationItem.id).single();
+                    if (dealData) {
+                      await supabase.from("deals").update({
+                        value: agreedN || null,
+                        deposit_amount: depositN || null,
+                        balance_due: balanceN || null,
+                        pickup_date: editReservationForm.pickupDate || null,
+                        reservation_notes: editReservationForm.notes || null,
+                      }).eq("id", dealData.id);
+                    }
+                    setShowEditReservation(false);
+                    loadStock();
+                    loadCustomers();
+                  }}
+                    style={{ flex: 2, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                    Save Changes
+                  </button>
+                </div>
+                <button onClick={async () => {
+                  if (!window.confirm("Release this reservation? Device will return to available stock.")) return;
+                  await supabase.from("stock").update({
+                    status: "available", reserved_for_customer_id: null, reserved_at: null, pickup_date: null, sold_price: null,
+                  }).eq("id", editReservationItem.id);
+                  const { data: dealData } = await supabase.from("deals")
+                    .select("id").eq("stock_item_id", editReservationItem.id).single();
+                  if (dealData) {
+                    await supabase.from("deals").update({
+                      stage: "device_found", value: null, deposit_amount: null, balance_due: null, pickup_date: null,
+                    }).eq("id", dealData.id);
+                  }
+                  setShowEditReservation(false);
+                  loadStock();
+                  loadCustomers();
+                }}
+                  style={{ padding: 12, borderRadius: 12, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  🔓 Release Reservation
                 </button>
               </div>
             </div>

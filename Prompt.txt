@@ -1,191 +1,257 @@
 Read src/App.js fully before making any changes.
 
-We are adding a Sales History side drawer and fixing the receipt generator. 
-Make these changes:
+We are making several improvements. Make ALL these changes:
 
-CHANGE 1 — Add side drawer state variables (add near other useState declarations):
-  const [showSideDrawer, setShowSideDrawer] = useState(false);
-  const [salesHistory, setSalesHistory] = useState([]);
-  const [salesHistoryLoading, setSalesHistoryLoading] = useState(false);
-  const [salesFilter, setSalesFilter] = useState("month");
-  const [showSaleReceipt, setShowSaleReceipt] = useState(false);
-  const [saleReceiptData, setSaleReceiptData] = useState(null);
-  const [receiptEditName, setReceiptEditName] = useState("");
+CHANGE 1 — Swap Confirm Sale and Reserve buttons in chat window
+Find the chat detail view input bar section marked with comment 
+"⚡ CONFIRM SALE — always visible above inputs"
 
-CHANGE 2 — Add loadSalesHistory function (add near other load functions):
+Replace the entire confirm sale div block with this:
 
-  const loadSalesHistory = useCallback(async () => {
-    setSalesHistoryLoading(true);
-    const now = new Date();
-    let fromDate = null;
-    if (salesFilter === "today") {
-      fromDate = new Date(); fromDate.setHours(0,0,0,0);
-    } else if (salesFilter === "week") {
-      fromDate = new Date(now - 7 * 86400000);
-    } else if (salesFilter === "month") {
-      fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    }
+          {/* ── PRIMARY ACTION BAR ── */}
+          <div style={{ marginBottom: 8 }}>
+            {/* Reserve — primary action for WhatsApp clients */}
+            <button
+              onClick={() => {
+                if (!activeDeal && !activeCustomer?.id) return;
+                setLinkStockDeal(activeDeal);
+                setShowReservation(true);
+              }}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "none",
+                background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: "pointer",
+                marginBottom: 6,
+              }}
+            >
+              🔒 Reserve Device
+            </button>
+            {/* Confirm Sale — secondary action */}
+            <div style={{ textAlign: "center" }}>
+              <button
+                onClick={handleConfirmSale}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#6366F1",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  padding: "2px 8px",
+                }}
+              >
+                ⚡ Confirm Sale instead →
+              </button>
+            </div>
+          </div>
 
-    // Load device sales from deals
-    const dealQuery = supabase
-      .from("deals")
-      .select("*, customers(name, number)")
-      .eq("stage", "closed")
-      .not("stock_item_id", "is", null)
-      .order("closed_at", { ascending: false });
-    if (fromDate) dealQuery.gte("closed_at", fromDate.toISOString());
-    const { data: dealSales } = await dealQuery;
+CHANGE 2 — Fix ReservationModal to pre-filter matching stock
+Find the ReservationModal component. It has a const filtered that filters available stock.
+Replace the filtered const with:
 
-    // Load walkin sales
-    const walkinQuery = supabase
-      .from("deals")
-      .select("*")
-      .eq("stage", "closed")
-      .eq("sale_type", "walkin")
-      .order("closed_at", { ascending: false });
-    if (fromDate) walkinQuery.gte("closed_at", fromDate.toISOString());
-    const { data: walkinSales } = await walkinQuery;
+  const brandMatch = deal?.brand ? 
+    available.filter(s => (s.brand || "").toLowerCase() === (deal.brand || "").toLowerCase()) 
+    : [];
+  const budgetMatch = deal?.budget ?
+    available.filter(s => Number(s.max_price || 0) <= Number(deal.budget) * 1.2 && !brandMatch.find(b => b.id === s.id))
+    : [];
+  const otherStock = available.filter(s => 
+    !brandMatch.find(b => b.id === s.id) && !budgetMatch.find(b => b.id === s.id)
+  );
+  const filtered = search
+    ? available.filter(s =>
+        [s.brand, s.model, s.processor, s.ram, s.ssd].filter(Boolean).join(" ")
+          .toLowerCase().includes(search.toLowerCase()))
+    : [...brandMatch, ...budgetMatch, ...otherStock];
 
-    // Load parts sales
-    const partsQuery = supabase
-      .from("parts_sales")
-      .select("*")
-      .order("sold_at", { ascending: false });
-    if (fromDate) partsQuery.gte("sold_at", fromDate.toISOString());
-    const { data: partsSalesData } = await partsQuery;
+Then in the ReservationModal device list, add section headers before the list:
+- If not searching and brandMatch.length > 0, show a small label "✅ Brand Match" above those items
+- If not searching and budgetMatch.length > 0, show a small label "💰 Within Budget" above those items  
+- If not searching and otherStock.length > 0, show a small label "📦 Other Stock" above those items
 
-    // Load stock items for device sales
-    const stockIds = (dealSales || []).map(d => d.stock_item_id).filter(Boolean);
-    let stockMap = {};
-    if (stockIds.length) {
-      const { data: stockItems } = await supabase
-        .from("stock")
-        .select("id, brand, model, processor, ram, ssd, condition, serial_number")
-        .in("id", stockIds);
-      (stockItems || []).forEach(s => { stockMap[s.id] = s; });
-    }
+CHANGE 3 — Add Edit Reservation feature in Stock tab Reserved cards
+Find the reserved items section in the stock tab where reserved cards are rendered.
+The card currently has "✅ Complete Sale" and "🔓 Release" buttons.
+Add a third button "✏️ Edit" that opens an edit modal.
 
-    // Combine all sales into one list
-    const combined = [];
+Add these state variables near other useState declarations:
+  const [showEditReservation, setShowEditReservation] = useState(false);
+  const [editReservationItem, setEditReservationItem] = useState(null);
+  const [editReservationForm, setEditReservationForm] = useState({
+    agreedPrice: "",
+    pickupDate: "",
+    depositAmount: "",
+    balanceDue: "",
+    notes: "",
+  });
 
-    (dealSales || []).forEach(d => {
-      const stock = stockMap[d.stock_item_id] || {};
-      const customerName = d.customers?.name || d.walk_in_name || "Walk-in Customer";
-      combined.push({
-        id: d.id,
-        type: "device",
-        date: d.closed_at,
-        customerName,
-        customerNumber: d.customers?.number || null,
-        device: [stock.brand, stock.model].filter(Boolean).join(" ") || "Device",
-        specs: [stock.ram, stock.ssd, stock.condition].filter(Boolean).join(" · "),
-        serialNumber: stock.serial_number || null,
-        price: d.value || 0,
-        paymentMethod: d.payment_method || "Cash",
-        brand: stock.brand,
-        model: stock.model,
-        processor: stock.processor,
-        ram: stock.ram,
-        ssd: stock.ssd,
-        condition: stock.condition,
-      });
+Add the Edit button to reserved cards (alongside Complete Sale and Release buttons):
+  <button onClick={e => {
+    e.stopPropagation();
+    setEditReservationItem(item);
+    setEditReservationForm({
+      agreedPrice: String(item.sold_price || item.max_price || ""),
+      pickupDate: item.pickup_date ? item.pickup_date.split("T")[0] : "",
+      depositAmount: "",
+      balanceDue: "",
+      notes: item.reservation_notes || "",
     });
+    setShowEditReservation(true);
+  }}
+    style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+    ✏️ Edit
+  </button>
 
-    (walkinSales || []).forEach(d => {
-      if (d.stock_item_id) return; // already included above
-      combined.push({
-        id: d.id,
-        type: "walkin",
-        date: d.closed_at,
-        customerName: d.walk_in_name || "Walk-in Customer",
-        customerNumber: d.walk_in_number || null,
-        device: [d.brand, d.model].filter(Boolean).join(" ") || "Device",
-        specs: [d.ram, d.storage, d.condition].filter(Boolean).join(" · "),
-        serialNumber: null,
-        price: d.value || 0,
-        paymentMethod: d.payment_method || "Cash",
-        brand: d.brand,
-        model: d.model,
-        processor: null,
-        ram: d.ram,
-        ssd: d.storage,
-        condition: d.condition,
-      });
-    });
+Add the Edit Reservation Modal JSX before the floating "+" button:
 
-    (partsSalesData || []).forEach(p => {
-      combined.push({
-        id: p.id,
-        type: "part",
-        date: p.sold_at,
-        customerName: p.customer_name || "Walk-in Customer",
-        customerNumber: null,
-        device: [p.category, p.specs].filter(Boolean).join(" — "),
-        specs: p.compatible_with || "",
-        serialNumber: null,
-        price: p.total_revenue || 0,
-        paymentMethod: p.payment_method || "Cash",
-        quantity: p.quantity_sold || 1,
-      });
-    });
+  {showEditReservation && editReservationItem && (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✏️ Edit Reservation</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+                {[editReservationItem.brand, editReservationItem.model].filter(Boolean).join(" ") || "Device"}
+              </div>
+            </div>
+            <button onClick={() => setShowEditReservation(false)}
+              style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+          </div>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>AGREED PRICE (AED)</div>
+              <input type="number" value={editReservationForm.agreedPrice}
+                onChange={e => setEditReservationForm(f => ({ ...f, agreedPrice: e.target.value }))}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>PICKUP DATE</div>
+              <input type="date" value={editReservationForm.pickupDate}
+                onChange={e => setEditReservationForm(f => ({ ...f, pickupDate: e.target.value }))}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>DEPOSIT PAID (AED)</div>
+              <input type="number" value={editReservationForm.depositAmount}
+                onChange={e => {
+                  const dep = Number(e.target.value) || 0;
+                  const bal = Math.max(0, (Number(editReservationForm.agreedPrice) || 0) - dep);
+                  setEditReservationForm(f => ({ ...f, depositAmount: e.target.value, balanceDue: String(bal) }));
+                }}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>BALANCE DUE (AED)</div>
+              <input type="number" value={editReservationForm.balanceDue}
+                onChange={e => setEditReservationForm(f => ({ ...f, balanceDue: e.target.value }))}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>NOTES</div>
+              <input value={editReservationForm.notes}
+                onChange={e => setEditReservationForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="e.g. Client confirmed via WhatsApp"
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowEditReservation(false)}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 13, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={async () => {
+                const agreedN = Number(editReservationForm.agreedPrice) || 0;
+                const depositN = Number(editReservationForm.depositAmount) || 0;
+                const balanceN = Number(editReservationForm.balanceDue) || 0;
+                await supabase.from("stock").update({
+                  pickup_date: editReservationForm.pickupDate || null,
+                  sold_price: agreedN || null,
+                }).eq("id", editReservationItem.id);
+                const { data: deal } = await supabase.from("deals")
+                  .select("id").eq("stock_item_id", editReservationItem.id).single();
+                if (deal) {
+                  await supabase.from("deals").update({
+                    value: agreedN || null,
+                    deposit_amount: depositN || null,
+                    balance_due: balanceN || null,
+                    pickup_date: editReservationForm.pickupDate || null,
+                    reservation_notes: editReservationForm.notes || null,
+                  }).eq("id", deal.id);
+                }
+                setShowEditReservation(false);
+                loadStock();
+                loadCustomers();
+              }}
+                style={{ flex: 2, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                Save Changes
+              </button>
+            </div>
+            {/* Release button */}
+            <button onClick={async () => {
+              if (!window.confirm("Release this reservation? Device will return to available stock.")) return;
+              await supabase.from("stock").update({
+                status: "available",
+                reserved_for_customer_id: null,
+                reserved_at: null,
+                pickup_date: null,
+                sold_price: null,
+              }).eq("id", editReservationItem.id);
+              const { data: deal } = await supabase.from("deals")
+                .select("id").eq("stock_item_id", editReservationItem.id).single();
+              if (deal) {
+                await supabase.from("deals").update({
+                  stage: "device_found",
+                  value: null,
+                  deposit_amount: null,
+                  balance_due: null,
+                  pickup_date: null,
+                }).eq("id", deal.id);
+              }
+              setShowEditReservation(false);
+              loadStock();
+              loadCustomers();
+            }}
+              style={{ padding: 12, borderRadius: 12, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              🔓 Release Reservation
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
 
-    // Sort by date descending
-    combined.sort((a, b) => new Date(b.date) - new Date(a.date));
-    setSalesHistory(combined);
-    setSalesHistoryLoading(false);
-  }, [salesFilter]);
+CHANGE 4 — Fix receipt for reserved sales to show total, deposit and balance
+Find the buildSaleReceiptText function. 
+In the PAYMENT section replace:
 
-CHANGE 3 — Add buildSaleReceiptText function (add near buildReceiptText function):
-
-  function buildSaleReceiptText(sale, nameOverride) {
-    const num = `LFL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const date = new Date(sale.date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    const customerName = nameOverride || sale.customerName || "Customer";
-    return `━━━━━━━━━━━━━━━━━━━━━━
-      LAPTOP FOR LESS
-      UAE | laptopforless.ae
-━━━━━━━━━━━━━━━━━━━━━━
-RECEIPT #: ${num}
-Date: ${date}
-
-SOLD TO:
-Name: ${customerName}${sale.customerNumber ? `\nContact: ${sale.customerNumber}` : ""}
-
-${sale.type === "part" ? `PART DETAILS:
-Item: ${sale.device}
-${sale.specs ? `Compatible With: ${sale.specs}\n` : ""}Quantity: ${sale.quantity || 1}` : 
-`DEVICE DETAILS:
-${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`}
-
-PAYMENT:
 Amount: AED ${Number(sale.price).toLocaleString()}
 Method: ${sale.paymentMethod}
 
-Thank you for your purchase! 🙏
-For any issues contact us on WhatsApp.
-━━━━━━━━━━━━━━━━━━━━━━`;
-  }
+With:
 
-CHANGE 4 — Add useEffect to reload sales when filter changes (add near other useEffects):
+${sale.depositAmount > 0 ? 
+`Total: AED ${Number(sale.price).toLocaleString()}
+Deposit Paid: AED ${Number(sale.depositAmount).toLocaleString()}
+Balance Received: AED ${Number(sale.balanceDue || 0) > 0 ? Number(sale.price - sale.depositAmount).toLocaleString() : Number(sale.price - sale.depositAmount).toLocaleString()}` 
+: `Amount: AED ${Number(sale.price).toLocaleString()}`}
+Method: ${sale.paymentMethod}
 
-  useEffect(() => {
-    if (showSideDrawer) loadSalesHistory();
-  }, [salesFilter, showSideDrawer, loadSalesHistory]);
+Also update the loadSalesHistory function. In the dealSales forEach loop,
+add these fields to the combined.push object:
+  depositAmount: d.deposit_amount || 0,
+  balanceDue: d.balance_due || 0,
 
-CHANGE 5 — Add the side drawer JSX component. 
-Find the line that says:
-  {/* ── Floating "+" button ── */}
+CHANGE 5 — Add Sales History as full button in side drawer
+Find the side drawer JSX. 
+Replace the drawer header that just says "📊 Sales History" with:
 
-Add this BEFORE that line:
-
-  {/* ── SIDE DRAWER ── */}
-  {showSideDrawer && (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
-      {/* Backdrop */}
-      <div onClick={() => setShowSideDrawer(false)}
-        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} />
-      {/* Drawer */}
-      <div style={{ position: "absolute", top: 0, right: 0, width: "92%", maxWidth: 420, height: "100%", background: "#fff", display: "flex", flexDirection: "column", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)" }}>
         {/* Header */}
         <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: "#0F172A" }}>📊 Sales History</div>
@@ -193,152 +259,19 @@ Add this BEFORE that line:
             style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
         </div>
 
-        {/* Filter pills */}
-        <div style={{ display: "flex", gap: 6, padding: "10px 16px", borderBottom: "1px solid #F1F5F9" }}>
-          {[
-            { key: "today", label: "Today" },
-            { key: "week",  label: "This Week" },
-            { key: "month", label: "This Month" },
-            { key: "all",   label: "All Time" },
-          ].map(f => (
-            <button key={f.key} onClick={() => setSalesFilter(f.key)}
-              style={{ padding: "5px 12px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                       background: salesFilter === f.key ? "#6366F1" : "#F1F5F9",
-                       color: salesFilter === f.key ? "#fff" : "#64748B" }}>
-              {f.label}
-            </button>
-          ))}
-        </div>
+The sales history content is already inside the drawer — keep it exactly as is.
+Just make sure the drawer opens to full height and the sales list is scrollable.
 
-        {/* Sales list */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 40px" }}>
-          {salesHistoryLoading && <Spinner />}
+CHANGE 6 — Add 📊 button to detail view header
+Find the detail view header. It has a row with back button, customer name, and action buttons.
+Find the div that contains the "+ Deal" button and the 🗑 delete button.
+Add the 📊 button before the "+ Deal" button:
 
-          {!salesHistoryLoading && salesHistory.length === 0 && (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8" }}>No sales found</div>
-            </div>
-          )}
-
-          {/* Summary bar */}
-          {!salesHistoryLoading && salesHistory.length > 0 && (() => {
-            const total = salesHistory.reduce((s, x) => s + (Number(x.price) || 0), 0);
-            return (
-              <div style={{ padding: "10px 14px", background: "#ECFDF5", borderRadius: 12, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#059669" }}>{salesHistory.length} sales</span>
-                <span style={{ fontSize: 15, fontWeight: 800, color: "#059669" }}>AED {total.toLocaleString()}</span>
-              </div>
-            );
-          })()}
-
-          {!salesHistoryLoading && salesHistory.map((sale, i) => (
-            <div key={sale.id || i} style={{ background: "#F8FAFC", borderRadius: 14, padding: "12px 14px", marginBottom: 8, border: "1px solid #F1F5F9" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{sale.customerName}</div>
-                  <div style={{ fontSize: 12, color: "#64748B", marginTop: 1 }}>{sale.device}</div>
-                  {sale.specs ? <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{sale.specs}</div> : null}
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>AED {Number(sale.price).toLocaleString()}</div>
-                  <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>{sale.paymentMethod}</div>
-                </div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, fontWeight: 700,
-                    background: sale.type === "part" ? "#F5F3FF" : sale.type === "walkin" ? "#EFF6FF" : "#ECFDF5",
-                    color: sale.type === "part" ? "#7C3AED" : sale.type === "walkin" ? "#2563EB" : "#059669" }}>
-                    {sale.type === "part" ? "🔧 Part" : sale.type === "walkin" ? "⚡ Walk-in" : "💬 WhatsApp"}
-                  </span>
-                  <span style={{ fontSize: 10, color: "#CBD5E1" }}>
-                    {new Date(sale.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                  </span>
-                </div>
-                <button onClick={() => { setSaleReceiptData(sale); setReceiptEditName(sale.customerName || ""); setShowSaleReceipt(true); }}
-                  style={{ padding: "4px 12px", borderRadius: 8, border: "1.5px solid #6366F1", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  🧾 Receipt
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Bottom links */}
-        <div style={{ borderTop: "1px solid #F1F5F9", padding: "12px 16px" }}>
-          <button onClick={() => { setShowSideDrawer(false); setView("settings"); }}
-            style={{ width: "100%", padding: 11, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
-            ⚙️ Settings
-          </button>
-          <button onClick={handleLogout}
-            style={{ width: "100%", padding: 11, borderRadius: 10, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-            🚪 Sign Out
-          </button>
-        </div>
-      </div>
-    </div>
-  )}
-
-  {/* ── SALE RECEIPT MODAL ── */}
-  {showSaleReceipt && saleReceiptData && (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
-      <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🧾 Receipt</span>
-            <button onClick={() => setShowSaleReceipt(false)}
-              style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
-          </div>
-
-          {/* Editable customer name */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>CUSTOMER NAME</div>
-            <input value={receiptEditName} onChange={e => setReceiptEditName(e.target.value)}
-              placeholder="Customer name"
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-          </div>
-
-          {/* Receipt preview */}
-          <div style={{ background: "#F8FAFC", borderRadius: 14, padding: 16, fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#0F172A", whiteSpace: "pre-line", marginBottom: 16, border: "1px solid #E2E8F0" }}>
-            {buildSaleReceiptText(saleReceiptData, receiptEditName)}
-          </div>
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => navigator.clipboard.writeText(buildSaleReceiptText(saleReceiptData, receiptEditName))}
-              style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              📋 Copy
-            </button>
-            <button onClick={() => {
-              const text = buildSaleReceiptText(saleReceiptData, receiptEditName);
-              const number = saleReceiptData.customerNumber;
-              if (number) {
-                window.open(`https://wa.me/${number.replace(/\D/g,"")}?text=${encodeURIComponent(text)}`, "_blank");
-              } else {
-                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-              }
-            }}
-              style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              📱 WhatsApp
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )}
-
-CHANGE 6 — Add a hamburger menu button to open the side drawer.
-Find the top header area in the list view (the div that contains the settings button ⚙️ and the title "Contacts").
-Add this button next to the settings button:
-
-  <button onClick={() => { setShowSideDrawer(true); }}
-    style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>
+  <button onClick={() => setShowSideDrawer(true)}
+    style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", fontSize: 14, cursor: "pointer" }}>
     📊
   </button>
 
-Also add the same 📊 button in the detail view header area next to the existing ⚙️ settings button so it is accessible from client chats too.
-
-After all changes: npm run build, fix any ESLint errors,
-git add -A && git commit -m "feat: sales history side drawer with receipt generator" 
+After ALL changes: npm run build, fix any ESLint errors,
+git add -A && git commit -m "feat: reserve as primary action, edit reservation, receipt with deposit, sales history improvements" 
 && git push origin main --force
