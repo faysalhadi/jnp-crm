@@ -1,35 +1,5 @@
-Read src/App.js fully before making any changes.
+In src/App.js find the handleConfirmSale function and add this as the very first line inside it:
 
-The Confirm Sale button calls handleConfirmSale() which sets linkStockDeal and showLinkStock.
-The modal only renders when: showLinkStock && activeCustomer && linkStockDeal
+  alert('handleConfirmSale called, activeDeal: ' + JSON.stringify(activeDeal) + ' activeCustomer: ' + JSON.stringify(activeCustomer?.id));
 
-The bug: when activeDeal already exists, handleConfirmSale sets linkStockDeal(deal) then setShowLinkStock(true). But if loadCustomers() is called inside first, it is async and resets customers state, which recomputes activeDeal — this can cause a race condition where linkStockDeal is set to a stale or null value.
-
-Fix: replace the entire handleConfirmSale function with this simpler, race-condition-free version:
-
-  async function handleConfirmSale() {
-    if (activeDeal) {
-      setLinkStockDeal({ ...activeDeal });
-      setShowLinkStock(true);
-      return;
-    }
-    if (!activeCustomer?.id) return;
-    const { data: newD } = await supabase.from("deals").insert({
-      customer_id: activeCustomer.id,
-      stage: "new_inquiry",
-      brand: "", model: "",
-    }).select().single();
-    if (newD) {
-      setActiveDealId(newD.id);
-      setLinkStockDeal({ ...newD });
-      setShowLinkStock(true);
-      loadCustomers();
-    }
-  }
-
-Key changes:
-1. When activeDeal exists: spread it into a new object immediately, set it, open modal — NO async calls before opening
-2. When no deal exists: create it, set linkStockDeal directly from the returned data, THEN call loadCustomers() after opening the modal (non-blocking)
-3. loadCustomers() is moved to AFTER setShowLinkStock(true) so it cannot interfere
-
-After the fix: run npm run build, fix any ESLint errors, then git add -A && git commit -m "fix: handleConfirmSale race condition - set linkStockDeal synchronously" && git push origin main --force
+Then npm run build, git add -A && git commit -m "debug: add alert to handleConfirmSale" && git push origin main --force
