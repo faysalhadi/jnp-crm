@@ -1876,6 +1876,15 @@ export default function App() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptPaymentMethod, setReceiptPaymentMethod] = useState("Cash");
 
+  // ── side drawer / sales history ──
+  const [showSideDrawer,       setShowSideDrawer]       = useState(false);
+  const [salesHistory,         setSalesHistory]         = useState([]);
+  const [salesHistoryLoading,  setSalesHistoryLoading]  = useState(false);
+  const [salesFilter,          setSalesFilter]          = useState("month");
+  const [showSaleReceipt,      setShowSaleReceipt]      = useState(false);
+  const [saleReceiptData,      setSaleReceiptData]      = useState(null);
+  const [receiptEditName,      setReceiptEditName]      = useState("");
+
   // ── broadcast ──
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastItem, setBroadcastItem] = useState(null);
@@ -2009,6 +2018,79 @@ export default function App() {
       .gte("closed_at", monthStart.toISOString());
     setPartsRevMTD((data || []).reduce((s, d) => s + (Number(d.value) || 0), 0));
   }, []);
+
+  const loadSalesHistory = useCallback(async () => {
+    setSalesHistoryLoading(true);
+    const now = new Date();
+    let fromDate = null;
+    if (salesFilter === "today") {
+      fromDate = new Date(); fromDate.setHours(0,0,0,0);
+    } else if (salesFilter === "week") {
+      fromDate = new Date(now - 7 * 86400000);
+    } else if (salesFilter === "month") {
+      fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    const dealQuery = supabase.from("deals").select("*, customers(name, number)").eq("stage","closed").not("stock_item_id","is",null).order("closed_at",{ascending:false});
+    if (fromDate) dealQuery.gte("closed_at", fromDate.toISOString());
+    const { data: dealSales } = await dealQuery;
+
+    const walkinQuery = supabase.from("deals").select("*").eq("stage","closed").eq("sale_type","walkin").order("closed_at",{ascending:false});
+    if (fromDate) walkinQuery.gte("closed_at", fromDate.toISOString());
+    const { data: walkinSales } = await walkinQuery;
+
+    const partsQuery = supabase.from("parts_sales").select("*").order("sold_at",{ascending:false});
+    if (fromDate) partsQuery.gte("sold_at", fromDate.toISOString());
+    const { data: partsSalesData } = await partsQuery;
+
+    const stockIds = (dealSales || []).map(d => d.stock_item_id).filter(Boolean);
+    let stockMap = {};
+    if (stockIds.length) {
+      const { data: stockItems } = await supabase.from("stock").select("id,brand,model,processor,ram,ssd,condition,serial_number").in("id",stockIds);
+      (stockItems || []).forEach(s => { stockMap[s.id] = s; });
+    }
+
+    const combined = [];
+    (dealSales || []).forEach(d => {
+      const stock = stockMap[d.stock_item_id] || {};
+      combined.push({
+        id: d.id, type: "device", date: d.closed_at,
+        customerName: d.customers?.name || d.walk_in_name || "Walk-in Customer",
+        customerNumber: d.customers?.number || null,
+        device: [stock.brand, stock.model].filter(Boolean).join(" ") || "Device",
+        specs: [stock.ram, stock.ssd, stock.condition].filter(Boolean).join(" · "),
+        serialNumber: stock.serial_number || null,
+        price: d.value || 0, paymentMethod: d.payment_method || "Cash",
+        brand: stock.brand, model: stock.model, processor: stock.processor,
+        ram: stock.ram, ssd: stock.ssd, condition: stock.condition,
+      });
+    });
+    (walkinSales || []).forEach(d => {
+      if (d.stock_item_id) return;
+      combined.push({
+        id: d.id, type: "walkin", date: d.closed_at,
+        customerName: d.walk_in_name || "Walk-in Customer",
+        customerNumber: d.walk_in_number || null,
+        device: [d.brand, d.model].filter(Boolean).join(" ") || "Device",
+        specs: [d.ram, d.storage, d.condition].filter(Boolean).join(" · "),
+        serialNumber: null, price: d.value || 0, paymentMethod: d.payment_method || "Cash",
+        brand: d.brand, model: d.model, processor: null, ram: d.ram, ssd: d.storage, condition: d.condition,
+      });
+    });
+    (partsSalesData || []).forEach(p => {
+      combined.push({
+        id: p.id, type: "part", date: p.sold_at,
+        customerName: p.customer_name || "Walk-in Customer", customerNumber: null,
+        device: [p.category, p.specs].filter(Boolean).join(" — "),
+        specs: p.compatible_with || "", serialNumber: null,
+        price: p.total_revenue || 0, paymentMethod: p.payment_method || "Cash",
+        quantity: p.quantity_sold || 1,
+      });
+    });
+    combined.sort((a, b) => new Date(b.date) - new Date(a.date));
+    setSalesHistory(combined);
+    setSalesHistoryLoading(false);
+  }, [salesFilter]);
 
   const loadTodaySales = useCallback(async () => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -2531,6 +2613,10 @@ Return JSON with only a "reply" field containing the message.`;
       .order("sold_at", { ascending: false })
       .then(({ data }) => { setPartsSold(data || []); setPartsSoldLoading(false); });
   }, [stockFilter]);
+
+  useEffect(() => {
+    if (showSideDrawer) loadSalesHistory();
+  }, [salesFilter, showSideDrawer, loadSalesHistory]);
 
   useEffect(() => {
     if (stockFilter !== "sold") return;
@@ -3221,6 +3307,32 @@ For any issues please contact us on WhatsApp.
 ━━━━━━━━━━━━━━━━━━━━━━`;
   }
 
+  function buildSaleReceiptText(sale, nameOverride) {
+    const num = `LFL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const date = new Date(sale.date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    const customerName = nameOverride || sale.customerName || "Customer";
+    return `━━━━━━━━━━━━━━━━━━━━━━
+      LAPTOP FOR LESS
+      UAE | laptopforless.ae
+━━━━━━━━━━━━━━━━━━━━━━
+RECEIPT #: ${num}
+Date: ${date}
+
+SOLD TO:
+Name: ${customerName}${sale.customerNumber ? `\nContact: ${sale.customerNumber}` : ""}
+
+${sale.type === "part" ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nCompatible With: ${sale.specs}\n` : ""}Quantity: ${sale.quantity || 1}` :
+`DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`}
+
+PAYMENT:
+Amount: AED ${Number(sale.price).toLocaleString()}
+Method: ${sale.paymentMethod}
+
+Thank you for your purchase! 🙏
+For any issues contact us on WhatsApp.
+━━━━━━━━━━━━━━━━━━━━━━`;
+  }
+
   async function saveReceiptNumber(num) {
     if (activeDeal && !activeDeal.receipt_number) {
       await supabase.from("deals").update({ receipt_number: num, receipt_date: new Date().toISOString(), payment_method: receiptPaymentMethod }).eq("id", activeDealId);
@@ -3643,6 +3755,7 @@ For any issues please contact us on WhatsApp.
               </div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => setShowSideDrawer(true)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 14 }}>📊</button>
               <button onClick={() => setShowAddDeal(true)} style={{ padding: "6px 11px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, fontWeight: 700, color: "#6366F1", cursor: "pointer" }}>+ Deal</button>
               <button onClick={() => setShowDeleteConfirm(true)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", cursor: "pointer", fontSize: 14 }}>🗑</button>
             </div>
@@ -4236,6 +4349,7 @@ For any issues please contact us on WhatsApp.
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button onClick={() => setShowSideDrawer(true)} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>📊</button>
             <button onClick={() => setView("settings")} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>⚙️</button>
             {activeTab === "customers" && (
               <button onClick={() => { setContactModalPreType("client"); setShowContactModal(true); }}
@@ -5886,6 +6000,129 @@ For any issues please contact us on WhatsApp.
                   ))}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SIDE DRAWER ── */}
+      {showSideDrawer && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
+          <div onClick={() => setShowSideDrawer(false)}
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} />
+          <div style={{ position: "absolute", top: 0, right: 0, width: "92%", maxWidth: 420, height: "100%", background: "#fff", display: "flex", flexDirection: "column", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)" }}>
+            <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#0F172A" }}>📊 Sales History</div>
+              <button onClick={() => setShowSideDrawer(false)}
+                style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, padding: "10px 16px", borderBottom: "1px solid #F1F5F9" }}>
+              {[{key:"today",label:"Today"},{key:"week",label:"This Week"},{key:"month",label:"This Month"},{key:"all",label:"All Time"}].map(f => (
+                <button key={f.key} onClick={() => setSalesFilter(f.key)}
+                  style={{ padding: "5px 12px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                    background: salesFilter === f.key ? "#6366F1" : "#F1F5F9", color: salesFilter === f.key ? "#fff" : "#64748B" }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 40px" }}>
+              {salesHistoryLoading && <Spinner />}
+              {!salesHistoryLoading && salesHistory.length === 0 && (
+                <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8" }}>No sales found</div>
+                </div>
+              )}
+              {!salesHistoryLoading && salesHistory.length > 0 && (() => {
+                const total = salesHistory.reduce((s, x) => s + (Number(x.price) || 0), 0);
+                return (
+                  <div style={{ padding: "10px 14px", background: "#ECFDF5", borderRadius: 12, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#059669" }}>{salesHistory.length} sales</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#059669" }}>AED {total.toLocaleString()}</span>
+                  </div>
+                );
+              })()}
+              {!salesHistoryLoading && salesHistory.map((sale, i) => (
+                <div key={sale.id || i} style={{ background: "#F8FAFC", borderRadius: 14, padding: "12px 14px", marginBottom: 8, border: "1px solid #F1F5F9" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{sale.customerName}</div>
+                      <div style={{ fontSize: 12, color: "#64748B", marginTop: 1 }}>{sale.device}</div>
+                      {sale.specs ? <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{sale.specs}</div> : null}
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>AED {Number(sale.price).toLocaleString()}</div>
+                      <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>{sale.paymentMethod}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, fontWeight: 700,
+                        background: sale.type==="part"?"#F5F3FF":sale.type==="walkin"?"#EFF6FF":"#ECFDF5",
+                        color: sale.type==="part"?"#7C3AED":sale.type==="walkin"?"#2563EB":"#059669" }}>
+                        {sale.type==="part"?"🔧 Part":sale.type==="walkin"?"⚡ Walk-in":"💬 WhatsApp"}
+                      </span>
+                      <span style={{ fontSize: 10, color: "#CBD5E1" }}>
+                        {new Date(sale.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      </span>
+                    </div>
+                    <button onClick={() => { setSaleReceiptData(sale); setReceiptEditName(sale.customerName || ""); setShowSaleReceipt(true); }}
+                      style={{ padding: "4px 12px", borderRadius: 8, border: "1.5px solid #6366F1", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      🧾 Receipt
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ borderTop: "1px solid #F1F5F9", padding: "12px 16px" }}>
+              <button onClick={() => { setShowSideDrawer(false); setView("settings"); }}
+                style={{ width: "100%", padding: 11, borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
+                ⚙️ Settings
+              </button>
+              <button onClick={handleLogout}
+                style={{ width: "100%", padding: 11, borderRadius: 10, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                🚪 Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SALE RECEIPT MODAL ── */}
+      {showSaleReceipt && saleReceiptData && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🧾 Receipt</span>
+                <button onClick={() => setShowSaleReceipt(false)}
+                  style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>CUSTOMER NAME</div>
+                <input value={receiptEditName} onChange={e => setReceiptEditName(e.target.value)} placeholder="Customer name"
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ background: "#F8FAFC", borderRadius: 14, padding: 16, fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#0F172A", whiteSpace: "pre-line", marginBottom: 16, border: "1px solid #E2E8F0" }}>
+                {buildSaleReceiptText(saleReceiptData, receiptEditName)}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => navigator.clipboard.writeText(buildSaleReceiptText(saleReceiptData, receiptEditName))}
+                  style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                  📋 Copy
+                </button>
+                <button onClick={() => {
+                  const text = buildSaleReceiptText(saleReceiptData, receiptEditName);
+                  const number = saleReceiptData.customerNumber;
+                  window.open(`https://wa.me/${number ? number.replace(/\D/g,"") : ""}?text=${encodeURIComponent(text)}`, "_blank");
+                }}
+                  style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                  📱 WhatsApp
+                </button>
+              </div>
             </div>
           </div>
         </div>
