@@ -1,5 +1,13 @@
-In src/App.js find the handleConfirmSale function and add this as the very first line inside it:
+Read src/App.js fully.
 
-  alert('handleConfirmSale called, activeDeal: ' + JSON.stringify(activeDeal) + ' activeCustomer: ' + JSON.stringify(activeCustomer?.id));
+Find where LinkStockModal is rendered. It currently looks like:
+{showLinkStock && activeCustomer && linkStockDeal && (
+  <LinkStockModal ...
 
-Then npm run build, git add -A && git commit -m "debug: add alert to handleConfirmSale" && git push origin main --force
+Check which return() block it is inside — is it inside the detail view return or the list view return?
+
+If it is inside the list view return (the final return at the bottom), move it to ALSO exist inside the detail view return block, just before the closing </div> of the detail view return.
+
+Copy the exact same LinkStockModal JSX block and paste it inside the detail view return, just before the final closing tags of that return statement.
+
+After the fix: npm run build, fix ESLint errors, git add -A && git commit -m "fix: move LinkStockModal into detail view so it renders when chat is open" && git push origin main --force

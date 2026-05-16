@@ -4070,6 +4070,23 @@ For any issues please contact us on WhatsApp.
           </div>
         </div>
         </div>{/* end detail content wrapper */}
+
+        {/* ── LINK STOCK MODAL (inside detail view so it renders when chat is open) ── */}
+        {showLinkStock && activeCustomer && linkStockDeal && (
+          <LinkStockModal
+            customer={activeCustomer}
+            deal={linkStockDeal}
+            onClose={() => { setShowLinkStock(false); setLinkStockDeal(null); }}
+            onDone={() => {
+              setShowLinkStock(false);
+              setLinkStockDeal(null);
+              loadCustomers();
+              loadStock();
+              refreshCachedStock();
+              loadTodaySales();
+            }}
+          />
+        )}
       </div>
     );
   }
