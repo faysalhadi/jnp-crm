@@ -1,34 +1,35 @@
 Read src/App.js fully before making any changes.
 
-Find this broken button in the file — it is inside the chat detail view, inside the section marked with the comment "⚡ CONFIRM SALE — always visible above inputs":
+The Confirm Sale button calls handleConfirmSale() which sets linkStockDeal and showLinkStock.
+The modal only renders when: showLinkStock && activeCustomer && linkStockDeal
 
-The button currently looks like this (broken — missing its opening tag):
+The bug: when activeDeal already exists, handleConfirmSale sets linkStockDeal(deal) then setShowLinkStock(true). But if loadCustomers() is called inside first, it is async and resets customers state, which recomputes activeDeal — this can cause a race condition where linkStockDeal is set to a stale or null value.
 
-          <div style={{ marginBottom: 8 }}>
-            >
-              ⚡ Confirm Sale — Link Inventory
-            </button>
-          </div>
+Fix: replace the entire handleConfirmSale function with this simpler, race-condition-free version:
 
-Replace that entire div block with this fixed version:
+  async function handleConfirmSale() {
+    if (activeDeal) {
+      setLinkStockDeal({ ...activeDeal });
+      setShowLinkStock(true);
+      return;
+    }
+    if (!activeCustomer?.id) return;
+    const { data: newD } = await supabase.from("deals").insert({
+      customer_id: activeCustomer.id,
+      stage: "new_inquiry",
+      brand: "", model: "",
+    }).select().single();
+    if (newD) {
+      setActiveDealId(newD.id);
+      setLinkStockDeal({ ...newD });
+      setShowLinkStock(true);
+      loadCustomers();
+    }
+  }
 
-          <div style={{ marginBottom: 8 }}>
-            <button
-              onClick={handleConfirmSale}
-              style={{
-                width: "100%",
-                padding: "12px 16px",
-                borderRadius: 12,
-                border: "none",
-                background: "#6366F1",
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 800,
-                cursor: "pointer",
-              }}
-            >
-              ⚡ Confirm Sale — Link Inventory
-            </button>
-          </div>
+Key changes:
+1. When activeDeal exists: spread it into a new object immediately, set it, open modal — NO async calls before opening
+2. When no deal exists: create it, set linkStockDeal directly from the returned data, THEN call loadCustomers() after opening the modal (non-blocking)
+3. loadCustomers() is moved to AFTER setShowLinkStock(true) so it cannot interfere
 
-Do not change anything else. After the fix run npm run build, fix any ESLint errors, then git add -A && git commit -m "fix: restore missing button tag on Confirm Sale" && git push origin main --force
+After the fix: run npm run build, fix any ESLint errors, then git add -A && git commit -m "fix: handleConfirmSale race condition - set linkStockDeal synchronously" && git push origin main --force

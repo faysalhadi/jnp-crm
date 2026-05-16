@@ -2102,22 +2102,23 @@ export default function App() {
   }
 
   async function handleConfirmSale() {
-    let deal = activeDeal;
-    if (!deal && activeCustomer?.id) {
-      const { data: newD } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: "new_inquiry",
-        brand: "", model: "",
-      }).select().single();
-      if (newD) {
-        deal = newD;
-        setActiveDealId(newD.id);
-        await loadCustomers();
-      }
+    if (activeDeal) {
+      setLinkStockDeal({ ...activeDeal });
+      setShowLinkStock(true);
+      return;
     }
-    if (!deal) return;
-    setLinkStockDeal(deal);
-    setShowLinkStock(true);
+    if (!activeCustomer?.id) return;
+    const { data: newD } = await supabase.from("deals").insert({
+      customer_id: activeCustomer.id,
+      stage: "new_inquiry",
+      brand: "", model: "",
+    }).select().single();
+    if (newD) {
+      setActiveDealId(newD.id);
+      setLinkStockDeal({ ...newD });
+      setShowLinkStock(true);
+      loadCustomers();
+    }
   }
 
   async function moveStage(stageId) {
