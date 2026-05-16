@@ -1,43 +1,53 @@
-Fix the chat window so the owner can send multiple messages anytime, not just as replies to client messages.
+Read src/App.js fully before making any changes.
 
-THE PROBLEM:
-Currently after sending a reply the input disappears and owner cannot send another message until client sends something new. This is wrong.
+Fix the Confirm Sale button. Three exact changes needed:
 
-THE FIX:
+CHANGE 1 — Add handleConfirmSale function
+Find the ⚡ Confirm Sale button in the chat window (inside the detail view render). Its onClick currently does something like: setLinkStockDeal(activeDeal); setShowLinkStock(true);
 
-1. ALWAYS show the message input at the bottom of chat at all times regardless of conversation state. It never disappears.
+Replace that onClick with: onClick={handleConfirmSale}
 
-The bottom input area is always visible:
+Then add this function near the other async handler functions (near moveStage or sendDirectReply):
 
-[New message from client...] [+ Add]
-─────────────────────────────
-[Type your message...]  [Send]
+async function handleConfirmSale() {
+  let deal = activeDeal;
+  if (!deal && activeCustomer?.id) {
+    const { data: newD } = await supabase.from("deals").insert({
+      customer_id: activeCustomer.id,
+      stage: "new_inquiry",
+      brand: "", model: "",
+    }).select().single();
+    if (newD) {
+      deal = newD;
+      setActiveDealId(newD.id);
+      await loadCustomers();
+    }
+  }
+  if (!deal) return;
+  setLinkStockDeal(deal);
+  setShowLinkStock(true);
+}
 
-Two separate input rows always visible:
-- TOP ROW: for pasting incoming CLIENT messages
-- BOTTOM ROW: for typing YOUR OWN outgoing messages
+CHANGE 2 — Fix onDone callback on LinkStockModal
+Find where <LinkStockModal is rendered (inside the JSX, where showLinkStock === true).
+Change the onDone prop to:
 
-2. The [✏️ Reply Myself] [🤖 AI Reply] buttons appear after each unanswered client message as a convenience shortcut. But owner can ALSO just type in the bottom input and send anytime without using those buttons.
+onDone={() => {
+  setShowLinkStock(false);
+  setLinkStockDeal(null);
+  loadCustomers();
+  loadStock();
+  refreshCachedStock();
+  loadTodaySales();
+}}
 
-3. When owner types in bottom input and hits Send:
-- Saves as role=assistant sent=content
-- Shows on RIGHT side in purple
-- Does NOT require a pending client message
-- Can send multiple messages in a row
+CHANGE 3 — Guard against null deal inside LinkStockModal confirm()
+Inside the LinkStockModal component, find the confirm() async function.
+At the very top, after the check for !selItem, add:
 
-4. When AI Reply button is tapped on a specific client message:
-- App reads full conversation history
-- Generates reply
-- Shows in editable box above the bottom input
-- Send saves it, clears the generated reply box
+if (!deal?.id) {
+  alert("No active deal found. Please try again.");
+  return;
+}
 
-5. EMPTY CHAT STATE:
-Still show the two big buttons in center: I'll type first and AI opens conversation
-But ALSO show the two input rows at bottom so owner can start typing immediately
-
-The rule is simple:
-- TOP input row = paste what CLIENT sent you
-- BOTTOM input row = type what YOU want to send
-- Both always visible, always usable
-
-Run npm run build then git push.
+After all three changes: run npm run build, fix any ESLint errors, then git add -A && git commit -m "fix: Confirm Sale button - auto-create deal, refresh on done, null guard" && git push

@@ -712,6 +712,10 @@ function ConfirmSaleModal({ customer, deal, onClose, onDone, prefillDevice }) {
   const selPartCount = Object.keys(selPart).length;
 
   async function handleConfirm() {
+    if (!deal?.id) {
+      alert("No active deal found. Please try again.");
+      return;
+    }
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -1926,6 +1930,7 @@ export default function App() {
 
   // ── confirm sale ──
   const [showConfirmSale,      setShowConfirmSale]      = useState(false);
+  const [confirmSaleDeal,      setConfirmSaleDeal]      = useState(null); // deal snapshot for ConfirmSaleModal
   const [showConfirmSaleStock, setShowConfirmSaleStock] = useState(false);
   const [confirmSaleStockCtx,  setConfirmSaleStockCtx]  = useState(null); // { customer, deal, prefillDevice }
 
@@ -2207,6 +2212,25 @@ export default function App() {
     await updateCustomer({ tier: autoTier(updatedDeals) });
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
+  }
+
+  async function handleConfirmSale() {
+    let deal = activeDeal;
+    if (!deal && activeCustomer?.id) {
+      const { data: newD } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: "new_inquiry",
+        brand: "", model: "",
+      }).select().single();
+      if (newD) {
+        deal = newD;
+        setActiveDealId(newD.id);
+        await loadCustomers();
+      }
+    }
+    if (!deal) return;
+    setConfirmSaleDeal({ ...deal });
+    setShowConfirmSale(true);
   }
 
   async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
@@ -3824,7 +3848,7 @@ For any issues please contact us on WhatsApp.
 
             {/* ⚡ Confirm Sale — visible on all active deals */}
             {activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
-              <button onClick={() => setShowConfirmSale(true)}
+              <button onClick={handleConfirmSale}
                 style={{ marginTop: 6, width: "100%", padding: "11px 14px", borderRadius: 12, border: "none",
                           background: "#F59E0B", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer",
                           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -4132,12 +4156,20 @@ For any issues please contact us on WhatsApp.
         </div>{/* end detail content wrapper */}
 
         {/* ── ConfirmSaleModal inside detail view (early return can't reach main return) ── */}
-        {showConfirmSale && activeDeal && (
+        {showConfirmSale && (confirmSaleDeal || activeDeal) && (
           <ConfirmSaleModal
             customer={activeCustomer}
-            deal={activeDeal}
-            onClose={() => setShowConfirmSale(false)}
-            onDone={() => { setShowConfirmSale(false); loadStock(); loadCustomers(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); }}
+            deal={confirmSaleDeal || activeDeal}
+            onClose={() => { setShowConfirmSale(false); setConfirmSaleDeal(null); }}
+            onDone={() => {
+              setShowConfirmSale(false);
+              setConfirmSaleDeal(null);
+              loadCustomers();
+              loadStock();
+              refreshCachedStock();
+              loadTodaySales();
+              loadPartsRevMTD();
+            }}
           />
         )}
       </div>
