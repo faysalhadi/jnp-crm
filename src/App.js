@@ -2156,7 +2156,6 @@ export default function App() {
   }
 
   async function handleConfirmSale() {
-    alert('handleConfirmSale called, activeDeal: ' + JSON.stringify(activeDeal) + ' activeCustomer: ' + JSON.stringify(activeCustomer?.id));
     if (activeDeal) {
       setLinkStockDeal({ ...activeDeal });
       setShowLinkStock(true);

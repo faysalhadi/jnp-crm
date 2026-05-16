@@ -1,37 +1,9 @@
 Read src/App.js fully before making any changes.
 
-First remove the debug alert line from handleConfirmSale function 
-(the line that starts with: alert('handleConfirmSale called...)
+Find the handleConfirmSale function. Inside it, find and remove ONLY this one line:
 
-Then improve the LinkStockModal component with these changes:
+  alert('handleConfirmSale called, activeDeal: ' + JSON.stringify(activeDeal) + ' activeCustomer: ' + JSON.stringify(activeCustomer?.id));
 
-1. TABS AT TOP: Add two tabs at the top of the modal: "💻 Devices" and "🔧 Parts". 
-   Default to Devices tab. Clicking Parts tab shows parts, clicking Devices shows devices.
-   Style the active tab with purple background and white text, inactive with grey.
+Do not change anything else in the function. Do not change any other part of App.js.
 
-2. MULTI-SELECT DEVICES: Allow selecting multiple devices (not just one).
-   - Change selItem/selType state to an array: const [selItems, setSelItems] = useState([])
-   - Each device row shows a checkbox-style circle on the left
-   - Clicking a device toggles it in/out of selItems array
-   - Show a price input per selected device (use the device's max_price as default)
-   - Store prices in a separate state object: { [itemId]: price }
-
-3. MULTI-SELECT PARTS: Same multi-select for parts tab.
-   - Each part row shows quantity selector (default 1, max = part.quantity)
-   - Show price per selected part
-
-4. SUMMARY SECTION: Below the list show a summary of all selected items with 
-   total price and total profit.
-
-5. CONFIRM BUTTON: The confirm button text shows total:
-   "✅ Confirm Sale — AED {total}" 
-   Disabled if nothing selected.
-
-6. confirm() function: Loop through all selItems and:
-   - For each device: mark stock as sold, update deal
-   - For each part: reduce quantity, insert into parts_sales
-   - Close deal once at the end with total value = sum of all prices
-
-After changes: npm run build, fix any ESLint errors, 
-git add -A && git commit -m "feat: LinkStockModal multi-select devices and parts with tabs" 
-&& git push origin main --force
+After removing that one line: npm run build, fix any ESLint errors, git add -A && git commit -m "fix: remove debug alert from handleConfirmSale" && git push origin main --force
