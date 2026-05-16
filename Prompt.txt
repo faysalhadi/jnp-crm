@@ -1,227 +1,240 @@
 Read src/App.js fully before making any changes.
 
-CHANGE 1 — Fix Reserve Device button
-Find the Reserve Device button in the chat window input bar.
-Replace its onClick with a call to handleReserveDevice.
+BUG 1 FIX — Reservation not saving device status correctly
 
-Add this function near handleConfirmSale:
+Find the ReservationModal component's save() function.
+It currently updates stock using selectedItem.id.
+The problem is that when called from the client chat via handleReserveDevice,
+the selectedItem may not be getting saved correctly.
 
-  async function handleReserveDevice() {
-    let deal = activeDeal;
-    if (!deal && activeCustomer?.id) {
-      const { data: newD } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: "new_inquiry",
-        brand: "", model: "",
-      }).select().single();
-      if (newD) {
-        deal = newD;
-        setActiveDealId(newD.id);
-        loadCustomers();
-      }
-    }
-    if (!deal) return;
-    setLinkStockDeal({ ...deal });
-    setShowReservation(true);
+Add console.log debugging first — find the save() function inside 
+ReservationModal and add this at the very top:
+
+  console.log('Saving reservation:', { selectedItem, pickupDate, agreedNum, customer });
+
+Then find where ReservationModal is rendered in the detail view.
+Make sure the onDone callback is:
+
+  onDone={({ selectedItem, pickupDate, depositAmt, balanceDue }) => {
+    setShowReservation(false);
+    setLinkStockDeal(null);
+    loadStock();
+    loadCustomers();
+  }}
+
+Also find the ReservationModal save() function. 
+It currently does:
+  if (selectedItem) {
+    await supabase.from("stock").update({
+      status: "reserved",
+      reserved_for_customer_id: customer.id,
+      reserved_at: new Date().toISOString(),
+      pickup_date: pickupDate,
+    }).eq("id", selectedItem.id);
   }
 
-Find where ReservationModal is rendered. Make sure it is:
-  {showReservation && activeCustomer && linkStockDeal && (
-    <ReservationModal
-      customer={activeCustomer}
-      deal={linkStockDeal}
-      stock={stock}
-      onClose={() => { setShowReservation(false); setLinkStockDeal(null); }}
-      onDone={() => { setShowReservation(false); setLinkStockDeal(null); loadStock(); loadCustomers(); }}
-    />
+Make sure it also updates the sold_price field:
+  if (selectedItem) {
+    await supabase.from("stock").update({
+      status: "reserved",
+      reserved_for_customer_id: customer.id,
+      reserved_at: new Date().toISOString(),
+      pickup_date: pickupDate,
+      sold_price: agreedNum || null,
+    }).eq("id", selectedItem.id);
+  }
+
+And make sure the deals update includes stock_item_id:
+  await supabase.from("deals").update({
+    stage: "confirmed_pending_pickup",
+    value: agreedNum || undefined,
+    deposit_amount: depositAmt,
+    balance_due: balanceDue,
+    pickup_date: pickupDate,
+    reservation_notes: notes.trim() || null,
+    stock_item_id: selectedItem?.id || null,
+  }).eq("id", deal.id);
+
+BUG 2 FIX — Make Upgrade button visible without expanding card
+
+Find the stock card render in the devices view (stockView === "devices").
+The ⬆ Upgrade button is currently inside the expanded section 
+(only visible when isExpanded is true).
+
+Add a visible upgrade button directly on the card summary row 
+(always visible, not requiring expansion).
+
+Find the div that contains the toggle status button, broadcast button, 
+and delete button at the top right of each stock card.
+Add the upgrade button there for available items:
+
+  {isAvail && (
+    <button onClick={e => { 
+      e.stopPropagation(); 
+      setUpgradeTarget(item); 
+      setShowUpgrade(true); 
+    }}
+      style={{ padding: "3px 8px", borderRadius: 8, border: "1px solid #FDE68A", 
+               background: "#FFFBEB", color: "#D97706", fontSize: 10, 
+               cursor: "pointer", fontWeight: 700 }}>
+      ⬆
+    </button>
   )}
 
-Make sure this ReservationModal block exists in BOTH the detail view return 
-AND the list view return (same as how LinkStockModal was fixed before).
+BUG 3 FIX — Add Upgrade option inside LinkStockModal and ReservationModal
 
-CHANGE 2 — Replace side drawer with proper Sales History navigation
-Currently there is a showSideDrawer state and a side drawer component.
-Keep all that existing code but make these improvements:
+In LinkStockModal, find the ItemRow for devices.
+After a device is selected (selItem exists and selType === "device"),
+add an upgrade button below the agreed price section:
 
-Find the side drawer JSX. Currently it shows sales history inline inside the drawer.
-Replace the entire drawer content with this cleaner layout:
-
-The drawer should have TWO sections:
-
-SECTION A — Navigation menu items at the top:
-  - 📊 Sales History button (full width, purple, opens sales history view)
-  - ⚙️ Settings button (full width, grey)
-  - 🚪 Sign Out button (full width, red border)
-
-SECTION B — When user taps 📊 Sales History inside the drawer:
-  Close the drawer and set activeTab to "sales" 
-  (add "sales" as a new activeTab value)
-
-Add a new tab content block for activeTab === "sales":
-This shows the full sales history with:
-- Back button or it shows inside the main content area
-- Filter pills: Today / This Week / This Month / All Time  
-- Summary bar showing total sales count and total revenue
-- List of sale cards each with 🧾 Receipt button
-
-The sales tab should render in the main content area 
-(same as home, customers, stock tabs) NOT inside a drawer.
-
-Add "sales" handling to the bottom tab bar on mobile — 
-do NOT add a new tab button to the bottom bar (keep 6 tabs).
-The sales history is only accessible via the 📊 button in the drawer.
-
-Add the 📊 button to open the drawer in these places:
-1. List view top header — next to the ⚙️ settings button
-2. Detail view header — next to the ⚙️ settings button  
-3. Dashboard (home tab) — next to the ⚙️ settings button
-
-The drawer itself becomes a simple navigation menu:
-
-  {showSideDrawer && (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
-      <div onClick={() => setShowSideDrawer(false)}
-        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} />
-      <div style={{ position: "absolute", top: 0, right: 0, width: "75%", maxWidth: 300, height: "100%", background: "#fff", display: "flex", flexDirection: "column", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)" }}>
-        {/* Header */}
-        <div style={{ padding: "24px 20px 16px", borderBottom: "1px solid #F1F5F9" }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>JNP CRM</div>
-          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>Laptop for Less</div>
-        </div>
-        {/* Menu items */}
-        <div style={{ flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <button onClick={() => { setShowSideDrawer(false); setActiveTab("sales"); }}
-            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
-            📊 Sales History
-          </button>
-          <button onClick={() => { setShowSideDrawer(false); setView("settings"); }}
-            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
-            ⚙️ Settings
-          </button>
-        </div>
-        {/* Sign out at bottom */}
-        <div style={{ padding: "16px 20px", borderTop: "1px solid #F1F5F9" }}>
-          <button onClick={handleLogout}
-            style={{ width: "100%", padding: "11px 16px", borderRadius: 12, border: "1.5px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
-            🚪 Sign Out
-          </button>
-        </div>
-      </div>
-    </div>
-  )}
-
-CHANGE 3 — Add Sales History tab content
-Add this block in the main content area alongside other tab blocks 
-(after the ask claude tab block, before the sourcing tab block):
-
-  {activeTab === "sales" && (
-    <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 32px 40px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A" }}>📊 Sales History</div>
-      </div>
-
-      {/* Filter pills */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {[
-          { key: "today", label: "Today" },
-          { key: "week",  label: "This Week" },
-          { key: "month", label: "This Month" },
-          { key: "all",   label: "All Time" },
-        ].map(f => (
-          <button key={f.key} onClick={() => setSalesFilter(f.key)}
-            style={{ padding: "6px 16px", borderRadius: 20, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                     background: salesFilter === f.key ? "#6366F1" : "#F1F5F9",
-                     color: salesFilter === f.key ? "#fff" : "#64748B" }}>
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Summary bar */}
-      {!salesHistoryLoading && salesHistory.length > 0 && (() => {
-        const total = salesHistory.reduce((s, x) => s + (Number(x.price) || 0), 0);
-        const devices = salesHistory.filter(s => s.type !== "part").length;
-        const parts = salesHistory.filter(s => s.type === "part").length;
-        return (
-          <div style={{ padding: "12px 16px", background: "#ECFDF5", borderRadius: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: "#059669" }}>AED {total.toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: "#10B981", marginTop: 2 }}>
-                {salesHistory.length} sales · {devices} devices · {parts} parts
+  {selItem && selType === "device" && (() => {
+    const curRam = parseGB(selItem.ram);
+    const curSsd = parseGB(selItem.ssd);
+    const ramOpts = [8,16,32,64].filter(g => g > curRam);
+    const ssdOpts = [256,512,1024,2048].filter(g => g > curSsd);
+    if (ramOpts.length === 0 && ssdOpts.length === 0) return null;
+    return (
+      <div style={{ padding: "10px 14px", background: "#FFFBEB", borderRadius: 12, border: "1px solid #FDE68A" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#D97706", marginBottom: 8 }}>⬆ SPEC UPGRADE (OPTIONAL)</div>
+        {ramOpts.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, marginBottom: 4 }}>RAM UPGRADE</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button onClick={() => {
+                setUpgradeRam(null);
+                setAgreedPrice(String(selItem.max_price || ""));
+              }}
+                style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${!upgradeRam ? "#F59E0B" : "#E2E8F0"}`,
+                         background: !upgradeRam ? "#F59E0B" : "#fff", color: !upgradeRam ? "#fff" : "#64748B",
+                         fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                {labelGB(curRam) || "Current"}
+              </button>
+              {ramOpts.map(gb => (
+                <button key={gb} onClick={() => {
+                  setUpgradeRam(gb);
+                  const ssdAdd = upgradeSsd ? (Number(upgradeSsdPrice) || 0) : 0;
+                  setAgreedPrice(String((Number(selItem.max_price) || 0) + (Number(upgradeRamPrice) || 0) + ssdAdd));
+                }}
+                  style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${upgradeRam === gb ? "#F59E0B" : "#E2E8F0"}`,
+                           background: upgradeRam === gb ? "#F59E0B" : "#fff", color: upgradeRam === gb ? "#fff" : "#64748B",
+                           fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  {labelGB(gb)}
+                </button>
+              ))}
+            </div>
+            {upgradeRam && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <span style={{ fontSize: 11, color: "#D97706" }}>+AED</span>
+                <input type="number" placeholder="upgrade price" value={upgradeRamPrice}
+                  onChange={e => {
+                    setUpgradeRamPrice(e.target.value);
+                    const ssdAdd = upgradeSsd ? (Number(upgradeSsdPrice) || 0) : 0;
+                    setAgreedPrice(String((Number(selItem.max_price) || 0) + (Number(e.target.value) || 0) + ssdAdd));
+                  }}
+                  style={{ width: 100, padding: "5px 8px", borderRadius: 8, border: "1.5px solid #FDE68A",
+                           fontSize: 13, fontWeight: 700, outline: "none", color: "#D97706" }} />
               </div>
-            </div>
+            )}
           </div>
-        );
-      })()}
-
-      {salesHistoryLoading && <Spinner />}
-
-      {!salesHistoryLoading && salesHistory.length === 0 && (
-        <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>📊</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No sales found</div>
-          <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>Try a different time filter</div>
-        </div>
-      )}
-
-      {!salesHistoryLoading && salesHistory.map((sale, i) => (
-        <div key={sale.id || i} style={{ background: "#fff", borderRadius: 16, padding: "14px 16px", border: "1.5px solid #F1F5F9", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{sale.customerName}</div>
-              <div style={{ fontSize: 13, color: "#475569", marginTop: 2, fontWeight: 600 }}>{sale.device}</div>
-              {sale.specs ? <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{sale.specs}</div> : null}
+        )}
+        {ssdOpts.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, marginBottom: 4 }}>STORAGE UPGRADE</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button onClick={() => {
+                setUpgradeSsd(null);
+                const ramAdd = upgradeRam ? (Number(upgradeRamPrice) || 0) : 0;
+                setAgreedPrice(String((Number(selItem.max_price) || 0) + ramAdd));
+              }}
+                style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${!upgradeSsd ? "#F59E0B" : "#E2E8F0"}`,
+                         background: !upgradeSsd ? "#F59E0B" : "#fff", color: !upgradeSsd ? "#fff" : "#64748B",
+                         fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                {labelGB(curSsd) || "Current"}
+              </button>
+              {ssdOpts.map(gb => (
+                <button key={gb} onClick={() => {
+                  setUpgradeSsd(gb);
+                  const ramAdd = upgradeRam ? (Number(upgradeRamPrice) || 0) : 0;
+                  setAgreedPrice(String((Number(selItem.max_price) || 0) + ramAdd + (Number(upgradeSsdPrice) || 0)));
+                }}
+                  style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${upgradeSsd === gb ? "#F59E0B" : "#E2E8F0"}`,
+                           background: upgradeSsd === gb ? "#F59E0B" : "#fff", color: upgradeSsd === gb ? "#fff" : "#64748B",
+                           fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  {labelGB(gb)}
+                </button>
+              ))}
             </div>
-            <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: "#6366F1" }}>AED {Number(sale.price).toLocaleString()}</div>
-              {sale.depositAmount > 0 && (
-                <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700, marginTop: 2 }}>
-                  Deposit: AED {Number(sale.depositAmount).toLocaleString()}
-                </div>
-              )}
-            </div>
+            {upgradeSsd && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <span style={{ fontSize: 11, color: "#D97706" }}>+AED</span>
+                <input type="number" placeholder="upgrade price" value={upgradeSsdPrice}
+                  onChange={e => {
+                    setUpgradeSsdPrice(e.target.value);
+                    const ramAdd = upgradeRam ? (Number(upgradeRamPrice) || 0) : 0;
+                    setAgreedPrice(String((Number(selItem.max_price) || 0) + ramAdd + (Number(e.target.value) || 0)));
+                  }}
+                  style={{ width: 100, padding: "5px 8px", borderRadius: 8, border: "1.5px solid #FDE68A",
+                           fontSize: 13, fontWeight: 700, outline: "none", color: "#D97706" }} />
+              </div>
+            )}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, fontWeight: 700,
-                background: sale.type === "part" ? "#F5F3FF" : sale.type === "walkin" ? "#EFF6FF" : "#ECFDF5",
-                color: sale.type === "part" ? "#7C3AED" : sale.type === "walkin" ? "#2563EB" : "#059669" }}>
-                {sale.type === "part" ? "🔧 Part" : sale.type === "walkin" ? "⚡ Walk-in" : "💬 WhatsApp"}
-              </span>
-              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, fontWeight: 700,
-                background: "#F1F5F9", color: "#64748B" }}>
-                {sale.paymentMethod}
-              </span>
-              <span style={{ fontSize: 10, color: "#CBD5E1" }}>
-                {new Date(sale.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-              </span>
-            </div>
-            <button onClick={() => { 
-              setSaleReceiptData(sale); 
-              setReceiptEditName(sale.customerName || ""); 
-              setShowSaleReceipt(true); 
-            }}
-              style={{ padding: "5px 14px", borderRadius: 8, border: "1.5px solid #6366F1", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-              🧾 Receipt
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
+        )}
+      </div>
+    );
+  })()}
 
-CHANGE 4 — Load sales history when sales tab is active
-Find the existing useEffect for loadSalesHistory:
-  useEffect(() => {
-    if (showSideDrawer) loadSalesHistory();
-  }, [salesFilter, showSideDrawer, loadSalesHistory]);
+Add these state variables inside LinkStockModal (near other useState):
+  const [upgradeRam, setUpgradeRam] = useState(null);
+  const [upgradeRamPrice, setUpgradeRamPrice] = useState("");
+  const [upgradeSsd, setUpgradeSsd] = useState(null);
+  const [upgradeSsdPrice, setUpgradeSsdPrice] = useState("");
 
-Replace it with:
-  useEffect(() => {
-    if (activeTab === "sales") loadSalesHistory();
-  }, [salesFilter, activeTab, loadSalesHistory]);
+Reset upgrade state when a new device is selected — update selectDevice():
+  function selectDevice(item) {
+    setSelType("device"); setSelItem(item);
+    setAgreedPrice(String(item.max_price || ""));
+    setUpgradeRam(null); setUpgradeRamPrice("");
+    setUpgradeSsd(null); setUpgradeSsdPrice("");
+  }
+
+Update the confirm() function in LinkStockModal.
+After marking stock as sold, if upgradeRam or upgradeSsd is selected,
+permanently update the stock specs:
+
+  if (selType === "device" && (upgradeRam || upgradeSsd)) {
+    const specUpdate = {};
+    if (upgradeRam) specUpdate.ram = labelGB(upgradeRam);
+    if (upgradeSsd) specUpdate.ssd = labelGB(upgradeSsd);
+    await supabase.from("stock").update(specUpdate).eq("id", selItem.id);
+  }
+
+Add the same upgrade section inside ReservationModal after the agreed price section.
+Use the same pattern — upgradeRam, upgradeSsd state, price inputs,
+and update stock specs permanently when reservation is saved.
+
+Add these state variables inside ReservationModal:
+  const [upgradeRam, setUpgradeRam] = useState(null);
+  const [upgradeRamPrice, setUpgradeRamPrice] = useState("");
+  const [upgradeSsd, setUpgradeSsd] = useState(null);
+  const [upgradeSsdPrice, setUpgradeSsdPrice] = useState("");
+
+Update selectDevice in ReservationModal to reset upgrade state:
+  function selectDevice(item) {
+    setSelectedItem(item);
+    setAgreedPrice(String(item.max_price || ""));
+    setUpgradeRam(null); setUpgradeRamPrice("");
+    setUpgradeSsd(null); setUpgradeSsdPrice("");
+  }
+
+In ReservationModal save() function, after updating stock status,
+add the spec update if upgrade was selected:
+  if (selectedItem && (upgradeRam || upgradeSsd)) {
+    const specUpdate = {};
+    if (upgradeRam) specUpdate.ram = labelGB(upgradeRam);
+    if (upgradeSsd) specUpdate.ssd = labelGB(upgradeSsd);
+    await supabase.from("stock").update(specUpdate).eq("id", selectedItem.id);
+  }
 
 After ALL changes: npm run build, fix any ESLint errors,
-git add -A && git commit -m "feat: sales history as full tab, side drawer as menu, fix reserve button" 
+git add -A && git commit -m "fix: reserved tab not showing, upgrade button visible, upgrade in confirm and reserve modals" 
 && git push origin main --force

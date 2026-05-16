@@ -664,7 +664,11 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
   const [selItems,   setSelItems]   = useState([]);   // array of selected item objects
   const [prices,     setPrices]     = useState({});   // { [id]: price string }
   const [quantities, setQuantities] = useState({});   // { [id]: qty number } for parts
-  const [saving,     setSaving]     = useState(false);
+  const [saving,         setSaving]         = useState(false);
+  const [upgradeRam,     setUpgradeRam]     = useState(null);
+  const [upgradeRamPrice,setUpgradeRamPrice]= useState("");
+  const [upgradeSsd,     setUpgradeSsd]     = useState(null);
+  const [upgradeSsdPrice,setUpgradeSsdPrice]= useState("");
 
   useEffect(() => {
     Promise.all([
@@ -728,6 +732,12 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
           sold_at: now,
           sold_to_customer_id: customer?.id || null,
         }).eq("id", item.id);
+        if (upgradeRam || upgradeSsd) {
+          const specUpdate = {};
+          if (upgradeRam) specUpdate.ram = labelGB(upgradeRam);
+          if (upgradeSsd) specUpdate.ssd = labelGB(upgradeSsd);
+          await supabase.from("stock").update(specUpdate).eq("id", item.id);
+        }
       }
 
       for (const item of selParts) {
@@ -838,12 +848,57 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
                                 <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>AED {Number(d.max_price || 0).toLocaleString()}</div>
                               </div>
                               {sel && (
+                                <>
                                 <div style={{ padding: "0 12px 10px", display: "flex", alignItems: "center", gap: 8 }}>
                                   <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Sale price: AED</span>
                                   <input type="number" value={prices[d.id] || ""} onChange={e => setPrices(p => ({ ...p, [d.id]: e.target.value }))}
                                     onClick={e => e.stopPropagation()}
                                     style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #C7D2FE", fontSize: 14, fontWeight: 800, outline: "none", color: "#6366F1" }} />
                                 </div>
+                                {(() => {
+                                  const curRam = parseGB(d.ram); const curSsd = parseGB(d.ssd);
+                                  const ramOpts = [8,16,32,64].filter(g => g > curRam);
+                                  const ssdOpts = [256,512,1024,2048].filter(g => g > curSsd);
+                                  if (ramOpts.length === 0 && ssdOpts.length === 0) return null;
+                                  return (
+                                    <div style={{ margin: "0 12px 10px", padding: "10px 12px", background: "#FFFBEB", borderRadius: 10, border: "1px solid #FDE68A" }} onClick={e => e.stopPropagation()}>
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", marginBottom: 6 }}>⬆ SPEC UPGRADE</div>
+                                      {ramOpts.length > 0 && (
+                                        <div style={{ marginBottom: 6 }}>
+                                          <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700, marginBottom: 3 }}>RAM</div>
+                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                            <button onClick={() => { setUpgradeRam(null); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0)) })); }}
+                                              style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${!upgradeRam?"#F59E0B":"#E2E8F0"}`, background: !upgradeRam?"#F59E0B":"#fff", color: !upgradeRam?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(curRam)||"Cur"}</button>
+                                            {ramOpts.map(gb => (
+                                              <button key={gb} onClick={() => { setUpgradeRam(gb); }}
+                                                style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${upgradeRam===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeRam===gb?"#F59E0B":"#fff", color: upgradeRam===gb?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(gb)}</button>
+                                            ))}
+                                            {upgradeRam && <input type="number" placeholder="+AED" value={upgradeRamPrice}
+                                              onChange={e => { setUpgradeRamPrice(e.target.value); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(Number(e.target.value)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0)) })); }}
+                                              style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1px solid #FDE68A", fontSize: 11, outline: "none", color: "#D97706" }} />}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {ssdOpts.length > 0 && (
+                                        <div>
+                                          <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700, marginBottom: 3 }}>STORAGE</div>
+                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                            <button onClick={() => { setUpgradeSsd(null); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)) })); }}
+                                              style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${!upgradeSsd?"#F59E0B":"#E2E8F0"}`, background: !upgradeSsd?"#F59E0B":"#fff", color: !upgradeSsd?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(curSsd)||"Cur"}</button>
+                                            {ssdOpts.map(gb => (
+                                              <button key={gb} onClick={() => { setUpgradeSsd(gb); }}
+                                                style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${upgradeSsd===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeSsd===gb?"#F59E0B":"#fff", color: upgradeSsd===gb?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(gb)}</button>
+                                            ))}
+                                            {upgradeSsd && <input type="number" placeholder="+AED" value={upgradeSsdPrice}
+                                              onChange={e => { setUpgradeSsdPrice(e.target.value); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)+(Number(e.target.value)||0)) })); }}
+                                              style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1px solid #FDE68A", fontSize: 11, outline: "none", color: "#D97706" }} />}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                                </>
                               )}
                             </div>
                           );
@@ -1134,6 +1189,10 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
   const [depositAmount, setDepositAmount] = useState("");
   const [notes,         setNotes]         = useState("");
   const [saving,        setSaving]        = useState(false);
+  const [upgradeRam,    setUpgradeRam]    = useState(null);
+  const [upgradeRamPrice, setUpgradeRamPrice] = useState("");
+  const [upgradeSsd,    setUpgradeSsd]    = useState(null);
+  const [upgradeSsdPrice, setUpgradeSsdPrice] = useState("");
 
   const available = stock.filter(s => s.status === "available");
   const brandMatch = deal?.brand ?
@@ -1154,6 +1213,8 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
   function selectDevice(item) {
     setSelectedItem(item);
     setAgreedPrice(String(item.max_price || ""));
+    setUpgradeRam(null); setUpgradeRamPrice("");
+    setUpgradeSsd(null); setUpgradeSsdPrice("");
   }
 
   const agreedNum   = Number(agreedPrice) || 0;
@@ -1168,6 +1229,7 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
 
   async function save() {
     if (!pickupDate) { alert("Pickup date is required"); return; }
+    console.log('Saving reservation:', { selectedItem, pickupDate, agreedNum, customer });
     setSaving(true);
     try {
       if (selectedItem) {
@@ -1176,7 +1238,14 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
           reserved_for_customer_id: customer.id,
           reserved_at: new Date().toISOString(),
           pickup_date: pickupDate,
+          sold_price: agreedNum || null,
         }).eq("id", selectedItem.id);
+        if (upgradeRam || upgradeSsd) {
+          const specUpdate = {};
+          if (upgradeRam) specUpdate.ram = labelGB(upgradeRam);
+          if (upgradeSsd) specUpdate.ssd = labelGB(upgradeSsd);
+          await supabase.from("stock").update(specUpdate).eq("id", selectedItem.id);
+        }
       }
       await supabase.from("deals").update({
         stage:              "confirmed_pending_pickup",
@@ -1185,6 +1254,7 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
         balance_due:        balanceDue,
         pickup_date:        pickupDate,
         reservation_notes:  notes.trim() || null,
+        stock_item_id:      selectedItem?.id || null,
       }).eq("id", deal.id);
 
       onDone({ selectedItem, pickupDate, depositAmt, balanceDue });
@@ -1271,6 +1341,70 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
                 </div>
               </div>
             )}
+
+            {/* 2b. Spec upgrade (optional) */}
+            {selectedItem && (() => {
+              const curRam = parseGB(selectedItem.ram);
+              const curSsd = parseGB(selectedItem.ssd);
+              const ramOpts = [8,16,32,64].filter(g => g > curRam);
+              const ssdOpts = [256,512,1024,2048].filter(g => g > curSsd);
+              if (ramOpts.length === 0 && ssdOpts.length === 0) return null;
+              return (
+                <div style={{ padding: "10px 14px", background: "#FFFBEB", borderRadius: 12, border: "1px solid #FDE68A" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#D97706", marginBottom: 8 }}>⬆ SPEC UPGRADE (OPTIONAL)</div>
+                  {ramOpts.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, marginBottom: 4 }}>RAM UPGRADE</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button onClick={() => { setUpgradeRam(null); setAgreedPrice(String((Number(selectedItem.max_price)||0) + (upgradeSsd?(Number(upgradeSsdPrice)||0):0))); }}
+                          style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${!upgradeRam?"#F59E0B":"#E2E8F0"}`, background: !upgradeRam?"#F59E0B":"#fff", color: !upgradeRam?"#fff":"#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          {labelGB(curRam)||"Current"}
+                        </button>
+                        {ramOpts.map(gb => (
+                          <button key={gb} onClick={() => { setUpgradeRam(gb); setAgreedPrice(String((Number(selectedItem.max_price)||0)+(Number(upgradeRamPrice)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0))); }}
+                            style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${upgradeRam===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeRam===gb?"#F59E0B":"#fff", color: upgradeRam===gb?"#fff":"#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            {labelGB(gb)}
+                          </button>
+                        ))}
+                      </div>
+                      {upgradeRam && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                          <span style={{ fontSize: 11, color: "#D97706" }}>+AED</span>
+                          <input type="number" placeholder="upgrade price" value={upgradeRamPrice}
+                            onChange={e => { setUpgradeRamPrice(e.target.value); setAgreedPrice(String((Number(selectedItem.max_price)||0)+(Number(e.target.value)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0))); }}
+                            style={{ width: 100, padding: "5px 8px", borderRadius: 8, border: "1.5px solid #FDE68A", fontSize: 13, fontWeight: 700, outline: "none", color: "#D97706" }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {ssdOpts.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, marginBottom: 4 }}>STORAGE UPGRADE</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button onClick={() => { setUpgradeSsd(null); setAgreedPrice(String((Number(selectedItem.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0))); }}
+                          style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${!upgradeSsd?"#F59E0B":"#E2E8F0"}`, background: !upgradeSsd?"#F59E0B":"#fff", color: !upgradeSsd?"#fff":"#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          {labelGB(curSsd)||"Current"}
+                        </button>
+                        {ssdOpts.map(gb => (
+                          <button key={gb} onClick={() => { setUpgradeSsd(gb); setAgreedPrice(String((Number(selectedItem.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)+(Number(upgradeSsdPrice)||0))); }}
+                            style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${upgradeSsd===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeSsd===gb?"#F59E0B":"#fff", color: upgradeSsd===gb?"#fff":"#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            {labelGB(gb)}
+                          </button>
+                        ))}
+                      </div>
+                      {upgradeSsd && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                          <span style={{ fontSize: 11, color: "#D97706" }}>+AED</span>
+                          <input type="number" placeholder="upgrade price" value={upgradeSsdPrice}
+                            onChange={e => { setUpgradeSsdPrice(e.target.value); setAgreedPrice(String((Number(selectedItem.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)+(Number(e.target.value)||0))); }}
+                            style={{ width: 100, padding: "5px 8px", borderRadius: 8, border: "1.5px solid #FDE68A", fontSize: 13, fontWeight: 700, outline: "none", color: "#D97706" }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 3. Pickup date */}
             <div>
@@ -4327,7 +4461,12 @@ For any issues contact us on WhatsApp.
             deal={linkStockDeal}
             stock={stock}
             onClose={() => { setShowReservation(false); setLinkStockDeal(null); }}
-            onDone={() => { setShowReservation(false); setLinkStockDeal(null); loadStock(); loadCustomers(); }}
+            onDone={({ selectedItem, pickupDate, depositAmt, balanceDue }) => {
+              setShowReservation(false);
+              setLinkStockDeal(null);
+              loadStock();
+              loadCustomers();
+            }}
           />
         )}
       </div>
@@ -5152,6 +5291,12 @@ For any issues contact us on WhatsApp.
                         <button onClick={e => { e.stopPropagation(); openBroadcast(item); }}
                           style={{ padding: "3px 8px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 10, cursor: "pointer", fontWeight: 700 }}>
                           📢
+                        </button>
+                      )}
+                      {isAvail && (
+                        <button onClick={e => { e.stopPropagation(); setUpgradeTarget(item); setShowUpgrade(true); }}
+                          style={{ padding: "3px 8px", borderRadius: 8, border: "1px solid #FDE68A", background: "#FFFBEB", color: "#D97706", fontSize: 10, cursor: "pointer", fontWeight: 700 }}>
+                          ⬆
                         </button>
                       )}
                       <button onClick={e => { e.stopPropagation(); if (window.confirm(`Delete ${[item.brand, item.model].filter(Boolean).join(" ") || "this item"}?`)) deleteStockItem(item.id); }}
@@ -6016,7 +6161,12 @@ For any issues contact us on WhatsApp.
           deal={linkStockDeal}
           stock={stock}
           onClose={() => { setShowReservation(false); setLinkStockDeal(null); }}
-          onDone={() => { setShowReservation(false); setLinkStockDeal(null); loadStock(); loadCustomers(); }}
+          onDone={({ selectedItem, pickupDate, depositAmt, balanceDue }) => {
+            setShowReservation(false);
+            setLinkStockDeal(null);
+            loadStock();
+            loadCustomers();
+          }}
         />
       )}
 
