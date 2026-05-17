@@ -1,284 +1,255 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 8 — the final step.
-Extract custom hooks to clean up App.js.
+This is refactor step 7f. Extract ChatDetailView component.
 Do NOT change any logic.
 
-STEP 8A — Create src/hooks/useTraders.js
+IMPORTANT: File MUST have "import React from 'react';" 
+as the very first import.
 
-Create a new file src/hooks/useTraders.js
-
-Add these at the top:
-  import { useState, useCallback } from "react";
-  import { supabase } from "../supabase";
-  import { cleanWhatsAppText } from "../utils/helpers";
-
-Find these in App.js and move them to the hook:
-  - traderListings state
-  - traderListingsLoading state
-  - traderSection state
-  - traderSearch state
-  - traderFilter state
-  - showImportTrader state
-  - traderGroup state
-  - traderChatText state
-  - traderImportLoading state
-  - traderImportPreview state
-  - savingTraderListings state
-  - traderImportResult state
-  - showTraderMatches state
-  - showCheckTraders state
-  - checkTradersResults state
-  - checkTradersLoading state
-  - loadTraderListings (useCallback)
-  - extractTraderListings (async function)
-  - saveTraderListings (async function)
-  - checkTradersForDeal (async function)
-
-  export function useTraders(anthropicKey, activeDeal) {
-    const [traderListings, setTraderListings] = useState([]);
-    const [traderListingsLoading, setTraderListingsLoading] = useState(false);
-    const [traderSection, setTraderSection] = useState("inventory");
-    const [traderSearch, setTraderSearch] = useState("");
-    const [traderFilter, setTraderFilter] = useState("all");
-    const [showImportTrader, setShowImportTrader] = useState(false);
-    const [traderGroup, setTraderGroup] = useState("");
-    const [traderChatText, setTraderChatText] = useState("");
-    const [traderImportLoading, setTraderImportLoading] = useState(false);
-    const [traderImportPreview, setTraderImportPreview] = useState(null);
-    const [savingTraderListings, setSavingTraderListings] = useState(false);
-    const [traderImportResult, setTraderImportResult] = useState(null);
-    const [showTraderMatches, setShowTraderMatches] = useState(false);
-    const [showCheckTraders, setShowCheckTraders] = useState(false);
-    const [checkTradersResults, setCheckTradersResults] = useState([]);
-    const [checkTradersLoading, setCheckTradersLoading] = useState(false);
-
-    const loadTraderListings = useCallback(async () => {
-      // exact same code
-    }, []);
-
-    async function extractTraderListings() {
-      // exact same code
-    }
-
-    async function saveTraderListings() {
-      // exact same code
-    }
-
-    async function checkTradersForDeal() {
-      // exact same code
-    }
-
-    return {
-      traderListings, setTraderListings,
-      traderListingsLoading,
-      traderSection, setTraderSection,
-      traderSearch, setTraderSearch,
-      traderFilter, setTraderFilter,
-      showImportTrader, setShowImportTrader,
-      traderGroup, setTraderGroup,
-      traderChatText, setTraderChatText,
-      traderImportLoading, setTraderImportLoading,
-      traderImportPreview, setTraderImportPreview,
-      savingTraderListings, setSavingTraderListings,
-      traderImportResult, setTraderImportResult,
-      showTraderMatches, setShowTraderMatches,
-      showCheckTraders, setShowCheckTraders,
-      checkTradersResults, setCheckTradersResults,
-      checkTradersLoading, setCheckTradersLoading,
-      loadTraderListings,
-      extractTraderListings,
-      saveTraderListings,
-      checkTradersForDeal,
-    };
-  }
-
-STEP 8B — Create src/hooks/useBroadcast.js
-
-Create a new file src/hooks/useBroadcast.js
+Create src/components/chat/ChatDetailView.js
 
 Add these at the top:
-  import { useState } from "react";
-  import { callClaude } from "../utils/claude";
+  import React, { useState } from "react";
+  import { supabase } from "../../supabase";
+  import Badge from "../ui/Badge";
+  import StageBar from "../ui/StageBar";
+  import Spinner from "../ui/Spinner";
+  import LinkStockModal from "../modals/LinkStockModal";
+  import ReservationModal from "../modals/ReservationModal";
+  import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS } from "../../constants";
+  import { daysSince, timeAgo } from "../../utils/helpers";
 
-Find these in App.js and move them:
-  - showBroadcast state
-  - broadcastItem state
-  - broadcastClients state
-  - broadcastSelected state
-  - broadcastMessages state
-  - broadcastLoading state
-  - broadcastStep state
-  - broadcastSent state
-  - openBroadcast function
-  - generateBroadcastMessages function
+Find the detail view in App.js.
+It starts with:
+  if (view === "detail" && activeCustomer) {
 
-  export function useBroadcast(anthropicKey, customers) {
-    const [showBroadcast, setShowBroadcast] = useState(false);
-    const [broadcastItem, setBroadcastItem] = useState(null);
-    const [broadcastClients, setBroadcastClients] = useState([]);
-    const [broadcastSelected, setBroadcastSelected] = useState(new Set());
-    const [broadcastMessages, setBroadcastMessages] = useState([]);
-    const [broadcastLoading, setBroadcastLoading] = useState(false);
-    const [broadcastStep, setBroadcastStep] = useState("clients");
-    const [broadcastSent, setBroadcastSent] = useState(new Set());
+And ends just before:
+  // list view
+  return (
 
-    function openBroadcast(item) {
-      // exact same code
-    }
-
-    async function generateBroadcastMessages() {
-      // exact same code
-    }
-
-    return {
-      showBroadcast, setShowBroadcast,
-      broadcastItem, setBroadcastItem,
-      broadcastClients, setBroadcastClients,
-      broadcastSelected, setBroadcastSelected,
-      broadcastMessages, setBroadcastMessages,
-      broadcastLoading, setBroadcastLoading,
-      broadcastStep, setBroadcastStep,
-      broadcastSent, setBroadcastSent,
-      openBroadcast,
-      generateBroadcastMessages,
-    };
-  }
-
-STEP 8C — Create src/hooks/useSales.js
-
-Create a new file src/hooks/useSales.js
-
-Add these at the top:
-  import { useState, useCallback } from "react";
-  import { supabase } from "../supabase";
-
-Find these in App.js and move them:
-  - todaySales state
-  - salesHistory state
-  - salesHistoryLoading state
-  - salesFilter state
-  - showSaleReceipt state
-  - saleReceiptData state
-  - receiptEditName state
-  - loadTodaySales (useCallback)
-  - loadSalesHistory (useCallback)
-  - buildSaleReceiptText function
-
-  export function useSales() {
-    const [todaySales, setTodaySales] = useState({ total: 0, whatsapp: 0, walkin: 0 });
-    const [salesHistory, setSalesHistory] = useState([]);
-    const [salesHistoryLoading, setSalesHistoryLoading] = useState(false);
-    const [salesFilter, setSalesFilter] = useState("month");
-    const [showSaleReceipt, setShowSaleReceipt] = useState(false);
-    const [saleReceiptData, setSaleReceiptData] = useState(null);
-    const [receiptEditName, setReceiptEditName] = useState("");
-
-    const loadTodaySales = useCallback(async () => {
-      // exact same code
-    }, []);
-
-    const loadSalesHistory = useCallback(async () => {
-      // exact same code
-    }, [salesFilter]);
-
-    function buildSaleReceiptText(sale, nameOverride) {
-      // exact same code
-    }
-
-    return {
-      todaySales, setTodaySales,
-      salesHistory, setSalesHistory,
-      salesHistoryLoading,
-      salesFilter, setSalesFilter,
-      showSaleReceipt, setShowSaleReceipt,
-      saleReceiptData, setSaleReceiptData,
-      receiptEditName, setReceiptEditName,
-      loadTodaySales,
-      loadSalesHistory,
-      buildSaleReceiptText,
-    };
-  }
-
-STEP 8D — Update App.js to use the hooks
-
-Add these imports at the top of App.js:
-  import { useTraders } from "./hooks/useTraders";
-  import { useBroadcast } from "./hooks/useBroadcast";
-  import { useSales } from "./hooks/useSales";
-
-Inside App() function replace the individual state 
-declarations with hook calls:
-
-  const {
-    traderListings, setTraderListings,
-    traderListingsLoading,
-    traderSection, setTraderSection,
-    traderSearch, setTraderSearch,
-    traderFilter, setTraderFilter,
-    showImportTrader, setShowImportTrader,
-    traderGroup, setTraderGroup,
-    traderChatText, setTraderChatText,
-    traderImportLoading, setTraderImportLoading,
-    traderImportPreview, setTraderImportPreview,
-    savingTraderListings, setSavingTraderListings,
-    traderImportResult, setTraderImportResult,
-    showTraderMatches, setShowTraderMatches,
+Extract everything inside that if block into:
+  export default function ChatDetailView({
+    isMobile,
+    activeCustomer, activeDeal, activeDealId, setActiveDealId,
+    activeCustomerId, setActiveCustomerId,
+    messages, setMessages,
+    customers,
+    view, setView,
+    msgLoading,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    generatedReplyLoading, setGeneratedReplyLoading,
+    editingGenerated, setEditingGenerated,
+    pendingSuggestion, setPendingSuggestion,
+    copied, setCopied,
+    editSent, setEditSent,
+    editingName, setEditingName,
+    nameInput, setNameInput,
+    editingNumber, setEditingNumber,
+    numberInput, setNumberInput,
+    outreachMode, setOutreachMode,
+    outreachReason, setOutreachReason,
+    outreachCustom, setOutreachCustom,
+    showAddDeal, setShowAddDeal,
+    showDeleteConfirm, setShowDeleteConfirm,
+    showLossReason, setShowLossReason,
+    showReceipt, setShowReceipt,
+    receiptPaymentMethod, setReceiptPaymentMethod,
+    showSupplierReply, setShowSupplierReply,
+    supplierReplyCtx, setSupplierReplyCtx,
+    supplierReplyGmail, setSupplierReplyGmail,
+    supplierReplyWA, setSupplierReplyWA,
+    supplierReplyLoading, setSupplierReplyLoading,
+    copiedSupGmail, setCopiedSupGmail,
+    copiedSupWA, setCopiedSupWA,
     showCheckTraders, setShowCheckTraders,
     checkTradersResults, setCheckTradersResults,
     checkTradersLoading, setCheckTradersLoading,
-    loadTraderListings,
-    extractTraderListings,
-    saveTraderListings,
+    showLinkStock, setShowLinkStock,
+    linkStockDeal, setLinkStockDeal,
+    showReservation, setShowReservation,
+    newDeal, setNewDeal,
+    anthropicKey, cachedStock,
+    bottomRef,
+    NAV_TABS, activeTab, setActiveTab,
+    stock,
+    loadCustomers, loadStock, refreshCachedStock, loadTodaySales,
+    updateCustomer, updateDeal, addDeal, deleteCustomer,
+    moveStage, handleConfirmSale, handleReserveDevice,
+    addIncomingMessage, generateAIReply, sendAIReply,
+    sendDirectReply, generateOpeningMessage,
+    confirmSent, markNotSent, copyMsg,
+    generateOutreach, generateSupplierReply,
     checkTradersForDeal,
-  } = useTraders(anthropicKey, activeDeal);
+    buildReceiptText, saveReceiptNumber,
+    traderListings,
+    setShowSideDrawer,
+  }) {
+    return (
+      // exact same code that was inside:
+      // if (view === "detail" && activeCustomer) { return (...) }
+    );
+  }
 
-  const {
-    showBroadcast, setShowBroadcast,
-    broadcastItem, setBroadcastItem,
-    broadcastClients, setBroadcastClients,
-    broadcastSelected, setBroadcastSelected,
-    broadcastMessages, setBroadcastMessages,
-    broadcastLoading, setBroadcastLoading,
-    broadcastStep, setBroadcastStep,
-    broadcastSent, setBroadcastSent,
-    openBroadcast,
-    generateBroadcastMessages,
-  } = useBroadcast(anthropicKey, customers);
+In App.js replace:
+  if (view === "detail" && activeCustomer) {
+    ...
+    return ( ... );
+  }
 
-  const {
-    todaySales, setTodaySales,
-    salesHistory,
-    salesHistoryLoading,
-    salesFilter, setSalesFilter,
-    showSaleReceipt, setShowSaleReceipt,
-    saleReceiptData, setSaleReceiptData,
-    receiptEditName, setReceiptEditName,
-    loadTodaySales,
-    loadSalesHistory,
-    buildSaleReceiptText,
-  } = useSales();
+With:
+  if (view === "detail" && activeCustomer) {
+    return (
+      <ChatDetailView
+        isMobile={isMobile}
+        activeCustomer={activeCustomer}
+        activeDeal={activeDeal}
+        activeDealId={activeDealId}
+        setActiveDealId={setActiveDealId}
+        activeCustomerId={activeCustomerId}
+        setActiveCustomerId={setActiveCustomerId}
+        messages={messages}
+        setMessages={setMessages}
+        customers={customers}
+        view={view}
+        setView={setView}
+        msgLoading={msgLoading}
+        incomingText={incomingText}
+        setIncomingText={setIncomingText}
+        replyMode={replyMode}
+        setReplyMode={setReplyMode}
+        replyingToId={replyingToId}
+        setReplyingToId={setReplyingToId}
+        directReplyText={directReplyText}
+        setDirectReplyText={setDirectReplyText}
+        generatedReply={generatedReply}
+        setGeneratedReply={setGeneratedReply}
+        generatedReplyLoading={generatedReplyLoading}
+        setGeneratedReplyLoading={setGeneratedReplyLoading}
+        editingGenerated={editingGenerated}
+        setEditingGenerated={setEditingGenerated}
+        pendingSuggestion={pendingSuggestion}
+        setPendingSuggestion={setPendingSuggestion}
+        copied={copied}
+        setCopied={setCopied}
+        editSent={editSent}
+        setEditSent={setEditSent}
+        editingName={editingName}
+        setEditingName={setEditingName}
+        nameInput={nameInput}
+        setNameInput={setNameInput}
+        editingNumber={editingNumber}
+        setEditingNumber={setEditingNumber}
+        numberInput={numberInput}
+        setNumberInput={setNumberInput}
+        outreachMode={outreachMode}
+        setOutreachMode={setOutreachMode}
+        outreachReason={outreachReason}
+        setOutreachReason={setOutreachReason}
+        outreachCustom={outreachCustom}
+        setOutreachCustom={setOutreachCustom}
+        showAddDeal={showAddDeal}
+        setShowAddDeal={setShowAddDeal}
+        showDeleteConfirm={showDeleteConfirm}
+        setShowDeleteConfirm={setShowDeleteConfirm}
+        showLossReason={showLossReason}
+        setShowLossReason={setShowLossReason}
+        showReceipt={showReceipt}
+        setShowReceipt={setShowReceipt}
+        receiptPaymentMethod={receiptPaymentMethod}
+        setReceiptPaymentMethod={setReceiptPaymentMethod}
+        showSupplierReply={showSupplierReply}
+        setShowSupplierReply={setShowSupplierReply}
+        supplierReplyCtx={supplierReplyCtx}
+        setSupplierReplyCtx={setSupplierReplyCtx}
+        supplierReplyGmail={supplierReplyGmail}
+        setSupplierReplyGmail={setSupplierReplyGmail}
+        supplierReplyWA={supplierReplyWA}
+        setSupplierReplyWA={setSupplierReplyWA}
+        supplierReplyLoading={supplierReplyLoading}
+        setSupplierReplyLoading={setSupplierReplyLoading}
+        copiedSupGmail={copiedSupGmail}
+        setCopiedSupGmail={setCopiedSupGmail}
+        copiedSupWA={copiedSupWA}
+        setCopiedSupWA={setCopiedSupWA}
+        showCheckTraders={showCheckTraders}
+        setShowCheckTraders={setShowCheckTraders}
+        checkTradersResults={checkTradersResults}
+        setCheckTradersResults={setCheckTradersResults}
+        checkTradersLoading={checkTradersLoading}
+        setCheckTradersLoading={setCheckTradersLoading}
+        showLinkStock={showLinkStock}
+        setShowLinkStock={setShowLinkStock}
+        linkStockDeal={linkStockDeal}
+        setLinkStockDeal={setLinkStockDeal}
+        showReservation={showReservation}
+        setShowReservation={setShowReservation}
+        newDeal={newDeal}
+        setNewDeal={setNewDeal}
+        anthropicKey={anthropicKey}
+        cachedStock={cachedStock}
+        bottomRef={bottomRef}
+        NAV_TABS={NAV_TABS}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        stock={stock}
+        loadCustomers={loadCustomers}
+        loadStock={loadStock}
+        refreshCachedStock={refreshCachedStock}
+        loadTodaySales={loadTodaySales}
+        updateCustomer={updateCustomer}
+        updateDeal={updateDeal}
+        addDeal={addDeal}
+        deleteCustomer={deleteCustomer}
+        moveStage={moveStage}
+        handleConfirmSale={handleConfirmSale}
+        handleReserveDevice={handleReserveDevice}
+        addIncomingMessage={addIncomingMessage}
+        generateAIReply={generateAIReply}
+        sendAIReply={sendAIReply}
+        sendDirectReply={sendDirectReply}
+        generateOpeningMessage={generateOpeningMessage}
+        confirmSent={confirmSent}
+        markNotSent={markNotSent}
+        copyMsg={copyMsg}
+        generateOutreach={generateOutreach}
+        generateSupplierReply={generateSupplierReply}
+        checkTradersForDeal={checkTradersForDeal}
+        buildReceiptText={buildReceiptText}
+        saveReceiptNumber={saveReceiptNumber}
+        traderListings={traderListings}
+        setShowSideDrawer={setShowSideDrawer}
+      />
+    );
+  }
 
-Then DELETE all the individual state declarations and 
-functions that are now in the hooks from App.js.
+Add import at top of App.js:
+  import ChatDetailView from "./components/chat/ChatDetailView";
+
+DELETE the original detail view block from App.js.
 
 VERIFICATION CHECKLIST before building:
-- All three hook files created with correct imports
-- All state and functions moved correctly
-- Hook return values include everything App.js needs
-- Individual state declarations deleted from App.js
-- No duplicate definitions anywhere
-- If build fails check if a function uses something 
-  from App.js scope — pass it as parameter to the hook
+- File has "import React from 'react'" at very top
+- Exported as default
+- Imported in App.js
+- Original block deleted from App.js
+- LinkStockModal and ReservationModal imported inside 
+  ChatDetailView.js since they render there
+- No duplicate definitions
+- If build fails due to undefined variable add it as prop
 
-After all changes:
+After changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 8: extract custom hooks" 
+   git add -A && git commit -m "refactor v2 step 7f: extract ChatDetailView" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test Traders tab — does import work?
-7. Test Sales History — does it show?
-8. Tell me the new App.js line count
+6. Open a client chat — does it work?
+7. Does the Reserve button work?
+8. Does the Confirm Sale link work?
+9. Tell me the new App.js line count
