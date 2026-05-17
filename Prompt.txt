@@ -1,86 +1,81 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 1. Extract constants to a separate file.
-Do NOT change any logic. Do NOT move any functions.
-Only move constant values.
+This is refactor step 2. Extract helper functions only.
+Do NOT change any logic. Do NOT move any components or hooks.
 
-STEP 1 — Create src/constants/index.js
+STEP 2 — Create src/utils/helpers.js
 
-Create a new file src/constants/index.js
+Create a new file src/utils/helpers.js
 
-Copy these exact values from App.js into the new file.
-Add "export const" before each one:
+Copy these exact functions from App.js into the new file.
+Add "export" before each function definition:
 
-export const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
+export function getGreeting() {
+  // exact same code from App.js
+}
 
-export const STAGES = [
-  // exact same array from App.js
-];
+export function timeAgo(ts) {
+  // exact same code from App.js
+}
 
-export const TIERS = {
-  // exact same object from App.js
-};
+export function waTsFormat(ts) {
+  // exact same code from App.js
+}
 
-export const BRANDS = ["MacBook", "Lenovo", "Dell", "HP", "Other"];
+export function daysSince(ts) {
+  // exact same code from App.js
+}
 
-export const LOSS_REASONS = [
-  // exact same array from App.js
-];
+export function autoTier(deals) {
+  // exact same code from App.js
+}
 
-export const PAYMENT_STATUSES = [
-  // exact same array from App.js
-];
+export function monthRevenue(customers) {
+  // exact same code from App.js
+}
 
-export const OUTREACH_REASONS = [
-  // exact same array from App.js
-];
+export function getAnthropicKey() {
+  // exact same code from App.js
+}
 
-export const QUICK_ACTIONS = [
-  // exact same array from App.js
-];
+export function saveAnthropicKey(k) {
+  // exact same code from App.js
+}
 
-export const SOURCING_STAGES = [
-  // exact same array from App.js
-];
+export function parseGB(str) {
+  // exact same code from App.js
+}
 
-export const SOURCING_STAGE_COLORS = {
-  // exact same object from App.js
-};
+export function labelGB(gb) {
+  // exact same code from App.js
+}
 
-export const SOURCING_CHANNELS = [
-  // exact same array from App.js
-];
-
-export const SYSTEM_PROMPT = `
-  // exact same string from App.js
-`;
-
-export const EMPTY_STOCK = {
-  // exact same object from App.js
-};
+export function cleanWhatsAppText(text) {
+  // exact same code from App.js
+}
 
 Then in App.js:
-1. Add this import at the very top after existing imports:
+1. Add this import after the constants import:
    import {
-     ANTHROPIC_KEY_STORAGE, STAGES, TIERS, BRANDS,
-     LOSS_REASONS, PAYMENT_STATUSES, OUTREACH_REASONS,
-     QUICK_ACTIONS, SOURCING_STAGES, SOURCING_STAGE_COLORS,
-     SOURCING_CHANNELS, SYSTEM_PROMPT, EMPTY_STOCK
-   } from "./constants";
+     getGreeting, timeAgo, waTsFormat, daysSince,
+     autoTier, monthRevenue, getAnthropicKey, saveAnthropicKey,
+     parseGB, labelGB, cleanWhatsAppText,
+   } from "./utils/helpers";
 
-2. DELETE the original definitions from App.js
+2. DELETE the original function definitions from App.js
 
 VERIFICATION CHECKLIST before building:
-- Every constant is in constants/index.js with "export const"
-- Every constant is removed from App.js
+- Every function is in utils/helpers.js with "export"
+- Every function is removed from App.js
 - Import statement is at top of App.js
 - No duplicate definitions anywhere
+- helpers.js has NO imports — these are pure functions
 
 After changes:
 1. Run npm run build
-2. If errors, fix them
+2. If errors fix them
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 1: extract constants" 
+   git add -A && git commit -m "refactor v2 step 2: extract helper functions" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app and confirm it works

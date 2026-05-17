@@ -11,64 +11,11 @@ import {
   SOURCING_CHANNELS, SYSTEM_PROMPT, EMPTY_STOCK,
 } from "./constants";
 
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning!";
-  if (h < 17) return "Good afternoon!";
-  return "Good evening!";
-}
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-function timeAgo(ts) {
-  if (!ts) return "—";
-  const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-// WhatsApp-style timestamp for contact list
-function waTsFormat(ts) {
-  if (!ts) return "";
-  const now  = new Date();
-  const d    = new Date(ts);
-  const diffMs  = now - d;
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffH   = Math.floor(diffMs / 3600000);
-  const diffDays= Math.floor(diffMs / 86400000);
-  if (diffMin < 1)  return "now";
-  if (diffMin < 60) return `${diffMin}m`;
-  if (diffH   < 24) return `${diffH}h`;
-  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  if (diffDays < 7) return d.toLocaleDateString("en-GB", { weekday: "short" });
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" });
-}
-function daysSince(ts) {
-  if (!ts) return 0;
-  return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
-}
-function autoTier(deals) {
-  const closed = (deals || []).filter(d => d.stage === "closed").length;
-  if (closed >= 3) return "vip";
-  if (closed >= 1) return "regular";
-  return "cold";
-}
-function monthRevenue(customers) {
-  const start = new Date(); start.setDate(1); start.setHours(0,0,0,0);
-  let total = 0;
-  (customers || []).forEach(c =>
-    (c.deals || []).forEach(d => {
-      if (d.stage === "closed" && d.closed_at && new Date(d.closed_at) >= start)
-        total += (d.value || 0);
-    })
-  );
-  return total;
-}
-function getAnthropicKey() { return localStorage.getItem(ANTHROPIC_KEY_STORAGE) || ""; }
-function saveAnthropicKey(k) { localStorage.setItem(ANTHROPIC_KEY_STORAGE, k); }
+import {
+  getGreeting, timeAgo, waTsFormat, daysSince,
+  autoTier, monthRevenue, getAnthropicKey, saveAnthropicKey,
+  parseGB, labelGB, cleanWhatsAppText,
+} from "./utils/helpers";
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function callClaude(apiKey, messages, system) {
@@ -190,19 +137,6 @@ Closed deals this month: ${closedThisMonth}
 FOLLOW UPS DUE:
 ${followUps||"(none due)"}`;
 }
-
-function cleanWhatsAppText(text) {
-  if (!text) return '';
-  let out = '';
-  for (let i = 0; i < text.length; i++) {
-    const cp = text.charCodeAt(i);
-    if (cp === 0x202F || cp === 0x00A0) { out += ' '; continue; }
-    if (cp === 0x200E || cp === 0x200F || cp === 0x000D) continue;
-    out += text[i];
-  }
-  return out;
-}
-
 
 async function saveImportedMessages(dealId, rawChatText) {
   if (!dealId || !rawChatText) return 0;
@@ -895,18 +829,6 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
 
 //  SPEC UPGRADE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
-function parseGB(str) {
-  if (!str) return 0;
-  const tb = str.match(/(\d+)\s*TB/i);
-  if (tb) return parseInt(tb[1]) * 1024;
-  const gb = str.match(/(\d+)/);
-  return gb ? parseInt(gb[1]) : 0;
-}
-function labelGB(gb) {
-  if (!gb) return "";
-  return gb >= 1024 ? `${gb / 1024}TB` : `${gb}GB`;
-}
-
 function SpecUpgradeModal({ item, onClose, onApply }) {
   const RAM_TIERS = [8, 16, 32, 64];
   const SSD_TIERS = [256, 512, 1024, 2048];
