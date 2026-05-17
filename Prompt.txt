@@ -1,70 +1,79 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 7b. Extract HomeTab component.
+This is refactor step 7c. Extract CustomersTab component.
 Do NOT change any logic.
 
 IMPORTANT: File MUST have "import React from 'react';" 
 as the very first import.
 
-Create src/components/tabs/HomeTab.js
+Create src/components/tabs/CustomersTab.js
 
 Add these at the top:
   import React from "react";
-  import { STAGES } from "../../constants";
-  import { daysSince, timeAgo, monthRevenue } from "../../utils/helpers";
+  import Badge from "../ui/Badge";
+  import StageBar from "../ui/StageBar";
   import Spinner from "../ui/Spinner";
+  import { TIERS } from "../../constants";
+  import { daysSince, waTsFormat, timeAgo } from "../../utils/helpers";
 
-Find the home tab content in App.js:
-  {activeTab === "home" && (() => { ... })()}
+Find the customers tab content in App.js:
+  {activeTab === "customers" && ( ... )}
 
 Extract ALL content inside that block into:
-  export default function HomeTab({
-    customers, stock, tasks, todaySales, partsRevMTD,
-    sourcingAlerts, isMobile, setActiveTab, setView,
-    setActiveCustomerId, setActiveDealId, setPendingSuggestion,
-    setShowQuickSale, setStockFilter, setFilter,
-    setShowAddStock, setEditingStock, setStockForm,
-    openDeals, closedDeals, revenue,
-    daysSince, timeAgo,
+  export default function CustomersTab({
+    isMobile,
+    loading,
+    filtered,
+    lastMsgMap,
+    setActiveCustomerId,
+    setActiveDealId,
+    setView,
+    setPendingSuggestion,
+    openDeals,
+    closedDeals,
+    revenue,
+    search, setSearch,
+    filter, setFilter,
+    contactTypeFilter, setContactTypeFilter,
+    setShowContactModal,
+    setContactModalPreType,
   }) {
     return (
-      // exact same JSX that was inside the home tab block
+      // exact same JSX
     );
   }
 
 In App.js replace:
-  {activeTab === "home" && (() => { ... })()}
+  {activeTab === "customers" && ( ... )}
 With:
-  {activeTab === "home" && (
-    <HomeTab
-      customers={customers}
-      stock={stock}
-      tasks={tasks}
-      todaySales={todaySales}
-      partsRevMTD={partsRevMTD}
-      sourcingAlerts={sourcingAlerts}
+  {activeTab === "customers" && (
+    <CustomersTab
       isMobile={isMobile}
-      setActiveTab={setActiveTab}
-      setView={setView}
+      loading={loading}
+      filtered={filtered}
+      lastMsgMap={lastMsgMap}
       setActiveCustomerId={setActiveCustomerId}
       setActiveDealId={setActiveDealId}
+      setView={setView}
       setPendingSuggestion={setPendingSuggestion}
-      setShowQuickSale={setShowQuickSale}
-      setStockFilter={setStockFilter}
-      setFilter={setFilter}
-      setShowAddStock={setShowAddStock}
-      setEditingStock={setEditingStock}
-      setStockForm={setStockForm}
       openDeals={openDeals}
       closedDeals={closedDeals}
       revenue={revenue}
+      search={search}
+      setSearch={setSearch}
+      filter={filter}
+      setFilter={setFilter}
+      contactTypeFilter={contactTypeFilter}
+      setContactTypeFilter={setContactTypeFilter}
+      setShowContactModal={setShowContactModal}
+      setContactModalPreType={setContactModalPreType}
     />
   )}
 
 Add import at top of App.js:
-  import HomeTab from "./components/tabs/HomeTab";
+  import CustomersTab from "./components/tabs/CustomersTab";
 
-DELETE the original home tab block from App.js.
+DELETE the original customers tab block from App.js.
 
 VERIFICATION CHECKLIST before building:
 - File has "import React from 'react'" at very top
@@ -72,17 +81,17 @@ VERIFICATION CHECKLIST before building:
 - Imported in App.js
 - Original block deleted from App.js
 - No duplicate definitions
-- All variables used inside HomeTab are either 
-  imported from constants/utils OR passed as props
+- TIERS imported from constants
+- daysSince, waTsFormat, timeAgo imported from utils/helpers
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors — if a variable is undefined add it 
    as a prop in both the component and App.js usage
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 7b: extract HomeTab" 
+   git add -A && git commit -m "refactor v2 step 7c: extract CustomersTab" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Check Dashboard — do stats show correctly?
+6. Check Contacts tab — do clients show correctly?
 7. Tell me the new App.js line count
