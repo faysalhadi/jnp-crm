@@ -1,95 +1,16 @@
 Read src/App.js fully before making any changes.
 
-We are improving both ReservationModal and LinkStockModal to support 
-multi-select devices and a spare parts tab.
+We are rebuilding the reservation and confirm sale flows to be 
+deal-centric. One deal contains multiple items (devices + parts).
 
-CHANGE 1 — Rebuild ReservationModal with tabs and multi-select
+CHANGE 1 — Update handleReserveDevice function
+Find handleReserveDevice function. Keep it exactly as is.
+It already creates a deal if none exists and opens ReservationModal.
+No changes needed here.
 
-Replace the entire ReservationModal component with this improved version:
-
-function ReservationModal({ customer, deal, stock, onClose, onDone }) {
-  const [activeModalTab, setActiveModalTab] = useState("devices");
-  const [search, setSearch] = useState("");
-  const [selectedItems, setSelectedItems] = useState([]);
-  const [prices, setPrices] = useState({});
-  const [quantities, setQuantities] = useState({});
-  const [parts, setParts] = useState([]);
-  const [partsLoading, setPartsLoading] = useState(true);
-  const [pickupDate, setPickupDate] = useState("");
-  const [depositType, setDepositType] = useState("none");
-  const [depositAmount, setDepositAmount] = useState("");
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [upgradeRam, setUpgradeRam] = useState({});
-  const [upgradeRamPrice, setUpgradeRamPrice] = useState({});
-  const [upgradeSsd, setUpgradeSsd] = useState({});
-  const [upgradeSsdPrice, setUpgradeSsdPrice] = useState({});
-
-  useEffect(() => {
-    supabase.from("stock_parts").select("*").gt("quantity", 0).order("category")
-      .then(({ data }) => { setParts(data || []); setPartsLoading(false); });
-  }, []);
-
-  const available = stock.filter(s => s.status === "available");
-
-  // Pre-filter by brand match and budget
-  const brandMatch = deal?.brand
-    ? available.filter(s => (s.brand || "").toLowerCase() === (deal.brand || "").toLowerCase())
-    : [];
-  const budgetMatch = deal?.budget
-    ? available.filter(s => Number(s.max_price || 0) <= Number(deal.budget) * 1.2 && !brandMatch.find(b => b.id === s.id))
-    : [];
-  const otherStock = available.filter(s =>
-    !brandMatch.find(b => b.id === s.id) && !budgetMatch.find(b => b.id === s.id)
-  );
-
-  const filteredDevices = search
-    ? available.filter(s =>
-        [s.brand, s.model, s.processor, s.ram, s.ssd].filter(Boolean).join(" ")
-          .toLowerCase().includes(search.toLowerCase()))
-    : [...brandMatch, ...budgetMatch, ...otherStock];
-
-  const filteredParts = search
-    ? parts.filter(p =>
-        [p.category, p.specs, p.compatible_with].filter(Boolean).join(" ")
-          .toLowerCase().includes(search.toLowerCase()))
-    : parts;
-
-  function toggleDevice(item) {
-    const isSelected = selectedItems.find(s => s.id === item.id && s.itemType === "device");
-    if (isSelected) {
-      setSelectedItems(prev => prev.filter(s => !(s.id === item.id && s.itemType === "device")));
-    } else {
-      setSelectedItems(prev => [...prev, { ...item, itemType: "device" }]);
-      if (!prices[item.id]) setPrices(p => ({ ...p, [item.id]: String(item.max_price || "") }));
-    }
-  }
-
-  function togglePart(item) {
-    const isSelected = selectedItems.find(s => s.id === item.id && s.itemType === "part");
-    if (isSelected) {
-      setSelectedItems(prev => prev.filter(s => !(s.id === item.id && s.itemType === "part")));
-    } else {
-      setSelectedItems(prev => [...prev, { ...item, itemType: "part" }]);
-      if (!prices[item.id]) setPrices(p => ({ ...p, [item.id]: String(item.sell_price || "") }));
-      if (!quantities[item.id]) setQuantities(q => ({ ...q, [item.id]: 1 }));
-    }
-  }
-
-  const totalPrice = selectedItems.reduce((sum, item) => {
-    const basePrice = Number(prices[item.id]) || 0;
-    if (item.itemType === "device") {
-      const ramAdd = upgradeRam[item.id] ? (Number(upgradeRamPrice[item.id]) || 0) : 0;
-      const ssdAdd = upgradeSsd[item.id] ? (Number(upgradeSsdPrice[item.id]) || 0) : 0;
-      return sum + basePrice + ramAdd + ssdAdd;
-    }
-    return sum + basePrice * (Number(quantities[item.id]) || 1);
-  }, 0);
-
-  const depositAmt = depositType === "full" ? totalPrice
-    : depositType === "partial" ? (Number(depositAmount) || 0)
-    : 0;
-  const balanceDue = Math.max(0, totalPrice - depositAmt);
+CHANGE 2 — Update ReservationModal save() function
+Find the save() function inside ReservationModal.
+Replace it entirely with this version that saves to deal_items table:
 
   async function save() {
     if (!pickupDate) { alert("Pickup date is required"); return; }
@@ -97,11 +18,15 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
     setSaving(true);
     try {
       const soldAt = new Date().toISOString();
+
+      // Save each selected item to deal_items table
       for (const item of selectedItems) {
         if (item.itemType === "device") {
           const ramAdd = upgradeRam[item.id] ? (Number(upgradeRamPrice[item.id]) || 0) : 0;
           const ssdAdd = upgradeSsd[item.id] ? (Number(upgradeSsdPrice[item.id]) || 0) : 0;
           const finalPrice = (Number(prices[item.id]) || 0) + ramAdd + ssdAdd;
+
+          // Mark stock as reserved
           await supabase.from("stock").update({
             status: "reserved",
             reserved_for_customer_id: customer.id,
@@ -109,28 +34,63 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
             pickup_date: pickupDate,
             sold_price: finalPrice || null,
           }).eq("id", item.id);
+
+          // Update stock specs if upgraded
           if (upgradeRam[item.id] || upgradeSsd[item.id]) {
             const specUpdate = {};
             if (upgradeRam[item.id]) specUpdate.ram = labelGB(upgradeRam[item.id]);
             if (upgradeSsd[item.id]) specUpdate.ssd = labelGB(upgradeSsd[item.id]);
             await supabase.from("stock").update(specUpdate).eq("id", item.id);
           }
+
+          // Insert into deal_items
+          await supabase.from("deal_items").insert({
+            deal_id: deal.id,
+            item_type: "device",
+            stock_id: item.id,
+            brand: item.brand || null,
+            model: item.model || null,
+            ram: upgradeRam[item.id] ? labelGB(upgradeRam[item.id]) : (item.ram || null),
+            ssd: upgradeSsd[item.id] ? labelGB(upgradeSsd[item.id]) : (item.ssd || null),
+            condition: item.condition || null,
+            processor: item.processor || null,
+            serial_number: item.serial_number || null,
+            agreed_price: finalPrice,
+            upgrade_ram: upgradeRam[item.id] ? labelGB(upgradeRam[item.id]) : null,
+            upgrade_ssd: upgradeSsd[item.id] ? labelGB(upgradeSsd[item.id]) : null,
+            upgrade_price: ramAdd + ssdAdd,
+          });
+
         } else {
+          // Part item
           const qty = Number(quantities[item.id]) || 1;
           const newQty = (item.quantity || 0) - qty;
           await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", item.id);
+
+          await supabase.from("deal_items").insert({
+            deal_id: deal.id,
+            item_type: "part",
+            part_id: item.id,
+            category: item.category || null,
+            specs: item.specs || null,
+            quantity: qty,
+            agreed_price: Number(prices[item.id]) || 0,
+          });
         }
       }
+
+      // Update the deal itself
       const deviceItem = selectedItems.find(i => i.itemType === "device");
       await supabase.from("deals").update({
         stage: "confirmed_pending_pickup",
-        value: totalPrice || undefined,
+        value: totalPrice || null,
         deposit_amount: depositAmt,
         balance_due: balanceDue,
         pickup_date: pickupDate,
         reservation_notes: notes.trim() || null,
         stock_item_id: deviceItem?.id || null,
       }).eq("id", deal.id);
+
       onDone({ selectedItems, pickupDate, depositAmt, balanceDue });
     } catch (e) {
       alert("Error saving reservation: " + (e.message || "Unknown error"));
@@ -138,279 +98,473 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
     setSaving(false);
   }
 
-  const PART_ICONS = { RAM:"🧠", SSD:"💾", HDD:"💿", Screen:"🖥️", Battery:"🔋", Charger:"🔌", Keyboard:"⌨️", Trackpad:"🖱️", Other:"🔧" };
+CHANGE 3 — Rebuild Reserved tab in Stock to show deal-centric cards
 
-  return (
+Find the stock tab devices view (stockView === "devices").
+Find the Reserved filter section — currently it shows individual 
+stock cards for reserved items.
+
+Replace the entire reserved items display with a deal-centric view.
+
+Add these state variables near other useState declarations:
+  const [reservedDeals, setReservedDeals] = useState([]);
+  const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
+  const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
+  const [showCompleteReservation, setShowCompleteReservation] = useState(false);
+  const [completingDeal, setCompletingDeal] = useState(null);
+  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
+
+Add this function near other load functions:
+  const loadReservedDeals = useCallback(async () => {
+    setReservedDealsLoading(true);
+    const { data: deals } = await supabase
+      .from("deals")
+      .select("*, customers(id, name, number), deal_items(*)")
+      .eq("stage", "confirmed_pending_pickup")
+      .order("created_at", { ascending: false });
+    setReservedDeals(deals || []);
+    setReservedDealsLoading(false);
+  }, []);
+
+Add useEffect to load reserved deals when stock filter changes to reserved:
+  useEffect(() => {
+    if (stockFilter === "reserved") loadReservedDeals();
+  }, [stockFilter, loadReservedDeals]);
+
+Now replace the reserved cards rendering in the stock tab.
+Find where isReserved cards are rendered (the stock.map section).
+Add a condition at the top of filteredStock.map:
+  if (stockFilter === "reserved") return null; 
+  // reserved items handled separately below
+
+Then add this new reserved deals section BEFORE the filteredStock.map,
+but only when stockFilter === "reserved":
+
+  {stockFilter === "reserved" && (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {reservedDealsLoading && <Spinner />}
+      {!reservedDealsLoading && reservedDeals.length === 0 && (
+        <div style={{ textAlign: "center", padding: "60px 20px" }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No reservations</div>
+        </div>
+      )}
+      {!reservedDealsLoading && reservedDeals.map(deal => {
+        const customer = deal.customers;
+        const items = deal.deal_items || [];
+        const isExpanded = expandedReservedDeal === deal.id;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const isOverdue = deal.pickup_date && new Date(deal.pickup_date) < today;
+        const pickupLabel = deal.pickup_date
+          ? new Date(deal.pickup_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+          : null;
+        const deviceItems = items.filter(i => i.item_type === "device");
+        const partItems = items.filter(i => i.item_type === "part");
+        const itemSummary = [
+          ...deviceItems.map(i => [i.brand, i.model].filter(Boolean).join(" ") || "Device"),
+          ...partItems.map(i => i.category || "Part"),
+        ].join(" · ");
+
+        return (
+          <div key={deal.id} style={{
+            background: "#fff", borderRadius: 18,
+            border: `1.5px solid ${isOverdue ? "#FCA5A5" : "#FDE68A"}`,
+            boxShadow: "0 1px 6px rgba(245,158,11,0.15)",
+            overflow: "hidden",
+          }}>
+            {/* Deal header */}
+            <div style={{
+              padding: "12px 14px",
+              background: isOverdue ? "#FEF2F2" : "#FFFBEB",
+              borderBottom: isExpanded ? "1px solid #FDE68A" : "none",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>
+                    🔒 {customer?.name || "Walk-in"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>
+                    {itemSummary || "No items"}
+                  </div>
+                  <div style={{ fontSize: 11, color: isOverdue ? "#EF4444" : "#B45309", marginTop: 3, fontWeight: 700 }}>
+                    {isOverdue ? `⚠️ Overdue — pickup was ${pickupLabel}` : `Pickup: ${pickupLabel || "—"}`}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#6366F1" }}>
+                    AED {Number(deal.value || 0).toLocaleString()}
+                  </div>
+                  {deal.deposit_amount > 0 && (
+                    <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700 }}>
+                      Deposit: AED {Number(deal.deposit_amount).toLocaleString()}
+                    </div>
+                  )}
+                  {deal.balance_due > 0 && (
+                    <div style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>
+                      Balance: AED {Number(deal.balance_due).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <button onClick={() => setExpandedReservedDeal(isExpanded ? null : deal.id)}
+                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #FDE68A", background: "#fff", color: "#D97706", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  {isExpanded ? "▲ Hide Items" : `▼ ${items.length} Item${items.length !== 1 ? "s" : ""}`}
+                </button>
+                <button onClick={() => {
+                  setCompletingDeal(deal);
+                  setCompletionPaymentMethod("Cash");
+                  setShowCompleteReservation(true);
+                }}
+                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  ✅ Complete
+                </button>
+                <button onClick={() => {
+                  setEditReservationItem(deal);
+                  setEditReservationForm({
+                    agreedPrice: String(deal.value || ""),
+                    pickupDate: deal.pickup_date ? deal.pickup_date.split("T")[0] : "",
+                    depositAmount: String(deal.deposit_amount || ""),
+                    balanceDue: String(deal.balance_due || ""),
+                    notes: deal.reservation_notes || "",
+                  });
+                  setShowEditReservation(true);
+                }}
+                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  ✏️ Edit
+                </button>
+                <button onClick={async () => {
+                  if (!window.confirm("Release all items in this reservation?")) return;
+                  const deviceItems = (deal.deal_items || []).filter(i => i.item_type === "device");
+                  for (const item of deviceItems) {
+                    if (item.stock_id) {
+                      await supabase.from("stock").update({
+                        status: "available",
+                        reserved_for_customer_id: null,
+                        reserved_at: null,
+                        pickup_date: null,
+                        sold_price: null,
+                      }).eq("id", item.stock_id);
+                    }
+                  }
+                  await supabase.from("deal_items").delete().eq("deal_id", deal.id);
+                  await supabase.from("deals").update({
+                    stage: "device_found",
+                    value: null,
+                    deposit_amount: null,
+                    balance_due: null,
+                    pickup_date: null,
+                    stock_item_id: null,
+                  }).eq("id", deal.id);
+                  loadReservedDeals();
+                  loadStock();
+                  loadCustomers();
+                }}
+                  style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  🔓
+                </button>
+              </div>
+            </div>
+
+            {/* Expanded items list */}
+            {isExpanded && (
+              <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                {items.length === 0 && (
+                  <div style={{ fontSize: 12, color: "#94A3B8", textAlign: "center", padding: "12px 0" }}>
+                    No items recorded
+                  </div>
+                )}
+                {items.map((item, i) => (
+                  <div key={item.id || i} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "8px 12px", borderRadius: 10,
+                    background: item.item_type === "device" ? "#F8FAFC" : "#F5F3FF",
+                    border: `1px solid ${item.item_type === "device" ? "#F1F5F9" : "#DDD6FE"}`,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
+                        {item.item_type === "device"
+                          ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
+                          : `🔧 ${item.category || "Part"}${item.specs ? ` · ${item.specs}` : ""}`}
+                      </div>
+                      {item.item_type === "device" && (
+                        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
+                          {[item.ram, item.ssd, item.condition].filter(Boolean).join(" · ")}
+                          {item.upgrade_ram || item.upgrade_ssd ? " · ⬆ Upgraded" : ""}
+                        </div>
+                      )}
+                      {item.item_type === "part" && item.quantity > 1 && (
+                        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>×{item.quantity}</div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
+                        AED {Number(item.agreed_price || 0).toLocaleString()}
+                      </div>
+                      <button onClick={async () => {
+                        if (!window.confirm("Release this item back to stock?")) return;
+                        if (item.item_type === "device" && item.stock_id) {
+                          await supabase.from("stock").update({
+                            status: "available",
+                            reserved_for_customer_id: null,
+                            reserved_at: null,
+                            pickup_date: null,
+                            sold_price: null,
+                          }).eq("id", item.stock_id);
+                        }
+                        await supabase.from("deal_items").delete().eq("id", item.id);
+                        const remaining = items.filter(x => x.id !== item.id);
+                        const newTotal = remaining.reduce((s, x) => s + (Number(x.agreed_price) || 0), 0);
+                        await supabase.from("deals").update({
+                          value: newTotal || null,
+                          balance_due: Math.max(0, newTotal - (Number(deal.deposit_amount) || 0)),
+                        }).eq("id", deal.id);
+                        loadReservedDeals();
+                        loadStock();
+                      }}
+                        style={{ padding: "3px 8px", borderRadius: 6, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                        🔓
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  )}
+
+CHANGE 4 — Add Complete Reservation modal
+Add this modal before the floating "+" button:
+
+  {showCompleteReservation && completingDeal && (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
       <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
         <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
           {/* Header */}
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>🔒 Reserve for {customer?.name || "Client"}</div>
-              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>Select devices and/or parts</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✅ Complete Sale</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+                {completingDeal.customers?.name || "Customer"}
+              </div>
             </div>
-            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+            <button onClick={() => setShowCompleteReservation(false)}
+              style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
           </div>
 
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Tabs */}
-            <div style={{ display: "flex", gap: 6 }}>
-              {[{ key: "devices", label: "💻 Devices" }, { key: "parts", label: "🔧 Parts" }].map(t => (
-                <button key={t.key} onClick={() => setActiveModalTab(t.key)}
-                  style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer",
-                           background: activeModalTab === t.key ? "#6366F1" : "#F1F5F9",
-                           color: activeModalTab === t.key ? "#fff" : "#64748B" }}>
-                  {t.label}
-                </button>
+            {/* Items list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {(completingDeal.deal_items || []).map((item, i) => (
+                <div key={item.id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#F8FAFC", borderRadius: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A" }}>
+                    {item.item_type === "device"
+                      ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
+                      : `🔧 ${item.category || "Part"}${item.quantity > 1 ? ` ×${item.quantity}` : ""}`}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
+                    AED {Number(item.agreed_price || 0).toLocaleString()}
+                  </div>
+                </div>
               ))}
             </div>
 
-            {/* Search */}
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder={activeModalTab === "devices" ? "🔍 Search devices..." : "🔍 Search parts..."}
-              style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-
-            {/* Device list */}
-            {activeModalTab === "devices" && (
-              <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
-                {!search && brandMatch.length > 0 && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", letterSpacing: 0.5 }}>✅ BRAND MATCH</div>
-                )}
-                {filteredDevices.map(item => {
-                  const isSel = !!selectedItems.find(s => s.id === item.id && s.itemType === "device");
-                  const specs = [item.processor, item.ram, item.ssd, item.condition].filter(Boolean).join(" · ");
-                  const curRam = parseGB(item.ram);
-                  const curSsd = parseGB(item.ssd);
-                  const ramOpts = [8,16,32,64].filter(g => g > curRam);
-                  const ssdOpts = [256,512,1024,2048].filter(g => g > curSsd);
-                  const hasUpgradeOptions = ramOpts.length > 0 || ssdOpts.length > 0;
-                  return (
-                    <div key={item.id}>
-                      <div onClick={() => toggleDevice(item)}
-                        style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer",
-                                 border: `1.5px solid ${isSel ? "#6366F1" : "#F1F5F9"}`,
-                                 background: isSel ? "#EEF2FF" : "#F8FAFC",
-                                 display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${isSel ? "#6366F1" : "#CBD5E1"}`,
-                                      background: isSel ? "#6366F1" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {isSel && <span style={{ color: "#fff", fontSize: 12 }}>✓</span>}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
-                            {[item.brand, item.model].filter(Boolean).join(" ") || "Device"}
-                          </div>
-                          {specs && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{specs}</div>}
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>
-                          AED {Number(item.max_price || 0).toLocaleString()}
-                        </div>
-                      </div>
-                      {/* Price + upgrade when selected */}
-                      {isSel && (
-                        <div style={{ padding: "10px 12px", background: "#F8FAFC", borderRadius: 10, marginTop: 4, border: "1px solid #F1F5F9" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: hasUpgradeOptions ? 10 : 0 }}>
-                            <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700 }}>PRICE (AED)</span>
-                            <input type="number" value={prices[item.id] ?? ""}
-                              onChange={e => setPrices(p => ({ ...p, [item.id]: e.target.value }))}
-                              style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 14, fontWeight: 800, outline: "none", textAlign: "right", color: "#6366F1" }} />
-                          </div>
-                          {/* Upgrade options */}
-                          {hasUpgradeOptions && (
-                            <div style={{ padding: "8px 10px", background: "#FFFBEB", borderRadius: 8, border: "1px solid #FDE68A" }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", marginBottom: 6 }}>⬆ UPGRADE (OPTIONAL)</div>
-                              {ramOpts.length > 0 && (
-                                <div style={{ marginBottom: 6 }}>
-                                  <div style={{ fontSize: 10, color: "#94A3B8", marginBottom: 4 }}>RAM</div>
-                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-                                    <button onClick={() => setUpgradeRam(u => ({ ...u, [item.id]: null }))}
-                                      style={{ padding: "3px 8px", borderRadius: 6, border: `1.5px solid ${!upgradeRam[item.id] ? "#F59E0B" : "#E2E8F0"}`,
-                                               background: !upgradeRam[item.id] ? "#F59E0B" : "#fff", color: !upgradeRam[item.id] ? "#fff" : "#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                                      {labelGB(curRam)}
-                                    </button>
-                                    {ramOpts.map(gb => (
-                                      <button key={gb} onClick={() => setUpgradeRam(u => ({ ...u, [item.id]: gb }))}
-                                        style={{ padding: "3px 8px", borderRadius: 6, border: `1.5px solid ${upgradeRam[item.id] === gb ? "#F59E0B" : "#E2E8F0"}`,
-                                                 background: upgradeRam[item.id] === gb ? "#F59E0B" : "#fff", color: upgradeRam[item.id] === gb ? "#fff" : "#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                                        {labelGB(gb)}
-                                      </button>
-                                    ))}
-                                    {upgradeRam[item.id] && (
-                                      <input type="number" placeholder="+AED"
-                                        value={upgradeRamPrice[item.id] ?? ""}
-                                        onChange={e => setUpgradeRamPrice(u => ({ ...u, [item.id]: e.target.value }))}
-                                        style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1.5px solid #FDE68A", fontSize: 12, fontWeight: 700, outline: "none", color: "#D97706" }} />
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                              {ssdOpts.length > 0 && (
-                                <div>
-                                  <div style={{ fontSize: 10, color: "#94A3B8", marginBottom: 4 }}>STORAGE</div>
-                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-                                    <button onClick={() => setUpgradeSsd(u => ({ ...u, [item.id]: null }))}
-                                      style={{ padding: "3px 8px", borderRadius: 6, border: `1.5px solid ${!upgradeSsd[item.id] ? "#F59E0B" : "#E2E8F0"}`,
-                                               background: !upgradeSsd[item.id] ? "#F59E0B" : "#fff", color: !upgradeSsd[item.id] ? "#fff" : "#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                                      {labelGB(curSsd)}
-                                    </button>
-                                    {ssdOpts.map(gb => (
-                                      <button key={gb} onClick={() => setUpgradeSsd(u => ({ ...u, [item.id]: gb }))}
-                                        style={{ padding: "3px 8px", borderRadius: 6, border: `1.5px solid ${upgradeSsd[item.id] === gb ? "#F59E0B" : "#E2E8F0"}`,
-                                                 background: upgradeSsd[item.id] === gb ? "#F59E0B" : "#fff", color: upgradeSsd[item.id] === gb ? "#fff" : "#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                                        {labelGB(gb)}
-                                      </button>
-                                    ))}
-                                    {upgradeSsd[item.id] && (
-                                      <input type="number" placeholder="+AED"
-                                        value={upgradeSsdPrice[item.id] ?? ""}
-                                        onChange={e => setUpgradeSsdPrice(u => ({ ...u, [item.id]: e.target.value }))}
-                                        style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1.5px solid #FDE68A", fontSize: 12, fontWeight: 700, outline: "none", color: "#D97706" }} />
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {filteredDevices.length === 0 && (
-                  <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>No available devices</div>
-                )}
+            {/* Payment summary */}
+            <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#475569", marginBottom: 6 }}>
+                <span>Total</span>
+                <span style={{ fontWeight: 700 }}>AED {Number(completingDeal.value || 0).toLocaleString()}</span>
               </div>
-            )}
-
-            {/* Parts list */}
-            {activeModalTab === "parts" && (
-              <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
-                {partsLoading ? <Spinner /> : filteredParts.map(item => {
-                  const isSel = !!selectedItems.find(s => s.id === item.id && s.itemType === "part");
-                  const maxQty = item.quantity || 0;
-                  return (
-                    <div key={item.id}>
-                      <div onClick={() => maxQty > 0 && togglePart(item)}
-                        style={{ padding: "10px 12px", borderRadius: 10,
-                                 cursor: maxQty === 0 ? "not-allowed" : "pointer",
-                                 border: `1.5px solid ${isSel ? "#6366F1" : "#F1F5F9"}`,
-                                 background: isSel ? "#EEF2FF" : maxQty === 0 ? "#F8FAFC" : "#F8FAFC",
-                                 display: "flex", alignItems: "center", gap: 10,
-                                 opacity: maxQty === 0 ? 0.5 : 1 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${isSel ? "#6366F1" : "#CBD5E1"}`,
-                                      background: isSel ? "#6366F1" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {isSel && <span style={{ color: "#fff", fontSize: 12 }}>✓</span>}
-                        </div>
-                        <span style={{ fontSize: 18 }}>{PART_ICONS[item.category] || "🔧"}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
-                            {item.category}{item.specs ? ` · ${item.specs}` : ""}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
-                            {item.compatible_with || ""} · ×{maxQty} in stock
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>
-                          AED {Number(item.sell_price || 0).toLocaleString()}
-                        </div>
-                      </div>
-                      {isSel && (
-                        <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: 10, marginTop: 4, border: "1px solid #F1F5F9", display: "flex", gap: 10, alignItems: "center" }}>
-                          <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700 }}>QTY</span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <button onClick={() => setQuantities(q => ({ ...q, [item.id]: Math.max(1, (q[item.id] || 1) - 1) }))}
-                              style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", fontSize: 16, cursor: "pointer" }}>−</button>
-                            <span style={{ fontSize: 14, fontWeight: 800, minWidth: 20, textAlign: "center" }}>{quantities[item.id] || 1}</span>
-                            <button onClick={() => setQuantities(q => ({ ...q, [item.id]: Math.min(maxQty, (q[item.id] || 1) + 1) }))}
-                              style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", fontSize: 16, cursor: "pointer" }}>+</button>
-                          </div>
-                          <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, marginLeft: "auto" }}>PRICE (AED)</span>
-                          <input type="number" value={prices[item.id] ?? ""}
-                            onChange={e => setPrices(p => ({ ...p, [item.id]: e.target.value }))}
-                            style={{ width: 80, padding: "5px 8px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, fontWeight: 800, outline: "none", textAlign: "right", color: "#6366F1" }} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {!partsLoading && filteredParts.length === 0 && (
-                  <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>No parts available</div>
-                )}
-              </div>
-            )}
-
-            {/* Selected summary */}
-            {selectedItems.length > 0 && (
-              <div style={{ padding: "10px 14px", background: "#EEF2FF", borderRadius: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1", marginBottom: 4 }}>
-                  {selectedItems.length} item{selectedItems.length !== 1 ? "s" : ""} selected
+              {completingDeal.deposit_amount > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#F59E0B", marginBottom: 6 }}>
+                  <span>Deposit paid</span>
+                  <span style={{ fontWeight: 700 }}>AED {Number(completingDeal.deposit_amount).toLocaleString()}</span>
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: "#4338CA" }}>
-                  Total: AED {totalPrice.toLocaleString()}
-                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 800, color: "#10B981", borderTop: "1px solid #E2E8F0", paddingTop: 8 }}>
+                <span>Balance due today</span>
+                <span>AED {Number(completingDeal.balance_due || completingDeal.value || 0).toLocaleString()}</span>
               </div>
-            )}
-
-            {/* Pickup date */}
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>PICKUP DATE *</div>
-              <input type="date" value={pickupDate} onChange={e => setPickupDate(e.target.value)}
-                min={new Date().toISOString().split("T")[0]}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
             </div>
 
-            {/* Deposit */}
+            {/* Payment method */}
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>DEPOSIT</div>
-              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                {[["none","No Deposit"],["partial","Partial"],["full","Full Payment"]].map(([k,l]) => (
-                  <button key={k} onClick={() => { setDepositType(k); if (k === "full") setDepositAmount(String(totalPrice)); }}
-                    style={{ flex: 1, padding: "7px 4px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
-                             background: depositType === k ? "#F59E0B" : "#F1F5F9",
-                             color: depositType === k ? "#fff" : "#64748B" }}>
-                    {l}
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>PAYMENT METHOD</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["Cash", "Bank Transfer", "Partial"].map(m => (
+                  <button key={m} onClick={() => setCompletionPaymentMethod(m)}
+                    style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                             background: completionPaymentMethod === m ? "#6366F1" : "#F1F5F9",
+                             color: completionPaymentMethod === m ? "#fff" : "#64748B" }}>
+                    {m}
                   </button>
                 ))}
               </div>
-              {depositType === "partial" && (
-                <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)}
-                  placeholder="Amount received (AED)"
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #FDE68A", fontSize: 14, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
-              )}
-              {depositType !== "none" && depositAmt > 0 && totalPrice > 0 && (
-                <div style={{ marginTop: 6, fontSize: 12, color: "#92400E", fontWeight: 600 }}>
-                  Balance due: AED {balanceDue.toLocaleString()}
-                </div>
-              )}
             </div>
 
-            {/* Notes */}
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>NOTES (OPTIONAL)</div>
-              <input value={notes} onChange={e => setNotes(e.target.value)}
-                placeholder="e.g. Client confirmed via WhatsApp"
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-            </div>
+            {/* Complete button */}
+            <button onClick={async () => {
+              try {
+                const soldAt = new Date().toISOString();
+                const items = completingDeal.deal_items || [];
 
-            {/* Save button */}
-            <button onClick={save} disabled={saving || !pickupDate || selectedItems.length === 0}
-              style={{ padding: 14, borderRadius: 12, border: "none", fontSize: 14, fontWeight: 800,
-                       cursor: saving || !pickupDate || selectedItems.length === 0 ? "not-allowed" : "pointer",
-                       background: saving || !pickupDate || selectedItems.length === 0 ? "#E2E8F0" : "#F59E0B",
-                       color: saving || !pickupDate || selectedItems.length === 0 ? "#94A3B8" : "#fff" }}>
-              {saving ? "Saving…" : selectedItems.length > 0 ? `🔒 Reserve ${selectedItems.length} item${selectedItems.length !== 1 ? "s" : ""} — AED ${totalPrice.toLocaleString()}` : "🔒 Reserve Device"}
+                // Mark each device as sold
+                for (const item of items) {
+                  if (item.item_type === "device" && item.stock_id) {
+                    await supabase.from("stock").update({
+                      status: "sold",
+                      sold_at: soldAt,
+                      sold_to_customer_id: completingDeal.customers?.id || null,
+                    }).eq("id", item.stock_id);
+                  }
+                }
+
+                // Close the deal
+                await supabase.from("deals").update({
+                  stage: "closed",
+                  closed_at: soldAt,
+                  payment_method: completionPaymentMethod,
+                  payment_status: "received",
+                }).eq("id", completingDeal.id);
+
+                setShowCompleteReservation(false);
+                setCompletingDeal(null);
+                loadReservedDeals();
+                loadStock();
+                loadCustomers();
+                loadTodaySales();
+
+                // Show receipt option
+                const receiptItems = items.map(i => ({
+                  label: i.item_type === "device"
+                    ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
+                    : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
+                  price: Number(i.agreed_price || 0),
+                }));
+                setSaleReceiptData({
+                  type: "reserved",
+                  date: soldAt,
+                  customerName: completingDeal.customers?.name || "Customer",
+                  customerNumber: completingDeal.customers?.number || null,
+                  price: Number(completingDeal.value || 0),
+                  depositAmount: Number(completingDeal.deposit_amount || 0),
+                  balanceDue: Number(completingDeal.balance_due || 0),
+                  paymentMethod: completionPaymentMethod,
+                  items: receiptItems,
+                });
+                setReceiptEditName(completingDeal.customers?.name || "Customer");
+                setShowSaleReceipt(true);
+              } catch (e) {
+                alert("Error completing sale: " + (e.message || "Unknown error"));
+              }
+            }}
+              style={{ padding: 14, borderRadius: 12, border: "none", background: "#10B981", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
+              ✅ Complete Sale — AED {Number(completingDeal.balance_due || completingDeal.value || 0).toLocaleString()} Due
             </button>
           </div>
         </div>
       </div>
     </div>
-  );
-}
+  )}
 
-CHANGE 2 — Also remove the debug console.log from save() function
-Find this line anywhere in the file and remove it:
-  console.log('Saving reservation:', { selectedItem, pickupDate, agreedNum, customer });
+CHANGE 5 — Update buildSaleReceiptText to support multi-item deals
+Find the buildSaleReceiptText function.
+Replace the DEVICE DETAILS / PART DETAILS section with:
+
+  ${sale.items && sale.items.length > 0
+    ? `ITEMS:\n${sale.items.map(i => 
+        `${i.label}${' '.repeat(Math.max(1, 30 - i.label.length))}AED ${Number(i.price).toLocaleString()}`
+      ).join('\n')}`
+    : sale.type === "part"
+      ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nCompatible With: ${sale.specs}` : ""}\nQuantity: ${sale.quantity || 1}`
+      : `DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`
+  }
+
+CHANGE 6 — Update LinkStockModal confirm() to save to deal_items
+Find the confirm() function inside LinkStockModal.
+After marking stock as sold and updating the deal,
+add this to save items to deal_items table:
+
+  // Save to deal_items for deal-centric tracking
+  if (selType === "device") {
+    await supabase.from("deal_items").insert({
+      deal_id: deal.id,
+      item_type: "device",
+      stock_id: selItem.id,
+      brand: selItem.brand || null,
+      model: selItem.model || null,
+      ram: selItem.ram || null,
+      ssd: selItem.ssd || null,
+      condition: selItem.condition || null,
+      processor: selItem.processor || null,
+      serial_number: selItem.serial_number || null,
+      agreed_price: agreedN,
+    });
+  } else {
+    await supabase.from("deal_items").insert({
+      deal_id: deal.id,
+      item_type: "part",
+      part_id: selItem.id,
+      category: selItem.category || null,
+      specs: selItem.specs || null,
+      quantity: 1,
+      agreed_price: agreedN,
+    });
+  }
+
+CHANGE 7 — Update Sales History to show deal-centric entries
+Find the loadSalesHistory function.
+Update the dealSales query to also fetch deal_items:
+
+  const dealQuery = supabase
+    .from("deals")
+    .select("*, customers(name, number), deal_items(*)")
+    .eq("stage", "closed")
+    .order("closed_at", { ascending: false });
+
+Update the combined.push for dealSales to include items:
+  combined.push({
+    ...existingFields,
+    items: (d.deal_items || []).map(i => ({
+      label: i.item_type === "device"
+        ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
+        : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
+      price: Number(i.agreed_price || 0),
+    })),
+  });
+
+CHANGE 8 — Add expandable items in Sales History
+Find the sales history tab content where sale cards are rendered.
+Add expand/collapse state:
+  const [expandedSaleId, setExpandedSaleId] = useState(null);
+
+For each sale card, if sale.items and sale.items.length > 1, 
+show an expand button and expandable items list:
+
+  {sale.items && sale.items.length > 1 && (
+    <div style={{ marginTop: 6 }}>
+      <button onClick={() => setExpandedSaleId(expandedSaleId === (sale.id || i) ? null : (sale.id || i))}
+        style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+        {expandedSaleId === (sale.id || i) ? "▲ Hide items" : `▼ ${sale.items.length} items`}
+      </button>
+      {expandedSaleId === (sale.id || i) && (
+        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+          {sale.items.map((item, j) => (
+            <div key={j} style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", background: "#F8FAFC", borderRadius: 8 }}>
+              <span style={{ fontSize: 12, color: "#475569" }}>{item.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>AED {item.price.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )}
 
 After ALL changes: npm run build, fix any ESLint errors,
-git add -A && git commit -m "feat: ReservationModal multi-select devices and parts with upgrade options" 
+git add -A && git commit -m "feat: deal-centric reservation and sales with deal_items table" 
 && git push origin main --force
