@@ -770,6 +770,7 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
         closed_at: now,
         value: grandTotal,
         ...(firstDevice ? { stock_item_id: firstDevice.id } : {}),
+        ...(customer?.contact_type === "walkin" ? { sale_type: "walkin" } : {}),
       }).eq("id", deal.id);
 
       onDone();
@@ -829,15 +830,17 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
                 <input value={devSearch} onChange={e => setDevSearch(e.target.value)} placeholder="🔍 Search devices…"
                   style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
                 {loading ? <Spinner /> : (
-                  <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-                    {filtDev.length === 0
-                      ? <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>{devSearch ? "No matches" : "No available devices"}</div>
-                      : filtDev.map(d => {
-                          const sel = isSelected(d.id);
-                          const specs = [d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join(" · ");
-                          return (
-                            <div key={d.id} style={{ borderRadius: 12, border: `1.5px solid ${sel ? "#6366F1" : "#F1F5F9"}`, background: sel ? "#EEF2FF" : "#F8FAFC", overflow: "hidden" }}>
-                              <div onClick={() => toggleItem(d, true)} style={{ padding: "10px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <>
+                    <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                      {filtDev.length === 0
+                        ? <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>{devSearch ? "No matches" : "No available devices"}</div>
+                        : filtDev.map(d => {
+                            const sel = isSelected(d.id);
+                            const specs = [d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join(" · ");
+                            return (
+                              <div key={d.id} onClick={() => toggleItem(d, true)}
+                                style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                                         border: `1.5px solid ${sel ? "#6366F1" : "#F1F5F9"}`, background: sel ? "#EEF2FF" : "#F8FAFC" }}>
                                 <div style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, border: `2px solid ${sel ? "#6366F1" : "#CBD5E1"}`, background: sel ? "#6366F1" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                   {sel && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
                                 </div>
@@ -847,82 +850,83 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
                                 </div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>AED {Number(d.max_price || 0).toLocaleString()}</div>
                               </div>
-                              {sel && (
-                                <>
-                                <div style={{ padding: "0 12px 10px", display: "flex", alignItems: "center", gap: 8 }}>
-                                  <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Sale price: AED</span>
-                                  <input type="number" value={prices[d.id] || ""} onChange={e => setPrices(p => ({ ...p, [d.id]: e.target.value }))}
-                                    onClick={e => e.stopPropagation()}
-                                    style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #C7D2FE", fontSize: 14, fontWeight: 800, outline: "none", color: "#6366F1" }} />
+                            );
+                          })
+                      }
+                    </div>
+                    {selDevices.map(d => {
+                      const curRam = parseGB(d.ram); const curSsd = parseGB(d.ssd);
+                      const ramOpts = [8,16,32,64].filter(g => g > curRam);
+                      const ssdOpts = [256,512,1024,2048].filter(g => g > curSsd);
+                      return (
+                        <div key={d.id} style={{ background: "#EEF2FF", borderRadius: 10, border: "1.5px solid #C7D2FE", overflow: "hidden" }}>
+                          <div style={{ padding: "8px 12px", fontSize: 12, fontWeight: 700, color: "#6366F1" }}>
+                            {[d.brand, d.model].filter(Boolean).join(" ") || "Device"}
+                          </div>
+                          <div style={{ padding: "0 12px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Sale price: AED</span>
+                            <input type="number" value={prices[d.id] || ""} onChange={e => setPrices(p => ({ ...p, [d.id]: e.target.value }))}
+                              style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #C7D2FE", fontSize: 14, fontWeight: 800, outline: "none", color: "#6366F1" }} />
+                          </div>
+                          {(ramOpts.length > 0 || ssdOpts.length > 0) && (
+                            <div style={{ margin: "0 12px 10px", padding: "10px 12px", background: "#FFFBEB", borderRadius: 10, border: "1px solid #FDE68A" }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", marginBottom: 6 }}>⬆ SPEC UPGRADE</div>
+                              {ramOpts.length > 0 && (
+                                <div style={{ marginBottom: 6 }}>
+                                  <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700, marginBottom: 3 }}>RAM</div>
+                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                    <button onClick={() => { setUpgradeRam(null); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0)) })); }}
+                                      style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${!upgradeRam?"#F59E0B":"#E2E8F0"}`, background: !upgradeRam?"#F59E0B":"#fff", color: !upgradeRam?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(curRam)||"Cur"}</button>
+                                    {ramOpts.map(gb => (
+                                      <button key={gb} onClick={() => { setUpgradeRam(gb); }}
+                                        style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${upgradeRam===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeRam===gb?"#F59E0B":"#fff", color: upgradeRam===gb?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(gb)}</button>
+                                    ))}
+                                    {upgradeRam && <input type="number" placeholder="+AED" value={upgradeRamPrice}
+                                      onChange={e => { setUpgradeRamPrice(e.target.value); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(Number(e.target.value)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0)) })); }}
+                                      style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1px solid #FDE68A", fontSize: 11, outline: "none", color: "#D97706" }} />}
+                                  </div>
                                 </div>
-                                {(() => {
-                                  const curRam = parseGB(d.ram); const curSsd = parseGB(d.ssd);
-                                  const ramOpts = [8,16,32,64].filter(g => g > curRam);
-                                  const ssdOpts = [256,512,1024,2048].filter(g => g > curSsd);
-                                  if (ramOpts.length === 0 && ssdOpts.length === 0) return null;
-                                  return (
-                                    <div style={{ margin: "0 12px 10px", padding: "10px 12px", background: "#FFFBEB", borderRadius: 10, border: "1px solid #FDE68A" }} onClick={e => e.stopPropagation()}>
-                                      <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", marginBottom: 6 }}>⬆ SPEC UPGRADE</div>
-                                      {ramOpts.length > 0 && (
-                                        <div style={{ marginBottom: 6 }}>
-                                          <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700, marginBottom: 3 }}>RAM</div>
-                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                            <button onClick={() => { setUpgradeRam(null); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0)) })); }}
-                                              style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${!upgradeRam?"#F59E0B":"#E2E8F0"}`, background: !upgradeRam?"#F59E0B":"#fff", color: !upgradeRam?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(curRam)||"Cur"}</button>
-                                            {ramOpts.map(gb => (
-                                              <button key={gb} onClick={() => { setUpgradeRam(gb); }}
-                                                style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${upgradeRam===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeRam===gb?"#F59E0B":"#fff", color: upgradeRam===gb?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(gb)}</button>
-                                            ))}
-                                            {upgradeRam && <input type="number" placeholder="+AED" value={upgradeRamPrice}
-                                              onChange={e => { setUpgradeRamPrice(e.target.value); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(Number(e.target.value)||0)+(upgradeSsd?(Number(upgradeSsdPrice)||0):0)) })); }}
-                                              style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1px solid #FDE68A", fontSize: 11, outline: "none", color: "#D97706" }} />}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {ssdOpts.length > 0 && (
-                                        <div>
-                                          <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700, marginBottom: 3 }}>STORAGE</div>
-                                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                            <button onClick={() => { setUpgradeSsd(null); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)) })); }}
-                                              style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${!upgradeSsd?"#F59E0B":"#E2E8F0"}`, background: !upgradeSsd?"#F59E0B":"#fff", color: !upgradeSsd?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(curSsd)||"Cur"}</button>
-                                            {ssdOpts.map(gb => (
-                                              <button key={gb} onClick={() => { setUpgradeSsd(gb); }}
-                                                style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${upgradeSsd===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeSsd===gb?"#F59E0B":"#fff", color: upgradeSsd===gb?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(gb)}</button>
-                                            ))}
-                                            {upgradeSsd && <input type="number" placeholder="+AED" value={upgradeSsdPrice}
-                                              onChange={e => { setUpgradeSsdPrice(e.target.value); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)+(Number(e.target.value)||0)) })); }}
-                                              style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1px solid #FDE68A", fontSize: 11, outline: "none", color: "#D97706" }} />}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                                </>
+                              )}
+                              {ssdOpts.length > 0 && (
+                                <div>
+                                  <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700, marginBottom: 3 }}>STORAGE</div>
+                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                    <button onClick={() => { setUpgradeSsd(null); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)) })); }}
+                                      style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${!upgradeSsd?"#F59E0B":"#E2E8F0"}`, background: !upgradeSsd?"#F59E0B":"#fff", color: !upgradeSsd?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(curSsd)||"Cur"}</button>
+                                    {ssdOpts.map(gb => (
+                                      <button key={gb} onClick={() => { setUpgradeSsd(gb); }}
+                                        style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${upgradeSsd===gb?"#F59E0B":"#E2E8F0"}`, background: upgradeSsd===gb?"#F59E0B":"#fff", color: upgradeSsd===gb?"#fff":"#64748B", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{labelGB(gb)}</button>
+                                    ))}
+                                    {upgradeSsd && <input type="number" placeholder="+AED" value={upgradeSsdPrice}
+                                      onChange={e => { setUpgradeSsdPrice(e.target.value); setPrices(p => ({ ...p, [d.id]: String((Number(d.max_price)||0)+(upgradeRam?(Number(upgradeRamPrice)||0):0)+(Number(e.target.value)||0)) })); }}
+                                      style={{ width: 70, padding: "3px 6px", borderRadius: 6, border: "1px solid #FDE68A", fontSize: 11, outline: "none", color: "#D97706" }} />}
+                                  </div>
+                                </div>
                               )}
                             </div>
-                          );
-                        })
-                    }
-                  </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
                 )}
               </>
             )}
-
             {/* Parts tab */}
             {activeTab === "parts" && (
               <>
                 <input value={partSearch} onChange={e => setPartSearch(e.target.value)} placeholder="🔍 Search parts…"
                   style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
                 {loading ? <Spinner /> : (
-                  <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-                    {filtPart.length === 0
-                      ? <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>{partSearch ? "No matches" : "No parts in stock"}</div>
-                      : filtPart.map(p => {
-                          const sel = isSelected(p.id);
-                          return (
-                            <div key={p.id} style={{ borderRadius: 12, border: `1.5px solid ${sel ? "#6366F1" : "#F1F5F9"}`, background: sel ? "#EEF2FF" : "#F8FAFC", overflow: "hidden" }}>
-                              <div onClick={() => toggleItem(p, false)} style={{ padding: "10px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <>
+                    <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                      {filtPart.length === 0
+                        ? <div style={{ textAlign: "center", padding: "24px 0", color: "#CBD5E1", fontSize: 13 }}>{partSearch ? "No matches" : "No parts in stock"}</div>
+                        : filtPart.map(p => {
+                            const sel = isSelected(p.id);
+                            return (
+                              <div key={p.id} onClick={() => toggleItem(p, false)} style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                                       border: `1.5px solid ${sel ? "#6366F1" : "#F1F5F9"}`, background: sel ? "#EEF2FF" : "#F8FAFC" }}>
                                 <div style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, border: `2px solid ${sel ? "#6366F1" : "#CBD5E1"}`, background: sel ? "#6366F1" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                   {sel && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
                                 </div>
@@ -935,28 +939,30 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
                                 </div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>AED {Number(p.sell_price || 0).toLocaleString()}</div>
                               </div>
-                              {sel && (
-                                <div style={{ padding: "0 12px 10px", display: "flex", gap: 8, alignItems: "center" }}>
-                                  <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600, flexShrink: 0 }}>Qty:</span>
-                                  <input type="number" min={1} max={p.quantity} value={quantities[p.id] || 1}
-                                    onChange={e => setQuantities(q => ({ ...q, [p.id]: Math.min(p.quantity, Math.max(1, parseInt(e.target.value) || 1)) }))}
-                                    onClick={e => e.stopPropagation()}
-                                    style={{ width: 60, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #C7D2FE", fontSize: 13, fontWeight: 700, outline: "none", textAlign: "center" }} />
-                                  <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600, flexShrink: 0 }}>Price: AED</span>
-                                  <input type="number" value={prices[p.id] || ""} onChange={e => setPrices(pr => ({ ...pr, [p.id]: e.target.value }))}
-                                    onClick={e => e.stopPropagation()}
-                                    style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #C7D2FE", fontSize: 14, fontWeight: 800, outline: "none", color: "#6366F1" }} />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                    }
-                  </div>
+                            );
+                          })
+                      }
+                    </div>
+                    {selParts.map(p => (
+                      <div key={p.id} style={{ background: "#EEF2FF", borderRadius: 10, border: "1.5px solid #C7D2FE", padding: "8px 12px" }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1", marginBottom: 6 }}>
+                          {p.category}{p.specs ? ` · ${p.specs}` : ""}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600, flexShrink: 0 }}>Qty:</span>
+                          <input type="number" min={1} max={p.quantity} value={quantities[p.id] || 1}
+                            onChange={e => setQuantities(q => ({ ...q, [p.id]: Math.min(p.quantity, Math.max(1, parseInt(e.target.value) || 1)) }))}
+                            style={{ width: 60, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #C7D2FE", fontSize: 13, fontWeight: 700, outline: "none", textAlign: "center" }} />
+                          <span style={{ fontSize: 11, color: "#64748B", fontWeight: 600, flexShrink: 0 }}>Price: AED</span>
+                          <input type="number" value={prices[p.id] || ""} onChange={e => setPrices(pr => ({ ...pr, [p.id]: e.target.value }))}
+                            style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #C7D2FE", fontSize: 14, fontWeight: 800, outline: "none", color: "#6366F1" }} />
+                        </div>
+                      </div>
+                    ))}
+                  </>
                 )}
               </>
             )}
-
             {/* Summary */}
             {selItems.length > 0 && (
               <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
@@ -2279,7 +2285,7 @@ export default function App() {
     (dealSales || []).forEach(d => {
       const stock = stockMap[d.stock_item_id] || {};
       combined.push({
-        id: d.id, type: "device", date: d.closed_at,
+        id: d.id, type: d.sale_type === "walkin" ? "walkin" : "device", date: d.closed_at,
         customerName: d.customers?.name || d.walk_in_name || "Walk-in Customer",
         customerNumber: d.customers?.number || null,
         device: [stock.brand, stock.model].filter(Boolean).join(" ") || "Device",
@@ -2373,7 +2379,7 @@ export default function App() {
     const c = customers.find(x => x.id === activeCustomerId);
     if (!c) return;
     const cType = c.contact_type || "client";
-    if (cType === "client") return;                  // clients always have deals
+    if (cType === "client" || cType === "walkin") return; // clients and walk-ins always have deals
     if (c.deals && c.deals.length > 0) {
       if (!activeDealId) setActiveDealId(c.deals[0].id);
       return;
@@ -2602,15 +2608,15 @@ export default function App() {
       ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, a local laptop trader. Keep messages short, direct and casual. Return JSON with only a "reply" field (WhatsApp style, max 3 lines).`
       : cType === "supplier"
       ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, an international laptop supplier. Write professional business messages. Return JSON with only a "reply" field (formal, 2-4 sentences).`
-      : buildSystemPromptFromCache(cachedStock);
+      : buildSystemPromptFromCache(cachedStock); // clients and walk-ins
 
     try {
       const raw = await callClaude(anthropicKey, history, systemPrompt);
       const clean = raw.replace(/```json|```/g, "").trim();
       let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
       setGeneratedReply(parsed.reply || raw);
-      // Update deal specs from AI analysis (clients only)
-      if (cType === "client" && parsed) {
+      // Update deal specs from AI analysis (clients and walk-ins)
+      if ((cType === "client" || cType === "walkin") && parsed) {
         const specUpdate = {};
         if (parsed.brand && parsed.brand !== "unknown" && !activeDeal?.brand) specUpdate.brand = parsed.brand;
         if (parsed.model && parsed.model !== "unknown" && !activeDeal?.model) specUpdate.model = parsed.model;
@@ -3967,6 +3973,7 @@ For any issues contact us on WhatsApp.
                 {activeCustomer.urgent && <Badge color="#EF4444" bg="#FEF2F2" small>🔴 URGENT</Badge>}
                 {activeCustomer.contact_type === "trader"   && <Badge color="#D97706" bg="#FFFBEB" small>🟡 TRADER</Badge>}
                 {activeCustomer.contact_type === "supplier" && <Badge color="#2563EB" bg="#EFF6FF" small>🔵 SUPPLIER</Badge>}
+                {activeCustomer.contact_type === "walkin"   && <Badge color="#6366F1" bg="#EEF2FF" small>⚡ WALK-IN</Badge>}
                 {(!activeCustomer.contact_type || activeCustomer.contact_type === "client") && <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
@@ -4675,6 +4682,7 @@ For any issues contact us on WhatsApp.
             { key: "client",   label: "🔴 Clients" },
             { key: "trader",   label: "🟡 Traders" },
             { key: "supplier", label: "🔵 Suppliers" },
+            { key: "walkin",   label: "⚡ Walk-in" },
           ].map(f => (
             <button key={f.key} onClick={() => setContactTypeFilter(f.key)}
               style={{ padding: "5px 14px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
@@ -4755,16 +4763,6 @@ For any issues contact us on WhatsApp.
                 </div>
               ))}
             </div>
-
-            {/* Quick Sale button */}
-            <button onClick={() => setShowQuickSale(true)}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "16px", borderRadius: 16, border: "none",
-                       background: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#fff", fontSize: 16, fontWeight: 800, cursor: "pointer",
-                       boxShadow: "0 4px 16px rgba(99,102,241,0.35)" }}>
-              <span style={{ fontSize: 22 }}>⚡</span>
-              Quick Sale
-              <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.85, marginLeft: 2 }}>Walk-in customer</span>
-            </button>
 
             {/* Today's sales stat */}
             {todaySales.total > 0 && (
@@ -4892,6 +4890,7 @@ For any issues contact us on WhatsApp.
 
             const typeBadge = cType === "trader"   ? { label: "🟡 Trader",   color: "#D97706", bg: "#FFFBEB" }
                             : cType === "supplier"  ? { label: "🔵 Supplier", color: "#2563EB", bg: "#EFF6FF" }
+                            : cType === "walkin"    ? { label: "⚡ Walk-in",  color: "#6366F1", bg: "#EEF2FF" }
                             : null;
 
             return (
@@ -5151,14 +5150,10 @@ For any issues contact us on WhatsApp.
             </div>
           )}
 
-          {/* Search + Quick Sale + Add + Import */}
+          {/* Search + Add + Import */}
           <div style={{ display: "flex", gap: 8 }}>
             <input value={stockSearch} onChange={e => setStockSearch(e.target.value)} placeholder="🔍  Search brand, model, serial..."
               style={{ flex: 1, padding: "9px 13px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#F8FAFC", fontSize: 13, outline: "none" }} />
-            <button onClick={() => setShowQuickSale(true)}
-              style={{ height: 38, padding: "0 12px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
-              ⚡ Sell
-            </button>
             <button onClick={() => { setShowImportStock(true); setImportPreview(null); setImportStockResult(null); }}
               style={{ height: 38, padding: "0 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
               📥

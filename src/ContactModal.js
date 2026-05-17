@@ -36,6 +36,17 @@ const TYPES = [
     bg: "#EFF6FF",
     border: "#BFDBFE",
   },
+  {
+    id: "walkin",
+    emoji: "⚡",
+    label: "Walk-in",
+    sub: "In-store customer",
+    detail: "In-store customer — name and number optional",
+    comms: "WhatsApp",
+    color: "#6366F1",
+    bg: "#EEF2FF",
+    border: "#C7D2FE",
+  },
 ];
 
 const TYPE_MAP = Object.fromEntries(TYPES.map(t => [t.id, t]));
@@ -63,11 +74,14 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
 
   // ── save ─────────────────────────────────────────────────────────────────
   async function save() {
-    if (!form.name.trim()) return;
+    if (type !== "walkin" && !form.name.trim()) return;
     setSaving(true);
 
+    const walkinName = form.name.trim() ||
+      "Walk-in · " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
     const customerRow = {
-      name:         form.name.trim(),
+      name:         type === "walkin" ? walkinName : form.name.trim(),
       number:       form.number.trim() || null,
       notes:        form.notes.trim()  || null,
       contact_type: type,
@@ -92,7 +106,7 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
 
     let deal = null;
 
-    if (type === "client") {
+    if (type === "client" || type === "walkin") {
       const { data: d } = await supabase.from("deals").insert({
         customer_id: c.id,
         stage:       "new_inquiry",
@@ -217,7 +231,17 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
                 {/* ── ALL TYPES ── */}
-                <Field label="NAME *" value={form.name} onChange={v => set("name", v)} placeholder={`e.g. ${type === "client" ? "Ali Hassan" : type === "trader" ? "Mohammed Trading" : "Electro Computer Warehouse"}`} />
+                <Field
+                  label={type === "walkin" ? "NAME (optional)" : "NAME *"}
+                  value={form.name}
+                  onChange={v => set("name", v)}
+                  placeholder={
+                    type === "client" ? "e.g. Ali Hassan" :
+                    type === "trader" ? "e.g. Mohammed Trading" :
+                    type === "walkin" ? "e.g. Ahmed or leave blank" :
+                    "e.g. Electro Computer Warehouse"
+                  }
+                />
                 <Field label="WHATSAPP NUMBER" value={form.number} onChange={v => set("number", v)} placeholder="e.g. 971501234567" type="tel" />
 
                 {/* ── CLIENT EXTRAS ── */}
@@ -291,18 +315,19 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
                     placeholder={
                       type === "client"   ? "e.g. Prefers cash, lives in Sharjah…" :
                       type === "trader"   ? "e.g. Good for HP lots, replies fast…" :
+                      type === "walkin"   ? "e.g. Wants MacBook, cash payment…" :
                       "e.g. Wire transfer before release. Mondays 12PM deadline…"
                     }
                     rows={2}
                     style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} />
                 </div>
 
-                <button onClick={save} disabled={saving || !form.name.trim()} style={{
+                <button onClick={save} disabled={saving || (type !== "walkin" && !form.name.trim())} style={{
                   padding: 14, borderRadius: 14, border: "none",
-                  background: saving || !form.name.trim() ? "#E2E8F0" : t.color,
-                  color: saving || !form.name.trim() ? "#94A3B8" : "#fff",
+                  background: saving || (type !== "walkin" && !form.name.trim()) ? "#E2E8F0" : t.color,
+                  color: saving || (type !== "walkin" && !form.name.trim()) ? "#94A3B8" : "#fff",
                   fontWeight: 800, fontSize: 15,
-                  cursor: saving || !form.name.trim() ? "not-allowed" : "pointer",
+                  cursor: saving || (type !== "walkin" && !form.name.trim()) ? "not-allowed" : "pointer",
                   marginTop: 4,
                 }}>
                   {saving ? "Saving…" : `Save ${t.label} →`}
