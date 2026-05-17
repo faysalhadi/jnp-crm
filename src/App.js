@@ -773,6 +773,34 @@ function LinkStockModal({ customer, deal, onClose, onDone }) {
         ...(customer?.contact_type === "walkin" ? { sale_type: "walkin" } : {}),
       }).eq("id", deal.id);
 
+      // Save to deal_items for deal-centric tracking
+      for (const item of selDevices) {
+        await supabase.from("deal_items").insert({
+          deal_id: deal.id,
+          item_type: "device",
+          stock_id: item.id,
+          brand: item.brand || null,
+          model: item.model || null,
+          ram: item.ram || null,
+          ssd: item.ssd || null,
+          condition: item.condition || null,
+          processor: item.processor || null,
+          serial_number: item.serial_number || null,
+          agreed_price: Number(prices[item.id]) || 0,
+        });
+      }
+      for (const item of selParts) {
+        await supabase.from("deal_items").insert({
+          deal_id: deal.id,
+          item_type: "part",
+          part_id: item.id,
+          category: item.category || null,
+          specs: item.specs || null,
+          quantity: quantities[item.id] || 1,
+          agreed_price: Number(prices[item.id]) || 0,
+        });
+      }
+
       onDone();
     } catch (e) {
       setSaving(false);
@@ -1272,11 +1300,13 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
     setSaving(true);
     try {
       const soldAt = new Date().toISOString();
+
       for (const item of selectedItems) {
         if (item.itemType === "device") {
           const ramAdd = upgradeRam[item.id] ? (Number(upgradeRamPrice[item.id]) || 0) : 0;
           const ssdAdd = upgradeSsd[item.id] ? (Number(upgradeSsdPrice[item.id]) || 0) : 0;
           const finalPrice = (Number(prices[item.id]) || 0) + ramAdd + ssdAdd;
+
           await supabase.from("stock").update({
             status: "reserved",
             reserved_for_customer_id: customer.id,
@@ -1284,28 +1314,59 @@ function ReservationModal({ customer, deal, stock, onClose, onDone }) {
             pickup_date: pickupDate,
             sold_price: finalPrice || null,
           }).eq("id", item.id);
+
           if (upgradeRam[item.id] || upgradeSsd[item.id]) {
             const specUpdate = {};
             if (upgradeRam[item.id]) specUpdate.ram = labelGB(upgradeRam[item.id]);
             if (upgradeSsd[item.id]) specUpdate.ssd = labelGB(upgradeSsd[item.id]);
             await supabase.from("stock").update(specUpdate).eq("id", item.id);
           }
+
+          await supabase.from("deal_items").insert({
+            deal_id: deal.id,
+            item_type: "device",
+            stock_id: item.id,
+            brand: item.brand || null,
+            model: item.model || null,
+            ram: upgradeRam[item.id] ? labelGB(upgradeRam[item.id]) : (item.ram || null),
+            ssd: upgradeSsd[item.id] ? labelGB(upgradeSsd[item.id]) : (item.ssd || null),
+            condition: item.condition || null,
+            processor: item.processor || null,
+            serial_number: item.serial_number || null,
+            agreed_price: finalPrice,
+            upgrade_ram: upgradeRam[item.id] ? labelGB(upgradeRam[item.id]) : null,
+            upgrade_ssd: upgradeSsd[item.id] ? labelGB(upgradeSsd[item.id]) : null,
+            upgrade_price: ramAdd + ssdAdd,
+          });
+
         } else {
           const qty = Number(quantities[item.id]) || 1;
           const newQty = (item.quantity || 0) - qty;
           await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", item.id);
+
+          await supabase.from("deal_items").insert({
+            deal_id: deal.id,
+            item_type: "part",
+            part_id: item.id,
+            category: item.category || null,
+            specs: item.specs || null,
+            quantity: qty,
+            agreed_price: Number(prices[item.id]) || 0,
+          });
         }
       }
+
       const deviceItem = selectedItems.find(i => i.itemType === "device");
       await supabase.from("deals").update({
         stage: "confirmed_pending_pickup",
-        value: totalPrice || undefined,
+        value: totalPrice || null,
         deposit_amount: depositAmt,
         balance_due: balanceDue,
         pickup_date: pickupDate,
         reservation_notes: notes.trim() || null,
         stock_item_id: deviceItem?.id || null,
       }).eq("id", deal.id);
+
       onDone({ selectedItems, pickupDate, depositAmt, balanceDue });
     } catch (e) {
       alert("Error saving reservation: " + (e.message || "Unknown error"));
@@ -2114,6 +2175,7 @@ export default function App() {
   const [salesFilter,          setSalesFilter]          = useState("month");
   const [showSaleReceipt,      setShowSaleReceipt]      = useState(false);
   const [saleReceiptData,      setSaleReceiptData]      = useState(null);
+  const [expandedSaleId,       setExpandedSaleId]       = useState(null);
   const [receiptEditName,      setReceiptEditName]      = useState("");
 
   // ── broadcast ──
@@ -2133,6 +2195,12 @@ export default function App() {
 
   // ── reservation ──
   const [showReservation, setShowReservation] = useState(false);
+  const [reservedDeals, setReservedDeals] = useState([]);
+  const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
+  const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
+  const [showCompleteReservation, setShowCompleteReservation] = useState(false);
+  const [completingDeal, setCompletingDeal] = useState(null);
+  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
 
   // ── spec upgrade ──
   const [showUpgrade,   setShowUpgrade]   = useState(false);
@@ -2262,7 +2330,7 @@ export default function App() {
       fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
     }
 
-    const dealQuery = supabase.from("deals").select("*, customers(name, number)").eq("stage","closed").not("stock_item_id","is",null).order("closed_at",{ascending:false});
+    const dealQuery = supabase.from("deals").select("*, customers(name, number), deal_items(*)").eq("stage","closed").order("closed_at",{ascending:false});
     if (fromDate) dealQuery.gte("closed_at", fromDate.toISOString());
     const { data: dealSales } = await dealQuery;
 
@@ -2295,6 +2363,12 @@ export default function App() {
         depositAmount: d.deposit_amount || 0, balanceDue: d.balance_due || 0,
         brand: stock.brand, model: stock.model, processor: stock.processor,
         ram: stock.ram, ssd: stock.ssd, condition: stock.condition,
+        items: (d.deal_items || []).map(i => ({
+          label: i.item_type === "device"
+            ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
+            : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
+          price: Number(i.agreed_price || 0),
+        })),
       });
     });
     (walkinSales || []).forEach(d => {
@@ -2323,6 +2397,17 @@ export default function App() {
     setSalesHistory(combined);
     setSalesHistoryLoading(false);
   }, [salesFilter]);
+
+  const loadReservedDeals = useCallback(async () => {
+    setReservedDealsLoading(true);
+    const { data: deals } = await supabase
+      .from("deals")
+      .select("*, customers(id, name, number), deal_items(*)")
+      .eq("stage", "confirmed_pending_pickup")
+      .order("created_at", { ascending: false });
+    setReservedDeals(deals || []);
+    setReservedDealsLoading(false);
+  }, []);
 
   const loadTodaySales = useCallback(async () => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -2868,6 +2953,10 @@ Return JSON with only a "reply" field containing the message.`;
   useEffect(() => {
     if (activeTab === "sales") loadSalesHistory();
   }, [salesFilter, activeTab, loadSalesHistory]);
+
+  useEffect(() => {
+    if (stockFilter === "reserved") loadReservedDeals();
+  }, [stockFilter, loadReservedDeals]);
 
   useEffect(() => {
     if (stockFilter !== "sold") return;
@@ -3572,8 +3661,14 @@ Date: ${date}
 SOLD TO:
 Name: ${customerName}${sale.customerNumber ? `\nContact: ${sale.customerNumber}` : ""}
 
-${sale.type === "part" ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nCompatible With: ${sale.specs}\n` : ""}Quantity: ${sale.quantity || 1}` :
-`DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`}
+${sale.items && sale.items.length > 0
+    ? `ITEMS:\n${sale.items.map(i =>
+        `${i.label}${' '.repeat(Math.max(1, 30 - i.label.length))}AED ${Number(i.price).toLocaleString()}`
+      ).join('\n')}`
+    : sale.type === "part"
+      ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nCompatible With: ${sale.specs}` : ""}\nQuantity: ${sale.quantity || 1}`
+      : `DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`
+  }
 
 PAYMENT:
 ${sale.depositAmount > 0 ?
@@ -5270,8 +5365,199 @@ For any issues contact us on WhatsApp.
             </div>
           )}
 
+          {/* Reserved deals — deal-centric view */}
+          {stockFilter === "reserved" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {reservedDealsLoading && <Spinner />}
+              {!reservedDealsLoading && reservedDeals.length === 0 && (
+                <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                  <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No reservations</div>
+                </div>
+              )}
+              {!reservedDealsLoading && reservedDeals.map(deal => {
+                const customer = deal.customers;
+                const items = deal.deal_items || [];
+                const isExpanded = expandedReservedDeal === deal.id;
+                const today = new Date(); today.setHours(0,0,0,0);
+                const isOverdue = deal.pickup_date && new Date(deal.pickup_date) < today;
+                const pickupLabel = deal.pickup_date
+                  ? new Date(deal.pickup_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                  : null;
+                const deviceItems = items.filter(i => i.item_type === "device");
+                const partItems = items.filter(i => i.item_type === "part");
+                const itemSummary = [
+                  ...deviceItems.map(i => [i.brand, i.model].filter(Boolean).join(" ") || "Device"),
+                  ...partItems.map(i => i.category || "Part"),
+                ].join(" · ");
+                return (
+                  <div key={deal.id} style={{
+                    background: "#fff", borderRadius: 18,
+                    border: `1.5px solid ${isOverdue ? "#FCA5A5" : "#FDE68A"}`,
+                    boxShadow: "0 1px 6px rgba(245,158,11,0.15)",
+                    overflow: "hidden",
+                  }}>
+                    <div style={{
+                      padding: "12px 14px",
+                      background: isOverdue ? "#FEF2F2" : "#FFFBEB",
+                      borderBottom: isExpanded ? "1px solid #FDE68A" : "none",
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>
+                            🔒 {customer?.name || "Walk-in"}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>
+                            {itemSummary || "No items"}
+                          </div>
+                          <div style={{ fontSize: 11, color: isOverdue ? "#EF4444" : "#B45309", marginTop: 3, fontWeight: 700 }}>
+                            {isOverdue ? `⚠️ Overdue — pickup was ${pickupLabel}` : `Pickup: ${pickupLabel || "—"}`}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: "#6366F1" }}>
+                            AED {Number(deal.value || 0).toLocaleString()}
+                          </div>
+                          {deal.deposit_amount > 0 && (
+                            <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700 }}>
+                              Deposit: AED {Number(deal.deposit_amount).toLocaleString()}
+                            </div>
+                          )}
+                          {deal.balance_due > 0 && (
+                            <div style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>
+                              Balance: AED {Number(deal.balance_due).toLocaleString()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                        <button onClick={() => setExpandedReservedDeal(isExpanded ? null : deal.id)}
+                          style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #FDE68A", background: "#fff", color: "#D97706", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          {isExpanded ? "▲ Hide Items" : `▼ ${items.length} Item${items.length !== 1 ? "s" : ""}`}
+                        </button>
+                        <button onClick={() => {
+                          setCompletingDeal(deal);
+                          setCompletionPaymentMethod("Cash");
+                          setShowCompleteReservation(true);
+                        }}
+                          style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          ✅ Complete
+                        </button>
+                        <button onClick={() => {
+                          setEditReservationItem(deal);
+                          setEditReservationForm({
+                            agreedPrice: String(deal.value || ""),
+                            pickupDate: deal.pickup_date ? deal.pickup_date.split("T")[0] : "",
+                            depositAmount: String(deal.deposit_amount || ""),
+                            balanceDue: String(deal.balance_due || ""),
+                            notes: deal.reservation_notes || "",
+                          });
+                          setShowEditReservation(true);
+                        }}
+                          style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          ✏️ Edit
+                        </button>
+                        <button onClick={async () => {
+                          if (!window.confirm("Release all items in this reservation?")) return;
+                          const deviceItems = (deal.deal_items || []).filter(i => i.item_type === "device");
+                          for (const item of deviceItems) {
+                            if (item.stock_id) {
+                              await supabase.from("stock").update({
+                                status: "available",
+                                reserved_for_customer_id: null,
+                                reserved_at: null,
+                                pickup_date: null,
+                                sold_price: null,
+                              }).eq("id", item.stock_id);
+                            }
+                          }
+                          await supabase.from("deal_items").delete().eq("deal_id", deal.id);
+                          await supabase.from("deals").update({
+                            stage: "device_found",
+                            value: null,
+                            deposit_amount: null,
+                            balance_due: null,
+                            pickup_date: null,
+                            stock_item_id: null,
+                          }).eq("id", deal.id);
+                          loadReservedDeals();
+                          loadStock();
+                          loadCustomers();
+                        }}
+                          style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          🔓
+                        </button>
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                        {items.length === 0 && (
+                          <div style={{ fontSize: 12, color: "#94A3B8", textAlign: "center", padding: "12px 0" }}>No items recorded</div>
+                        )}
+                        {items.map((item, i) => (
+                          <div key={item.id || i} style={{
+                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                            padding: "8px 12px", borderRadius: 10,
+                            background: item.item_type === "device" ? "#F8FAFC" : "#F5F3FF",
+                            border: `1px solid ${item.item_type === "device" ? "#F1F5F9" : "#DDD6FE"}`,
+                          }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
+                                {item.item_type === "device"
+                                  ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
+                                  : `🔧 ${item.category || "Part"}${item.specs ? ` · ${item.specs}` : ""}`}
+                              </div>
+                              {item.item_type === "device" && (
+                                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
+                                  {[item.ram, item.ssd, item.condition].filter(Boolean).join(" · ")}
+                                  {item.upgrade_ram || item.upgrade_ssd ? " · ⬆ Upgraded" : ""}
+                                </div>
+                              )}
+                              {item.item_type === "part" && item.quantity > 1 && (
+                                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>×{item.quantity}</div>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
+                                AED {Number(item.agreed_price || 0).toLocaleString()}
+                              </div>
+                              <button onClick={async () => {
+                                if (!window.confirm("Release this item back to stock?")) return;
+                                if (item.item_type === "device" && item.stock_id) {
+                                  await supabase.from("stock").update({
+                                    status: "available",
+                                    reserved_for_customer_id: null,
+                                    reserved_at: null,
+                                    pickup_date: null,
+                                    sold_price: null,
+                                  }).eq("id", item.stock_id);
+                                }
+                                await supabase.from("deal_items").delete().eq("id", item.id);
+                                const remaining = items.filter(x => x.id !== item.id);
+                                const newTotal = remaining.reduce((s, x) => s + (Number(x.agreed_price) || 0), 0);
+                                await supabase.from("deals").update({
+                                  value: newTotal || null,
+                                  balance_due: Math.max(0, newTotal - (Number(deal.deposit_amount) || 0)),
+                                }).eq("id", deal.id);
+                                loadReservedDeals();
+                                loadStock();
+                              }}
+                                style={{ padding: "3px 8px", borderRadius: 6, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                                🔓
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Stock cards — hidden when parts_sold filter is active */}
-          {stockFilter !== "parts_sold" && filteredStock.map(item => {
+          {stockFilter !== "parts_sold" && stockFilter !== "reserved" && filteredStock.map(item => {
             const isExpanded = expandedStockId === item.id;
             const matches    = getMatchingClients(item);
             const isAvail    = item.status === "available";
@@ -6172,6 +6458,24 @@ For any issues contact us on WhatsApp.
                   🧾 Receipt
                 </button>
               </div>
+              {sale.items && sale.items.length > 1 && (
+                <div style={{ marginTop: 6 }}>
+                  <button onClick={() => setExpandedSaleId(expandedSaleId === (sale.id || i) ? null : (sale.id || i))}
+                    style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                    {expandedSaleId === (sale.id || i) ? "▲ Hide items" : `▼ ${sale.items.length} items`}
+                  </button>
+                  {expandedSaleId === (sale.id || i) && (
+                    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {sale.items.map((item, j) => (
+                        <div key={j} style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", background: "#F8FAFC", borderRadius: 8 }}>
+                          <span style={{ fontSize: 12, color: "#475569" }}>{item.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>AED {item.price.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -6548,6 +6852,118 @@ For any issues contact us on WhatsApp.
                 }}
                   style={{ padding: 12, borderRadius: 12, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                   🔓 Release Reservation
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Complete Reservation modal ── */}
+      {showCompleteReservation && completingDeal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✅ Complete Sale</div>
+                  <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>{completingDeal.customers?.name || "Customer"}</div>
+                </div>
+                <button onClick={() => setShowCompleteReservation(false)}
+                  style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+              </div>
+              <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {(completingDeal.deal_items || []).map((item, i) => (
+                    <div key={item.id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#F8FAFC", borderRadius: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A" }}>
+                        {item.item_type === "device"
+                          ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
+                          : `🔧 ${item.category || "Part"}${item.quantity > 1 ? ` ×${item.quantity}` : ""}`}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>AED {Number(item.agreed_price || 0).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#475569", marginBottom: 6 }}>
+                    <span>Total</span>
+                    <span style={{ fontWeight: 700 }}>AED {Number(completingDeal.value || 0).toLocaleString()}</span>
+                  </div>
+                  {completingDeal.deposit_amount > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#F59E0B", marginBottom: 6 }}>
+                      <span>Deposit paid</span>
+                      <span style={{ fontWeight: 700 }}>AED {Number(completingDeal.deposit_amount).toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 800, color: "#10B981", borderTop: "1px solid #E2E8F0", paddingTop: 8 }}>
+                    <span>Balance due today</span>
+                    <span>AED {Number(completingDeal.balance_due || completingDeal.value || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>PAYMENT METHOD</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {["Cash", "Bank Transfer", "Partial"].map(m => (
+                      <button key={m} onClick={() => setCompletionPaymentMethod(m)}
+                        style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                                 background: completionPaymentMethod === m ? "#6366F1" : "#F1F5F9",
+                                 color: completionPaymentMethod === m ? "#fff" : "#64748B" }}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button onClick={async () => {
+                  try {
+                    const soldAt = new Date().toISOString();
+                    const items = completingDeal.deal_items || [];
+                    for (const item of items) {
+                      if (item.item_type === "device" && item.stock_id) {
+                        await supabase.from("stock").update({
+                          status: "sold",
+                          sold_at: soldAt,
+                          sold_to_customer_id: completingDeal.customers?.id || null,
+                        }).eq("id", item.stock_id);
+                      }
+                    }
+                    await supabase.from("deals").update({
+                      stage: "closed",
+                      closed_at: soldAt,
+                      payment_method: completionPaymentMethod,
+                      payment_status: "received",
+                    }).eq("id", completingDeal.id);
+                    setShowCompleteReservation(false);
+                    setCompletingDeal(null);
+                    loadReservedDeals();
+                    loadStock();
+                    loadCustomers();
+                    loadTodaySales();
+                    const receiptItems = items.map(i => ({
+                      label: i.item_type === "device"
+                        ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
+                        : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
+                      price: Number(i.agreed_price || 0),
+                    }));
+                    setSaleReceiptData({
+                      type: "reserved",
+                      date: soldAt,
+                      customerName: completingDeal.customers?.name || "Customer",
+                      customerNumber: completingDeal.customers?.number || null,
+                      price: Number(completingDeal.value || 0),
+                      depositAmount: Number(completingDeal.deposit_amount || 0),
+                      balanceDue: Number(completingDeal.balance_due || 0),
+                      paymentMethod: completionPaymentMethod,
+                      items: receiptItems,
+                    });
+                    setReceiptEditName(completingDeal.customers?.name || "Customer");
+                    setShowSaleReceipt(true);
+                  } catch (e) {
+                    alert("Error completing sale: " + (e.message || "Unknown error"));
+                  }
+                }}
+                  style={{ padding: 14, borderRadius: 12, border: "none", background: "#10B981", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
+                  ✅ Complete Sale — AED {Number(completingDeal.balance_due || completingDeal.value || 0).toLocaleString()} Due
                 </button>
               </div>
             </div>
