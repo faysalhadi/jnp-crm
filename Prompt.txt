@@ -1,50 +1,68 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 7d. Extract TradersTab component.
+This is refactor step 7e. Extract StockTab component.
 Do NOT change any logic.
 
 IMPORTANT: File MUST have "import React from 'react';" 
 as the very first import.
 
-Create src/components/tabs/TradersTab.js
+Create src/components/tabs/StockTab.js
 
 Add these at the top:
-  import React, { useState } from "react";
+  import React, { useState, useRef, useEffect } from "react";
   import { supabase } from "../../supabase";
+  import * as XLSX from "xlsx";
   import Spinner from "../ui/Spinner";
   import Badge from "../ui/Badge";
-  import { timeAgo, daysSince } from "../../utils/helpers";
+  import { BRANDS, EMPTY_STOCK } from "../../constants";
+  import { daysSince, timeAgo, parseGB, labelGB } from "../../utils/helpers";
+  import SpecUpgradeModal from "../modals/SpecUpgradeModal";
+  import QuickSaleModal from "../modals/QuickSaleModal";
+  import PartSaleModal from "../modals/PartSaleModal";
 
-Find the traders tab content in App.js:
-  {activeTab === "traders" && ( ... )}
+Find the stock tab content in App.js:
+  {activeTab === "stock" && ( ... )}
 
 Extract ALL content inside that block into:
-  export default function TradersTab({
-    anthropicKey,
+  export default function StockTab({
     isMobile,
-    stock,
+    stock, stockLoading, loadStock, refreshCachedStock,
+    stockFilter, setStockFilter,
+    stockSearch, setStockSearch,
+    stockView, setStockView,
+    showAddStock, setShowAddStock,
+    editingStock, setEditingStock,
+    stockForm, setStockForm,
+    expandedStockId, setExpandedStockId,
+    stockPhotoUploading, setStockPhotoUploading,
+    showImportStock, setShowImportStock,
+    importPreview, setImportPreview,
+    importingStock, setImportingStock,
+    importStockResult, setImportStockResult,
+    parts, partsLoading, loadParts,
+    showAddPart, setShowAddPart,
+    editingPart, setEditingPart,
+    partForm, setPartForm,
+    showPartSale, setShowPartSale,
+    partSaleTarget, setPartSaleTarget,
+    partsSold, partsSoldLoading,
+    partsRevMTD, loadPartsRevMTD,
+    showUpgrade, setShowUpgrade,
+    upgradeTarget, setUpgradeTarget,
+    showQuickSale, setShowQuickSale,
+    quickSalePrefill, setQuickSalePrefill,
+    soldDealMap, setSoldDealMap,
     customers,
-    traderListings,
-    traderListingsLoading,
-    loadTraderListings,
-    traderSection, setTraderSection,
-    traderSearch, setTraderSearch,
-    traderFilter, setTraderFilter,
-    showImportTrader, setShowImportTrader,
-    traderGroup, setTraderGroup,
-    traderChatText, setTraderChatText,
-    traderImportLoading, setTraderImportLoading,
-    traderImportPreview, setTraderImportPreview,
-    savingTraderListings, setSavingTraderListings,
-    traderImportResult, setTraderImportResult,
-    showTraderMatches, setShowTraderMatches,
-    showCheckTraders, setShowCheckTraders,
-    checkTradersResults, setCheckTradersResults,
-    checkTradersLoading, setCheckTradersLoading,
-    activeDeal,
-    extractTraderListings,
-    saveTraderListings,
-    checkTradersForDeal,
+    saveStock, deleteStockItem, toggleStockStatus,
+    uploadStockPhoto, downloadStockTemplate,
+    handleStockFileSelect, importStockItems,
+    savePart, deletePart,
+    getMatchingClients,
+    openBroadcast,
+    handleUpgradeApply,
+    loadCustomers, loadTodaySales,
+    stockFileInputRef, importStockFileRef,
+    setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
   }) {
     return (
       // exact same JSX
@@ -52,56 +70,93 @@ Extract ALL content inside that block into:
   }
 
 In App.js replace:
-  {activeTab === "traders" && ( ... )}
+  {activeTab === "stock" && ( ... )}
 With:
-  {activeTab === "traders" && (
-    <TradersTab
-      anthropicKey={anthropicKey}
+  {activeTab === "stock" && (
+    <StockTab
       isMobile={isMobile}
       stock={stock}
+      stockLoading={stockLoading}
+      loadStock={loadStock}
+      refreshCachedStock={refreshCachedStock}
+      stockFilter={stockFilter}
+      setStockFilter={setStockFilter}
+      stockSearch={stockSearch}
+      setStockSearch={setStockSearch}
+      stockView={stockView}
+      setStockView={setStockView}
+      showAddStock={showAddStock}
+      setShowAddStock={setShowAddStock}
+      editingStock={editingStock}
+      setEditingStock={setEditingStock}
+      stockForm={stockForm}
+      setStockForm={setStockForm}
+      expandedStockId={expandedStockId}
+      setExpandedStockId={setExpandedStockId}
+      stockPhotoUploading={stockPhotoUploading}
+      setStockPhotoUploading={setStockPhotoUploading}
+      showImportStock={showImportStock}
+      setShowImportStock={setShowImportStock}
+      importPreview={importPreview}
+      setImportPreview={setImportPreview}
+      importingStock={importingStock}
+      setImportingStock={setImportingStock}
+      importStockResult={importStockResult}
+      setImportStockResult={setImportStockResult}
+      parts={parts}
+      partsLoading={partsLoading}
+      loadParts={loadParts}
+      showAddPart={showAddPart}
+      setShowAddPart={setShowAddPart}
+      editingPart={editingPart}
+      setEditingPart={setEditingPart}
+      partForm={partForm}
+      setPartForm={setPartForm}
+      showPartSale={showPartSale}
+      setShowPartSale={setShowPartSale}
+      partSaleTarget={partSaleTarget}
+      setPartSaleTarget={setPartSaleTarget}
+      partsSold={partsSold}
+      partsSoldLoading={partsSoldLoading}
+      partsRevMTD={partsRevMTD}
+      loadPartsRevMTD={loadPartsRevMTD}
+      showUpgrade={showUpgrade}
+      setShowUpgrade={setShowUpgrade}
+      upgradeTarget={upgradeTarget}
+      setUpgradeTarget={setUpgradeTarget}
+      showQuickSale={showQuickSale}
+      setShowQuickSale={setShowQuickSale}
+      quickSalePrefill={quickSalePrefill}
+      setQuickSalePrefill={setQuickSalePrefill}
+      soldDealMap={soldDealMap}
+      setSoldDealMap={setSoldDealMap}
       customers={customers}
-      traderListings={traderListings}
-      traderListingsLoading={traderListingsLoading}
-      loadTraderListings={loadTraderListings}
-      traderSection={traderSection}
-      setTraderSection={setTraderSection}
-      traderSearch={traderSearch}
-      setTraderSearch={setTraderSearch}
-      traderFilter={traderFilter}
-      setTraderFilter={setTraderFilter}
-      showImportTrader={showImportTrader}
-      setShowImportTrader={setShowImportTrader}
-      traderGroup={traderGroup}
-      setTraderGroup={setTraderGroup}
-      traderChatText={traderChatText}
-      setTraderChatText={setTraderChatText}
-      traderImportLoading={traderImportLoading}
-      setTraderImportLoading={setTraderImportLoading}
-      traderImportPreview={traderImportPreview}
-      setTraderImportPreview={setTraderImportPreview}
-      savingTraderListings={savingTraderListings}
-      setSavingTraderListings={setSavingTraderListings}
-      traderImportResult={traderImportResult}
-      setTraderImportResult={setTraderImportResult}
-      showTraderMatches={showTraderMatches}
-      setShowTraderMatches={setShowTraderMatches}
-      showCheckTraders={showCheckTraders}
-      setShowCheckTraders={setShowCheckTraders}
-      checkTradersResults={checkTradersResults}
-      setCheckTradersResults={setCheckTradersResults}
-      checkTradersLoading={checkTradersLoading}
-      setCheckTradersLoading={setCheckTradersLoading}
-      activeDeal={activeDeal}
-      extractTraderListings={extractTraderListings}
-      saveTraderListings={saveTraderListings}
-      checkTradersForDeal={checkTradersForDeal}
+      saveStock={saveStock}
+      deleteStockItem={deleteStockItem}
+      toggleStockStatus={toggleStockStatus}
+      uploadStockPhoto={uploadStockPhoto}
+      downloadStockTemplate={downloadStockTemplate}
+      handleStockFileSelect={handleStockFileSelect}
+      importStockItems={importStockItems}
+      savePart={savePart}
+      deletePart={deletePart}
+      getMatchingClients={getMatchingClients}
+      openBroadcast={openBroadcast}
+      handleUpgradeApply={handleUpgradeApply}
+      loadCustomers={loadCustomers}
+      loadTodaySales={loadTodaySales}
+      stockFileInputRef={stockFileInputRef}
+      importStockFileRef={importStockFileRef}
+      setSaleReceiptData={setSaleReceiptData}
+      setReceiptEditName={setReceiptEditName}
+      setShowSaleReceipt={setShowSaleReceipt}
     />
   )}
 
 Add import at top of App.js:
-  import TradersTab from "./components/tabs/TradersTab";
+  import StockTab from "./components/tabs/StockTab";
 
-DELETE the original traders tab block from App.js.
+DELETE the original stock tab block from App.js.
 
 VERIFICATION CHECKLIST before building:
 - File has "import React from 'react'" at very top
@@ -109,18 +164,20 @@ VERIFICATION CHECKLIST before building:
 - Imported in App.js
 - Original block deleted from App.js
 - No duplicate definitions
-- showImportTrader, showTraderMatches, showCheckTraders
-  are all in the props destructuring
-- All props used in JSX are in the component signature
+- SpecUpgradeModal, QuickSaleModal, PartSaleModal 
+  imported from modals folder
+- All props used in JSX are in component signature
+- If build fails due to undefined variable add it as prop
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors — if a variable is undefined add it 
    as a prop in both the component and App.js usage
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 7d: extract TradersTab" 
+   git add -A && git commit -m "refactor v2 step 7e: extract StockTab" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Check Traders tab — does it show listings?
-7. Tell me the new App.js line count
+6. Check Stock tab — do devices show?
+7. Check Reserved filter — do reserved items show?
+8. Tell me the new App.js line count
