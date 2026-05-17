@@ -1,112 +1,122 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 6. Extract modal components one by one.
-Each modal gets its own file. Do NOT change any logic.
+This is refactor step 7. Extract tab components one at a time.
+Start with the easiest ones first.
+Do NOT change any logic.
 
-STEP 6A — Create src/components/modals/PartSaleModal.js
+IMPORTANT: Every new component file MUST have 
+"import React from 'react';" as the very first import.
+This is required to prevent the minifier from breaking the code.
 
-Create a new file src/components/modals/PartSaleModal.js
+STEP 7A — Create src/components/tabs/AskClaudeTab.js
 
-Add these at the top:
-  import React, { useState } from "react";
-  import { supabase } from "../../supabase";
-
-Copy the exact PartSaleModal function from App.js:
-  export default function PartSaleModal({ part, onClose, onComplete }) {
-    // exact same code
-  }
-
-STEP 6B — Create src/components/modals/LinkStockModal.js
-
-Create a new file src/components/modals/LinkStockModal.js
+Create a new file src/components/tabs/AskClaudeTab.js
 
 Add these at the top:
-  import React, { useState, useEffect } from "react";
-  import { supabase } from "../../supabase";
+  import React from "react";
+  import { QUICK_ACTIONS } from "../../constants";
   import Spinner from "../ui/Spinner";
-  import { parseGB, labelGB } from "../../utils/helpers";
 
-Copy the exact LinkStockModal function from App.js:
-  export default function LinkStockModal({ customer, deal, onClose, onDone }) {
-    // exact same code
+Find the ask claude tab content in App.js:
+  {activeTab === "ask" && ( ... )}
+
+Extract ALL content inside that block into:
+  export default function AskClaudeTab({
+    anthropicKey,
+    isMobile,
+    askMessages, setAskMessages,
+    askInput, setAskInput,
+    askLoading, setAskLoading,
+    askBottomRef,
+    sendAskMessage,
+  }) {
+    return (
+      // exact same JSX
+    );
   }
 
-STEP 6C — Create src/components/modals/SpecUpgradeModal.js
+In App.js replace:
+  {activeTab === "ask" && ( ... )}
+With:
+  {activeTab === "ask" && (
+    <AskClaudeTab
+      anthropicKey={anthropicKey}
+      isMobile={isMobile}
+      askMessages={askMessages}
+      setAskMessages={setAskMessages}
+      askInput={askInput}
+      setAskInput={setAskInput}
+      askLoading={askLoading}
+      setAskLoading={setAskLoading}
+      askBottomRef={askBottomRef}
+      sendAskMessage={sendAskMessage}
+    />
+  )}
 
-Create a new file src/components/modals/SpecUpgradeModal.js
+Add import at top of App.js:
+  import AskClaudeTab from "./components/tabs/AskClaudeTab";
+
+DELETE the original ask tab block from App.js.
+
+STEP 7B — Create src/components/tabs/SalesTab.js
+
+Create a new file src/components/tabs/SalesTab.js
 
 Add these at the top:
   import React, { useState } from "react";
-  import { parseGB, labelGB } from "../../utils/helpers";
-
-Copy the exact SpecUpgradeModal function from App.js:
-  export default function SpecUpgradeModal({ item, onClose, onApply }) {
-    // exact same code
-  }
-
-STEP 6D — Create src/components/modals/ReservationModal.js
-
-Create a new file src/components/modals/ReservationModal.js
-
-Add these at the top:
-  import React, { useState } from "react";
-  import { supabase } from "../../supabase";
   import Spinner from "../ui/Spinner";
-  import { parseGB, labelGB } from "../../utils/helpers";
 
-Copy the exact ReservationModal function from App.js:
-  export default function ReservationModal({ customer, deal, stock, onClose, onDone }) {
-    // exact same code
+Find the sales tab content in App.js:
+  {activeTab === "sales" && ( ... )}
+
+Extract ALL content inside that block into:
+  export default function SalesTab({
+    isMobile,
+    salesHistory, salesHistoryLoading,
+    salesFilter, setSalesFilter,
+    setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
+  }) {
+    return (
+      // exact same JSX
+    );
   }
 
-STEP 6E — Create src/components/modals/QuickSaleModal.js
+In App.js replace:
+  {activeTab === "sales" && ( ... )}
+With:
+  {activeTab === "sales" && (
+    <SalesTab
+      isMobile={isMobile}
+      salesHistory={salesHistory}
+      salesHistoryLoading={salesHistoryLoading}
+      salesFilter={salesFilter}
+      setSalesFilter={setSalesFilter}
+      setSaleReceiptData={setSaleReceiptData}
+      setReceiptEditName={setReceiptEditName}
+      setShowSaleReceipt={setShowSaleReceipt}
+    />
+  )}
 
-Create a new file src/components/modals/QuickSaleModal.js
+Add import at top of App.js:
+  import SalesTab from "./components/tabs/SalesTab";
 
-Add these at the top:
-  import React, { useState } from "react";
-  import { supabase } from "../../supabase";
-  import { parseGB, labelGB } from "../../utils/helpers";
-
-Copy the exact QuickSaleModal function from App.js:
-  export default function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
-    // exact same code
-  }
-
-STEP 6F — Update App.js imports
-
-Add these imports at the top of App.js:
-  import PartSaleModal from "./components/modals/PartSaleModal";
-  import LinkStockModal from "./components/modals/LinkStockModal";
-  import SpecUpgradeModal from "./components/modals/SpecUpgradeModal";
-  import ReservationModal from "./components/modals/ReservationModal";
-  import QuickSaleModal from "./components/modals/QuickSaleModal";
-
-Then DELETE these functions from App.js:
-  - PartSaleModal
-  - LinkStockModal
-  - SpecUpgradeModal
-  - ReservationModal
-  - QuickSaleModal
+DELETE the original sales tab block from App.js.
 
 VERIFICATION CHECKLIST before building:
-- Every modal file has "import React from react" at top
-- Every modal file has all necessary imports
-- Every modal is exported as default
-- All five modals are removed from App.js
-- All five are imported in App.js
-- No duplicate definitions anywhere
-- parseGB and labelGB are imported from utils/helpers 
-  in files that need them
+- Both files have "import React from 'react'" at very top
+- Both are exported as default
+- Both are imported in App.js
+- Original blocks deleted from App.js
+- No duplicate definitions
 
 After changes:
 1. Run npm run build
-2. Fix ALL errors one by one
+2. Fix ALL errors
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 6: extract modal components" 
+   git add -A && git commit -m "refactor v2 step 7a: extract AskClaudeTab and SalesTab" 
    && git push origin main --force
 4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app and confirm it works
-6. Test: open a client chat and tap Confirm Sale — 
-   does the modal appear?
-7. Tell me the new App.js line count
+5. Open https://jnp-crm.vercel.app
+6. Test Ask Claude tab — does it work?
+7. Test Sales History tab — does it show?
+8. Tell me the new App.js line count

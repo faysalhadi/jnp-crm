@@ -32,6 +32,8 @@ import LinkStockModal from "./components/modals/LinkStockModal";
 import SpecUpgradeModal from "./components/modals/SpecUpgradeModal";
 import ReservationModal from "./components/modals/ReservationModal";
 import QuickSaleModal from "./components/modals/QuickSaleModal";
+import AskClaudeTab from "./components/tabs/AskClaudeTab";
+import SalesTab from "./components/tabs/SalesTab";
 
 // ── main ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -4332,173 +4334,32 @@ For any issues contact us on WhatsApp.
 
       {/* ── ASK CLAUDE TAB ── */}
       {activeTab === "ask" && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-
-          {/* Quick action grid — shown when chat is empty */}
-          {askMessages.length === 0 && (
-            <div style={{ padding: "16px 12px 0", overflowY: "auto" }}>
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A" }}>🤖 Business Assistant</div>
-                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 3 }}>Ask anything about your stock, clients, or revenue</div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {QUICK_ACTIONS.map(a => (
-                  <button key={a.label} onClick={() => sendAskMessage(a.question)} disabled={askLoading}
-                    style={{ padding: "14px 10px", borderRadius: 16, border: "1.5px solid #E2E8F0", background: "#fff", cursor: "pointer", textAlign: "left", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", opacity: askLoading ? 0.5 : 1 }}>
-                    <div style={{ fontSize: 22, marginBottom: 5 }}>{a.icon}</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", lineHeight: 1.3 }}>{a.label}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Conversation area */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 4px" }}>
-            {askMessages.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                <button onClick={() => setAskMessages([])}
-                  style={{ padding: "4px 12px", borderRadius: 20, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-                  🗑 Clear chat
-                </button>
-              </div>
-            )}
-            {askMessages.map((msg, i) => (
-              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "owner" ? "flex-end" : "flex-start", marginBottom: 14 }}>
-                <div style={{ fontSize: 10, color: "#CBD5E1", marginBottom: 3 }}>
-                  {msg.role === "owner" ? "You" : "🤖 Claude"}
-                </div>
-                <div style={{
-                  maxWidth: "88%", padding: "11px 14px", fontSize: 13.5, lineHeight: 1.65, whiteSpace: "pre-line",
-                  borderRadius: msg.role === "owner" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
-                  background: msg.role === "owner" ? "#DCFCE7" : "#F3E8FF",
-                  color: msg.role === "owner" ? "#14532D" : "#4C1D95",
-                  border: msg.role === "owner" ? "1px solid #BBF7D0" : "1px solid #DDD6FE",
-                }}>
-                  {msg.content}
-                </div>
-              </div>
-            ))}
-            {askLoading && (
-              <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14 }}>
-                <div style={{ padding: "10px 16px", borderRadius: "4px 16px 16px 16px", background: "#F3E8FF", border: "1px solid #DDD6FE", display: "flex", gap: 4, alignItems: "center" }}>
-                  {[0, 0.2, 0.4].map((d, i) => (
-                    <span key={i} style={{ fontSize: 14, color: "#7C3AED", animation: `pulse 1s ${d}s infinite` }}>●</span>
-                  ))}
-                  <style>{`@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}`}</style>
-                </div>
-              </div>
-            )}
-            <div ref={askBottomRef} />
-          </div>
-
-          {/* Input bar */}
-          <div style={{ padding: "10px 12px 100px", background: "#fff", borderTop: "1px solid #F1F5F9" }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-              <textarea
-                value={askInput}
-                onChange={e => setAskInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAskMessage(askInput); } }}
-                placeholder="Ask anything about your business..."
-                rows={2}
-                style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
-              />
-              <button onClick={() => sendAskMessage(askInput)} disabled={askLoading || !askInput.trim()}
-                style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: askLoading || !askInput.trim() ? "#E2E8F0" : "#7C3AED", color: askLoading || !askInput.trim() ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 20, cursor: askLoading || !askInput.trim() ? "not-allowed" : "pointer", flexShrink: 0 }}>
-                ↑
-              </button>
-            </div>
-          </div>
-        </div>
+        <AskClaudeTab
+          anthropicKey={anthropicKey}
+          isMobile={isMobile}
+          askMessages={askMessages}
+          setAskMessages={setAskMessages}
+          askInput={askInput}
+          setAskInput={setAskInput}
+          askLoading={askLoading}
+          setAskLoading={setAskLoading}
+          askBottomRef={askBottomRef}
+          sendAskMessage={sendAskMessage}
+        />
       )}
 
       {/* ── SALES HISTORY TAB ── */}
       {activeTab === "sales" && (
-        <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 32px 40px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A" }}>📊 Sales History</div>
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {[{key:"today",label:"Today"},{key:"week",label:"This Week"},{key:"month",label:"This Month"},{key:"all",label:"All Time"}].map(f => (
-              <button key={f.key} onClick={() => setSalesFilter(f.key)}
-                style={{ padding: "6px 16px", borderRadius: 20, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                  background: salesFilter === f.key ? "#6366F1" : "#F1F5F9", color: salesFilter === f.key ? "#fff" : "#64748B" }}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-          {!salesHistoryLoading && salesHistory.length > 0 && (() => {
-            const total = salesHistory.reduce((s, x) => s + (Number(x.price) || 0), 0);
-            const devices = salesHistory.filter(s => s.type !== "part").length;
-            const partsCount = salesHistory.filter(s => s.type === "part").length;
-            return (
-              <div style={{ padding: "12px 16px", background: "#ECFDF5", borderRadius: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: "#059669" }}>AED {total.toLocaleString()}</div>
-                  <div style={{ fontSize: 11, color: "#10B981", marginTop: 2 }}>{salesHistory.length} sales · {devices} devices · {partsCount} parts</div>
-                </div>
-              </div>
-            );
-          })()}
-          {salesHistoryLoading && <Spinner />}
-          {!salesHistoryLoading && salesHistory.length === 0 && (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
-              <div style={{ fontSize: 40, marginBottom: 10 }}>📊</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No sales found</div>
-              <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>Try a different time filter</div>
-            </div>
-          )}
-          {!salesHistoryLoading && salesHistory.map((sale, i) => (
-            <div key={sale.id || i} style={{ background: "#fff", borderRadius: 16, padding: "14px 16px", border: "1.5px solid #F1F5F9", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{sale.customerName}</div>
-                  <div style={{ fontSize: 13, color: "#475569", marginTop: 2, fontWeight: 600 }}>{sale.device}</div>
-                  {sale.specs ? <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{sale.specs}</div> : null}
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#6366F1" }}>AED {Number(sale.price).toLocaleString()}</div>
-                  {sale.depositAmount > 0 && (
-                    <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700, marginTop: 2 }}>Deposit: AED {Number(sale.depositAmount).toLocaleString()}</div>
-                  )}
-                </div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, fontWeight: 700,
-                    background: sale.type==="part"?"#F5F3FF":sale.type==="walkin"?"#EFF6FF":"#ECFDF5",
-                    color: sale.type==="part"?"#7C3AED":sale.type==="walkin"?"#2563EB":"#059669" }}>
-                    {sale.type==="part"?"🔧 Part":sale.type==="walkin"?"⚡ Walk-in":"💬 WhatsApp"}
-                  </span>
-                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, fontWeight: 700, background: "#F1F5F9", color: "#64748B" }}>{sale.paymentMethod}</span>
-                  <span style={{ fontSize: 10, color: "#CBD5E1" }}>{new Date(sale.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
-                </div>
-                <button onClick={() => { setSaleReceiptData(sale); setReceiptEditName(sale.customerName || ""); setShowSaleReceipt(true); }}
-                  style={{ padding: "5px 14px", borderRadius: 8, border: "1.5px solid #6366F1", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  🧾 Receipt
-                </button>
-              </div>
-              {sale.items && sale.items.length > 1 && (
-                <div style={{ marginTop: 6 }}>
-                  <button onClick={() => setExpandedSaleId(expandedSaleId === (sale.id || i) ? null : (sale.id || i))}
-                    style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                    {expandedSaleId === (sale.id || i) ? "▲ Hide items" : `▼ ${sale.items.length} items`}
-                  </button>
-                  {expandedSaleId === (sale.id || i) && (
-                    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-                      {sale.items.map((item, j) => (
-                        <div key={j} style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", background: "#F8FAFC", borderRadius: 8 }}>
-                          <span style={{ fontSize: 12, color: "#475569" }}>{item.label}</span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>AED {item.price.toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        <SalesTab
+          isMobile={isMobile}
+          salesHistory={salesHistory}
+          salesHistoryLoading={salesHistoryLoading}
+          salesFilter={salesFilter}
+          setSalesFilter={setSalesFilter}
+          setSaleReceiptData={setSaleReceiptData}
+          setReceiptEditName={setReceiptEditName}
+          setShowSaleReceipt={setShowSaleReceipt}
+        />
       )}
 
       {/* ── SOURCING TAB ── */}
