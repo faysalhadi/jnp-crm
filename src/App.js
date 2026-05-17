@@ -24,40 +24,9 @@ import {
 } from "./utils/claude";
 
 import { saveImportedMessages } from "./utils/whatsapp";
-
-// ── small UI ──────────────────────────────────────────────────────────────────
-function Badge({ color, bg, children, small }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", padding: small ? "1px 7px" : "3px 10px", borderRadius: 20, fontSize: small ? 10 : 11, fontWeight: 700, color, background: bg, letterSpacing: 0.3, whiteSpace: "nowrap" }}>
-      {children}
-    </span>
-  );
-}
-
-function StageBar({ stageId }) {
-  const idx = STAGES.findIndex(s => s.id === stageId);
-  const stage = STAGES[idx] || STAGES[0];
-  const pct = Math.max(5, Math.round((idx / (STAGES.length - 2)) * 100));
-  if (stageId === "lost") return <Badge color="#EF4444" bg="#FEF2F2" small>Lost</Badge>;
-  if (stageId === "closed") return <Badge color="#10B981" bg="#ECFDF5" small>✓ Closed</Badge>;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ flex: 1, height: 4, borderRadius: 4, background: "#E2E8F0" }}>
-        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: stage.color, transition: "width 0.4s" }} />
-      </div>
-      <span style={{ fontSize: 10, color: stage.color, fontWeight: 700, whiteSpace: "nowrap" }}>{stage.label}</span>
-    </div>
-  );
-}
-
-function Spinner() {
-  return (
-    <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
-      <div style={{ width: 28, height: 28, border: "3px solid #E2E8F0", borderTop: "3px solid #6366F1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  );
-}
+import Badge from "./components/ui/Badge";
+import Spinner from "./components/ui/Spinner";
+import StageBar from "./components/ui/StageBar";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  PART SALE MODAL
