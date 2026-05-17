@@ -39,6 +39,9 @@ import CustomersTab from "./components/tabs/CustomersTab";
 import TradersTab from "./components/tabs/TradersTab";
 import StockTab from "./components/tabs/StockTab";
 import ChatDetailView from "./components/chat/ChatDetailView";
+import { useTraders } from "./hooks/useTraders";
+import { useBroadcast } from "./hooks/useBroadcast";
+import { useSales } from "./hooks/useSales";
 
 // ── main ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -134,23 +137,29 @@ export default function App() {
   const askBottomRef = useRef(null);
   const [toast, setToast] = useState(null);
 
-  // ── traders ──
-  const [traderListings, setTraderListings] = useState([]);
-  const [traderListingsLoading, setTraderListingsLoading] = useState(false);
-  const [traderSection, setTraderSection] = useState("inventory");
-  const [traderSearch, setTraderSearch] = useState("");
-  const [traderFilter, setTraderFilter] = useState("all");
-  const [showImportTrader, setShowImportTrader] = useState(false);
-  const [traderGroup, setTraderGroup] = useState("");
-  const [traderChatText, setTraderChatText] = useState("");
-  const [traderImportLoading, setTraderImportLoading] = useState(false);
-  const [traderImportPreview, setTraderImportPreview] = useState(null);
-  const [savingTraderListings, setSavingTraderListings] = useState(false);
-  const [traderImportResult, setTraderImportResult] = useState(null);
-  const [showTraderMatches, setShowTraderMatches] = useState(false);
-  const [showCheckTraders, setShowCheckTraders] = useState(false);
-  const [checkTradersResults, setCheckTradersResults] = useState([]);
-  const [checkTradersLoading, setCheckTradersLoading] = useState(false);
+  // ── traders hook ──
+  const {
+    traderListings, setTraderListings,
+    traderListingsLoading,
+    traderSection, setTraderSection,
+    traderSearch, setTraderSearch,
+    traderFilter, setTraderFilter,
+    showImportTrader, setShowImportTrader,
+    traderGroup, setTraderGroup,
+    traderChatText, setTraderChatText,
+    traderImportLoading, setTraderImportLoading,
+    traderImportPreview, setTraderImportPreview,
+    savingTraderListings, setSavingTraderListings,
+    traderImportResult, setTraderImportResult,
+    showTraderMatches, setShowTraderMatches,
+    showCheckTraders, setShowCheckTraders,
+    checkTradersResults, setCheckTradersResults,
+    checkTradersLoading, setCheckTradersLoading,
+    loadTraderListings,
+    extractTraderListings,
+    saveTraderListings,
+    checkTradersForDeal,
+  } = useTraders(anthropicKey, activeDeal);
 
   // ── receipt ──
   const [showReceipt, setShowReceipt] = useState(false);
@@ -161,30 +170,41 @@ export default function App() {
   const [editReservationItem,  setEditReservationItem]  = useState(null);
   const [editReservationForm,  setEditReservationForm]  = useState({ agreedPrice: "", pickupDate: "", depositAmount: "", balanceDue: "", notes: "" });
 
-  // ── side drawer / sales history ──
-  const [showSideDrawer,       setShowSideDrawer]       = useState(false);
-  const [salesHistory,         setSalesHistory]         = useState([]);
-  const [salesHistoryLoading,  setSalesHistoryLoading]  = useState(false);
-  const [salesFilter,          setSalesFilter]          = useState("month");
-  const [showSaleReceipt,      setShowSaleReceipt]      = useState(false);
-  const [saleReceiptData,      setSaleReceiptData]      = useState(null);
-  const [expandedSaleId,       setExpandedSaleId]       = useState(null);
-  const [receiptEditName,      setReceiptEditName]      = useState("");
+  // ── side drawer (kept) ──
+  const [showSideDrawer, setShowSideDrawer] = useState(false);
+  const [expandedSaleId, setExpandedSaleId] = useState(null);
 
-  // ── broadcast ──
-  const [showBroadcast, setShowBroadcast] = useState(false);
-  const [broadcastItem, setBroadcastItem] = useState(null);
-  const [broadcastClients, setBroadcastClients] = useState([]);
-  const [broadcastSelected, setBroadcastSelected] = useState(new Set());
-  const [broadcastMessages, setBroadcastMessages] = useState([]);
-  const [broadcastLoading, setBroadcastLoading] = useState(false);
-  const [broadcastStep, setBroadcastStep] = useState("clients");
-  const [broadcastSent, setBroadcastSent] = useState(new Set());
+  // ── sales hook ──
+  const {
+    todaySales, setTodaySales,
+    salesHistory,
+    salesHistoryLoading,
+    salesFilter, setSalesFilter,
+    showSaleReceipt, setShowSaleReceipt,
+    saleReceiptData, setSaleReceiptData,
+    receiptEditName, setReceiptEditName,
+    loadTodaySales,
+    loadSalesHistory,
+    buildSaleReceiptText,
+  } = useSales();
+
+  // ── broadcast hook ──
+  const {
+    showBroadcast, setShowBroadcast,
+    broadcastItem, setBroadcastItem,
+    broadcastClients, setBroadcastClients,
+    broadcastSelected, setBroadcastSelected,
+    broadcastMessages, setBroadcastMessages,
+    broadcastLoading, setBroadcastLoading,
+    broadcastStep, setBroadcastStep,
+    broadcastSent, setBroadcastSent,
+    openBroadcast,
+    generateBroadcastMessages,
+  } = useBroadcast(anthropicKey, customers);
 
   // ── quick sale ──
   const [showQuickSale,    setShowQuickSale]    = useState(false);
   const [quickSalePrefill, setQuickSalePrefill] = useState(null);
-  const [todaySales,       setTodaySales]       = useState({ total: 0, whatsapp: 0, walkin: 0 });
 
   // ── reservation ──
   const [showReservation, setShowReservation] = useState(false);
@@ -311,85 +331,6 @@ export default function App() {
     setPartsRevMTD((data || []).reduce((s, d) => s + (Number(d.value) || 0), 0));
   }, []);
 
-  const loadSalesHistory = useCallback(async () => {
-    setSalesHistoryLoading(true);
-    const now = new Date();
-    let fromDate = null;
-    if (salesFilter === "today") {
-      fromDate = new Date(); fromDate.setHours(0,0,0,0);
-    } else if (salesFilter === "week") {
-      fromDate = new Date(now - 7 * 86400000);
-    } else if (salesFilter === "month") {
-      fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    }
-
-    const dealQuery = supabase.from("deals").select("*, customers(name, number), deal_items(*)").eq("stage","closed").order("closed_at",{ascending:false});
-    if (fromDate) dealQuery.gte("closed_at", fromDate.toISOString());
-    const { data: dealSales } = await dealQuery;
-
-    const walkinQuery = supabase.from("deals").select("*").eq("stage","closed").eq("sale_type","walkin").order("closed_at",{ascending:false});
-    if (fromDate) walkinQuery.gte("closed_at", fromDate.toISOString());
-    const { data: walkinSales } = await walkinQuery;
-
-    const partsQuery = supabase.from("parts_sales").select("*").order("sold_at",{ascending:false});
-    if (fromDate) partsQuery.gte("sold_at", fromDate.toISOString());
-    const { data: partsSalesData } = await partsQuery;
-
-    const stockIds = (dealSales || []).map(d => d.stock_item_id).filter(Boolean);
-    let stockMap = {};
-    if (stockIds.length) {
-      const { data: stockItems } = await supabase.from("stock").select("id,brand,model,processor,ram,ssd,condition,serial_number").in("id",stockIds);
-      (stockItems || []).forEach(s => { stockMap[s.id] = s; });
-    }
-
-    const combined = [];
-    (dealSales || []).forEach(d => {
-      const stock = stockMap[d.stock_item_id] || {};
-      combined.push({
-        id: d.id, type: d.sale_type === "walkin" ? "walkin" : "device", date: d.closed_at,
-        customerName: d.customers?.name || d.walk_in_name || "Walk-in Customer",
-        customerNumber: d.customers?.number || null,
-        device: [stock.brand, stock.model].filter(Boolean).join(" ") || "Device",
-        specs: [stock.ram, stock.ssd, stock.condition].filter(Boolean).join(" · "),
-        serialNumber: stock.serial_number || null,
-        price: d.value || 0, paymentMethod: d.payment_method || "Cash",
-        depositAmount: d.deposit_amount || 0, balanceDue: d.balance_due || 0,
-        brand: stock.brand, model: stock.model, processor: stock.processor,
-        ram: stock.ram, ssd: stock.ssd, condition: stock.condition,
-        items: (d.deal_items || []).map(i => ({
-          label: i.item_type === "device"
-            ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
-            : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
-          price: Number(i.agreed_price || 0),
-        })),
-      });
-    });
-    (walkinSales || []).forEach(d => {
-      if (d.stock_item_id) return;
-      combined.push({
-        id: d.id, type: "walkin", date: d.closed_at,
-        customerName: d.walk_in_name || "Walk-in Customer",
-        customerNumber: d.walk_in_number || null,
-        device: [d.brand, d.model].filter(Boolean).join(" ") || "Device",
-        specs: [d.ram, d.storage, d.condition].filter(Boolean).join(" · "),
-        serialNumber: null, price: d.value || 0, paymentMethod: d.payment_method || "Cash",
-        brand: d.brand, model: d.model, processor: null, ram: d.ram, ssd: d.storage, condition: d.condition,
-      });
-    });
-    (partsSalesData || []).forEach(p => {
-      combined.push({
-        id: p.id, type: "part", date: p.sold_at,
-        customerName: p.customer_name || "Walk-in Customer", customerNumber: null,
-        device: [p.category, p.specs].filter(Boolean).join(" — "),
-        specs: p.compatible_with || "", serialNumber: null,
-        price: p.total_revenue || 0, paymentMethod: p.payment_method || "Cash",
-        quantity: p.quantity_sold || 1,
-      });
-    });
-    combined.sort((a, b) => new Date(b.date) - new Date(a.date));
-    setSalesHistory(combined);
-    setSalesHistoryLoading(false);
-  }, [salesFilter]);
 
   const loadReservedDeals = useCallback(async () => {
     setReservedDealsLoading(true);
@@ -402,18 +343,6 @@ export default function App() {
     setReservedDealsLoading(false);
   }, []);
 
-  const loadTodaySales = useCallback(async () => {
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const { data } = await supabase.from("deals")
-      .select("sale_type, closed_at").eq("stage", "closed")
-      .gte("closed_at", todayStart.toISOString());
-    const deals = data || [];
-    setTodaySales({
-      total:    deals.length,
-      whatsapp: deals.filter(d => !d.sale_type || d.sale_type === "whatsapp").length,
-      walkin:   deals.filter(d => d.sale_type === "walkin").length,
-    });
-  }, []);
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
   useEffect(() => { if (session) { loadStock(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); } }, [session, loadStock, refreshCachedStock, loadTodaySales, loadPartsRevMTD]);
@@ -1431,183 +1360,6 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
   }
 
   // ── traders ──
-  const loadTraderListings = useCallback(async () => {
-    setTraderListingsLoading(true);
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const { data } = await supabase.from("trader_inventory").select("*")
-      .eq("status", "active")
-      .gte("created_at", thirtyDaysAgo)
-      .order("created_at", { ascending: false });
-    setTraderListings(data || []);
-    setTraderListingsLoading(false);
-  }, []);
-
-  useEffect(() => { if (activeTab === "traders") loadTraderListings(); }, [activeTab, loadTraderListings]);
-
-  async function extractTraderListings() {
-    if (!traderChatText.trim() || !anthropicKey) return;
-    setTraderImportLoading(true); setTraderImportResult(null);
-    setTraderImportPreview(null);
-
-    // Step 1: Clean and merge multi-line messages
-    const cleanedTraderText = cleanWhatsAppText(traderChatText);
-    const lineRegexForMerge = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/;
-    const rawLines = cleanedTraderText.split('\n');
-    const mergedLines = [];
-    for (const line of rawLines) {
-      if (lineRegexForMerge.test(line.trim())) {
-        mergedLines.push(line);
-      } else if (line.trim() && mergedLines.length > 0) {
-        mergedLines[mergedLines.length - 1] += ' | ' + line.trim();
-      }
-    }
-
-    // Step 2: Filter to only lines with laptop selling signals
-    const skipSenders = ['JNP', 'JNP Laptop Market'];
-    const skipContent = ['end-to-end encrypted', 'added you', 'created this group', 'omitted', 'sticker', 'document omitted'];
-    const sellSignals = ['wts', 'want to sale', 'want to sell', 'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
-    const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad', 'elitebook', 'latitude', 'surface', 'macbook', '840', '850', '5420', '7420', '640', '830', '845', '835'];
-
-    const relevantLines = mergedLines.filter(line => {
-      const lower = line.toLowerCase();
-      if (skipContent.some(s => lower.includes(s))) return false;
-      if (skipSenders.some(s => line.includes('] ' + s + ':') || line.includes('] ~' + s + ':'))) return false;
-      const hasSellSignal = sellSignals.some(s => lower.includes(s));
-      const hasLaptop = laptopBrands.some(b => lower.includes(b));
-      return hasSellSignal || (hasLaptop && lower.includes('|'));
-    });
-
-    console.log('Total lines:', mergedLines.length, 'Relevant lines:', relevantLines.length);
-    setTraderImportResult({ success: false, message: `⏳ Processing ${relevantLines.length} relevant messages...` });
-
-    if (relevantLines.length === 0) {
-      setTraderImportResult({ success: false, message: 'No laptop listings found. Make sure you pasted a group chat with laptop listings.' });
-      setTraderImportLoading(false);
-      return;
-    }
-
-    // Step 3: Process in chunks of 30 lines to avoid token limits
-    const chunkSize = 30;
-    const allListings = [];
-    const totalChunks = Math.ceil(relevantLines.length / chunkSize);
-
-    const extractionPrompt = (chunkText) => `Extract laptop listings from this WhatsApp group chat. Return ONLY a JSON array, no markdown.
-
-SELLING signals: WTS, Want to Sell, Want to Sale, Available, New Shipment, W.T.SAL
-SKIP: RAM only, SSD only, HDD only, phones, LCD papers, screen papers, desktop towers, buying requests
-
-BRAND DECODER:
-- 640/650/840/850/830/835/845/1030/1040/EliteBook/firefly/ProBook = HP laptop
-- 3301/3390/3480/5290/5400/5410/5420/5490/5511/7320/7390/7400/7410/7420/7430/7490/XPS/Precision/Latitude = Dell laptop  
-- T14/T14s/X13/ThinkPad/T480/T490/L380 = Lenovo laptop
-- Surface = Microsoft laptop
-- MacBook = Apple laptop
-
-SPEC DECODER:
-- "CI5.11TH.8.256" = Core i5 11th Gen, 8GB RAM, 256GB SSD
-- "i5/11th Gen 8/256Gb" = Core i5 11th Gen, 8GB, 256GB
-- "840g8 Ci711th 16gb 512" = HP EliteBook 840 G8, Core i7 11th, 16GB, 512GB
-- "645g4 AMD 7 -1pc" = HP 645 G4, AMD Ryzen 7, qty 1
-
-Return format:
-[{"type":"selling","category":"laptop","brand":"HP","model":"EliteBook 840 G8","processor":"Core i7 11th Gen","ram":"8GB","storage":"256GB","condition":"Used","quantity":null,"price":null,"currency":"AED","charger":"unknown","notes":"","trader_name":"sender name","trader_number":"phone if visible in message"}]
-
-If no laptop listings found return [].
-
-Chat:
-${chunkText}`;
-
-    try {
-      for (let i = 0; i < totalChunks; i++) {
-        const chunk = relevantLines.slice(i * chunkSize, (i + 1) * chunkSize);
-        const chunkText = chunk.join('\n');
-        setTraderImportResult({ success: false, message: `⏳ Processing chunk ${i + 1} of ${totalChunks}...` });
-
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 8000,
-            system: "You extract laptop inventory listings from WhatsApp group chats for a UAE laptop reseller. Return only valid JSON arrays.",
-            messages: [{ role: "user", content: extractionPrompt(chunkText) }],
-          }),
-        });
-
-        const data = await res.json();
-        if (data.error) { console.error('API error chunk', i, data.error); continue; }
-        const raw = data?.content?.[0]?.text || "[]";
-        const jsonMatch = raw.match(/\[[\s\S]*\]/);
-        const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
-        let chunkListings = [];
-        try { chunkListings = JSON.parse(clean); } catch(e) { console.error('Parse error chunk', i, e.message, clean.slice(0, 100)); }
-        if (Array.isArray(chunkListings)) allListings.push(...chunkListings);
-        console.log(`Chunk ${i+1}/${totalChunks}: ${chunkListings.length} listings`);
-      }
-
-      // Deduplicate by brand+model+trader
-      const seen = new Set();
-      const deduped = allListings.filter(l => {
-        const key = `${l.trader_name}|${l.brand}|${l.model}|${l.ram}|${l.storage}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-
-      console.log('Total listings:', allListings.length, 'After dedup:', deduped.length);
-      setTraderImportPreview(deduped);
-      if (deduped.length === 0) {
-        setTraderImportResult({ success: false, message: "No laptop listings found. This group chat may not have laptop listings, or try a different section." });
-      } else {
-        setTraderImportResult({ success: false, message: `✅ Found ${deduped.length} listings from ${new Set(deduped.map(l => l.trader_name)).size} traders. Confirm to save.` });
-      }
-    } catch(e) {
-      console.error("Extraction error:", e);
-      setTraderImportResult({ success: false, message: "Extraction failed. Check API key." });
-    }
-    setTraderImportLoading(false);
-  }
-
-  async function saveTraderListings() {
-    if (!traderImportPreview?.length) return;
-    setSavingTraderListings(true);
-    const group = traderGroup || "Other";
-    // Delete stale listings from the same source_group (older than 1 hour)
-    // so re-importing the same chat replaces old data instead of duplicating
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    await supabase.from("trader_inventory").delete()
-      .eq("source_group", group)
-      .lt("created_at", oneHourAgo);
-    const rows = traderImportPreview.map(l => ({ ...l, source_group: group, status: "active" }));
-    const { error } = await supabase.from("trader_inventory").insert(rows);
-    if (!error) {
-      await loadTraderListings();
-      setTraderImportResult({ success: true, count: rows.length });
-      setTimeout(() => { setShowImportTrader(false); setTraderImportPreview(null); setTraderChatText(""); setTraderGroup(""); setTraderImportResult(null); }, 1800);
-    } else { setTraderImportResult({ success: false, message: error.message }); }
-    setSavingTraderListings(false);
-  }
-
-  async function checkTradersForDeal() {
-    setCheckTradersLoading(true);
-    if (!traderListings.length) {
-      const { data } = await supabase.from("trader_inventory").select("*").eq("type", "selling").eq("status", "active").order("created_at", { ascending: false });
-      const results = (data || []).filter(t => {
-        const brand = activeDeal?.brand || ""; const model = activeDeal?.model || "";
-        return (!brand || !t.brand || t.brand.toLowerCase().includes(brand.toLowerCase()) || brand.toLowerCase().includes((t.brand || "").toLowerCase()));
-      });
-      setCheckTradersResults(results);
-    } else {
-      const brand = activeDeal?.brand || ""; const model = activeDeal?.model || "";
-      setCheckTradersResults(traderListings.filter(t => t.type === "selling" && (!brand || !t.brand || t.brand.toLowerCase().includes(brand.toLowerCase()))));
-    }
-    setCheckTradersLoading(false); setShowCheckTraders(true);
-  }
 
   // ── receipt ──
   function buildReceiptText(paymentMethod) {
@@ -1645,41 +1397,6 @@ For any issues please contact us on WhatsApp.
 ━━━━━━━━━━━━━━━━━━━━━━`;
   }
 
-  function buildSaleReceiptText(sale, nameOverride) {
-    const num = `LFL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const date = new Date(sale.date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    const customerName = nameOverride || sale.customerName || "Customer";
-    return `━━━━━━━━━━━━━━━━━━━━━━
-      LAPTOP FOR LESS
-      UAE | laptopforless.ae
-━━━━━━━━━━━━━━━━━━━━━━
-RECEIPT #: ${num}
-Date: ${date}
-
-SOLD TO:
-Name: ${customerName}${sale.customerNumber ? `\nContact: ${sale.customerNumber}` : ""}
-
-${sale.items && sale.items.length > 0
-    ? `ITEMS:\n${sale.items.map(i =>
-        `${i.label}${' '.repeat(Math.max(1, 30 - i.label.length))}AED ${Number(i.price).toLocaleString()}`
-      ).join('\n')}`
-    : sale.type === "part"
-      ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nCompatible With: ${sale.specs}` : ""}\nQuantity: ${sale.quantity || 1}`
-      : `DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`
-  }
-
-PAYMENT:
-${sale.depositAmount > 0 ?
-`Total: AED ${Number(sale.price).toLocaleString()}
-Deposit Paid: AED ${Number(sale.depositAmount).toLocaleString()}
-Balance Received: AED ${Number(sale.price - sale.depositAmount).toLocaleString()}` :
-`Amount: AED ${Number(sale.price).toLocaleString()}`}
-Method: ${sale.paymentMethod}
-
-Thank you for your purchase! 🙏
-For any issues contact us on WhatsApp.
-━━━━━━━━━━━━━━━━━━━━━━`;
-  }
 
   async function saveReceiptNumber(num) {
     if (activeDeal && !activeDeal.receipt_number) {
@@ -1688,41 +1405,6 @@ For any issues contact us on WhatsApp.
     }
   }
 
-  // ── broadcast ──
-  function openBroadcast(item) {
-    const matches = customers.filter(c =>
-      (c.deals || []).some(d => {
-        if (d.stage === "closed" || d.stage === "lost") return false;
-        const brandMatch = !item.brand || !d.brand || d.brand.toLowerCase() === item.brand.toLowerCase();
-        const budgetOk = !item.min_price || !d.budget || Number(d.budget) >= Number(item.min_price);
-        return brandMatch || budgetOk;
-      })
-    );
-    setBroadcastItem(item);
-    setBroadcastClients(matches);
-    setBroadcastSelected(new Set(matches.map(c => c.id)));
-    setBroadcastMessages([]); setBroadcastStep("clients"); setBroadcastSent(new Set());
-    setShowBroadcast(true);
-  }
-
-  async function generateBroadcastMessages() {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setBroadcastLoading(true);
-    const selected = broadcastClients.filter(c => broadcastSelected.has(c.id));
-    const device = [broadcastItem?.brand, broadcastItem?.model].filter(Boolean).join(" ");
-    const specs = [broadcastItem?.ram, broadcastItem?.ssd, broadcastItem?.condition].filter(Boolean).join(", ");
-    const msgs = await Promise.all(selected.map(async c => {
-      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
-      const prompt = `Write a short WhatsApp message to ${c.name} about: ${device} ${specs} AED ${broadcastItem?.max_price}. Their interest: ${deal?.brand || "laptop"} budget AED ${deal?.budget || "unknown"}. Personal, friendly, under 40 words, 1-2 emojis. Return message text only.`;
-      try {
-        const text = await callClaude(anthropicKey, [{ role: "user", content: prompt }], "You write short friendly WhatsApp messages for Laptop for Less UAE.");
-        return { client: c, message: text.trim(), deal };
-      } catch {
-        return { client: c, message: `Hey ${c.name}! 👋 Just got a ${device} — ${specs}. AED ${broadcastItem?.max_price}. Interested? 😊`, deal };
-      }
-    }));
-    setBroadcastMessages(msgs); setBroadcastStep("messages"); setBroadcastLoading(false);
-  }
 
   // ── nav tabs (used by both sidebar instances) ──
   const NAV_TABS = [
