@@ -2140,6 +2140,7 @@ export default function App() {
   const [askInput, setAskInput] = useState("");
   const [askLoading, setAskLoading] = useState(false);
   const askBottomRef = useRef(null);
+  const [toast, setToast] = useState(null);
 
   // ── traders ──
   const [traderListings, setTraderListings] = useState([]);
@@ -2921,6 +2922,11 @@ Return JSON with only a "reply" field containing the message.`;
   function copyMsg(text, id) {
     navigator.clipboard.writeText(text);
     setCopied(id); setTimeout(() => setCopied(null), 2000);
+  }
+
+  function showToast(message, type = "success") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
   }
 
   // ── tasks — used by dashboard overdue logic ──
@@ -4521,6 +4527,18 @@ For any issues contact us on WhatsApp.
                   style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                   ✅ Send
                 </button>
+                {activeCustomer?.number && (
+                  <button
+                    onClick={() => {
+                      const text = generatedReply.trim();
+                      const number = activeCustomer.number.replace(/\D/g, "");
+                      window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank");
+                    }}
+                    style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                  >
+                    📱 WA
+                  </button>
+                )}
                 <button onClick={() => setEditingGenerated(v => !v)}
                   style={{ padding: "9px 14px", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                   {editingGenerated ? "Done" : "✏️ Edit"}
@@ -4604,6 +4622,20 @@ For any issues contact us on WhatsApp.
               style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 20, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
               ↑
             </button>
+            {activeCustomer?.number && directReplyText.trim() && (
+              <button
+                onClick={() => {
+                  const text = directReplyText.trim();
+                  if (!text) return;
+                  const number = activeCustomer.number.replace(/\D/g, "");
+                  window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank");
+                }}
+                style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 800, fontSize: 18, cursor: "pointer", flexShrink: 0 }}
+                title="Send via WhatsApp"
+              >
+                📱
+              </button>
+            )}
           </div>
         </div>
         </div>{/* end detail content wrapper */}
@@ -4621,6 +4653,7 @@ For any issues contact us on WhatsApp.
               loadStock();
               refreshCachedStock();
               loadTodaySales();
+              showToast("Sale confirmed successfully ✅");
             }}
           />
         )}
@@ -4636,6 +4669,8 @@ For any issues contact us on WhatsApp.
               setLinkStockDeal(null);
               loadStock();
               loadCustomers();
+              refreshCachedStock();
+              showToast("Device reserved successfully 🔒");
             }}
           />
         )}
@@ -6499,6 +6534,7 @@ For any issues contact us on WhatsApp.
             loadStock();
             refreshCachedStock();
             loadTodaySales();
+            showToast("Sale confirmed successfully ✅");
           }}
         />
       )}
@@ -6533,6 +6569,8 @@ For any issues contact us on WhatsApp.
             setLinkStockDeal(null);
             loadStock();
             loadCustomers();
+            refreshCachedStock();
+            showToast("Device reserved successfully 🔒");
           }}
         />
       )}
@@ -6968,6 +7006,37 @@ For any issues contact us on WhatsApp.
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── TOAST NOTIFICATION ── */}
+      {toast && (
+        <div style={{
+          position: "fixed",
+          bottom: isMobile ? 90 : 24,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 999,
+          padding: "12px 24px",
+          borderRadius: 12,
+          background: toast.type === "success" ? "#10B981"
+            : toast.type === "error" ? "#EF4444"
+            : "#6366F1",
+          color: "#fff",
+          fontSize: 13,
+          fontWeight: 700,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+          whiteSpace: "nowrap",
+          animation: "slideUp 0.3s ease",
+        }}>
+          {toast.type === "success" ? "✅ " : toast.type === "error" ? "❌ " : "ℹ️ "}
+          {toast.message}
+          <style>{`
+            @keyframes slideUp {
+              from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+              to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+            }
+          `}</style>
         </div>
       )}
 

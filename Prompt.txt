@@ -1,570 +1,261 @@
 Read src/App.js fully before making any changes.
 
-We are rebuilding the reservation and confirm sale flows to be 
-deal-centric. One deal contains multiple items (devices + parts).
+CHANGE 1 — Fix ReservationModal to use correct columns
 
-CHANGE 1 — Update handleReserveDevice function
-Find handleReserveDevice function. Keep it exactly as is.
-It already creates a deal if none exists and opens ReservationModal.
-No changes needed here.
+Find the ReservationModal component's save() function.
+It currently updates stock with these fields:
+  status: "reserved"
+  reserved_for_customer_id: customer.id
 
-CHANGE 2 — Update ReservationModal save() function
-Find the save() function inside ReservationModal.
-Replace it entirely with this version that saves to deal_items table:
+Replace the entire stock update inside save() with:
 
-  async function save() {
-    if (!pickupDate) { alert("Pickup date is required"); return; }
-    if (selectedItems.length === 0) { alert("Please select at least one item"); return; }
-    setSaving(true);
-    try {
-      const soldAt = new Date().toISOString();
-
-      // Save each selected item to deal_items table
-      for (const item of selectedItems) {
-        if (item.itemType === "device") {
-          const ramAdd = upgradeRam[item.id] ? (Number(upgradeRamPrice[item.id]) || 0) : 0;
-          const ssdAdd = upgradeSsd[item.id] ? (Number(upgradeSsdPrice[item.id]) || 0) : 0;
-          const finalPrice = (Number(prices[item.id]) || 0) + ramAdd + ssdAdd;
-
-          // Mark stock as reserved
-          await supabase.from("stock").update({
-            status: "reserved",
-            reserved_for_customer_id: customer.id,
-            reserved_at: soldAt,
-            pickup_date: pickupDate,
-            sold_price: finalPrice || null,
-          }).eq("id", item.id);
-
-          // Update stock specs if upgraded
-          if (upgradeRam[item.id] || upgradeSsd[item.id]) {
-            const specUpdate = {};
-            if (upgradeRam[item.id]) specUpdate.ram = labelGB(upgradeRam[item.id]);
-            if (upgradeSsd[item.id]) specUpdate.ssd = labelGB(upgradeSsd[item.id]);
-            await supabase.from("stock").update(specUpdate).eq("id", item.id);
-          }
-
-          // Insert into deal_items
-          await supabase.from("deal_items").insert({
-            deal_id: deal.id,
-            item_type: "device",
-            stock_id: item.id,
-            brand: item.brand || null,
-            model: item.model || null,
-            ram: upgradeRam[item.id] ? labelGB(upgradeRam[item.id]) : (item.ram || null),
-            ssd: upgradeSsd[item.id] ? labelGB(upgradeSsd[item.id]) : (item.ssd || null),
-            condition: item.condition || null,
-            processor: item.processor || null,
-            serial_number: item.serial_number || null,
-            agreed_price: finalPrice,
-            upgrade_ram: upgradeRam[item.id] ? labelGB(upgradeRam[item.id]) : null,
-            upgrade_ssd: upgradeSsd[item.id] ? labelGB(upgradeSsd[item.id]) : null,
-            upgrade_price: ramAdd + ssdAdd,
-          });
-
-        } else {
-          // Part item
-          const qty = Number(quantities[item.id]) || 1;
-          const newQty = (item.quantity || 0) - qty;
-          await supabase.from("stock_parts").update({ quantity: newQty }).eq("id", item.id);
-
-          await supabase.from("deal_items").insert({
-            deal_id: deal.id,
-            item_type: "part",
-            part_id: item.id,
-            category: item.category || null,
-            specs: item.specs || null,
-            quantity: qty,
-            agreed_price: Number(prices[item.id]) || 0,
-          });
-        }
-      }
-
-      // Update the deal itself
-      const deviceItem = selectedItems.find(i => i.itemType === "device");
-      await supabase.from("deals").update({
-        stage: "confirmed_pending_pickup",
-        value: totalPrice || null,
-        deposit_amount: depositAmt,
-        balance_due: balanceDue,
-        pickup_date: pickupDate,
-        reservation_notes: notes.trim() || null,
-        stock_item_id: deviceItem?.id || null,
-      }).eq("id", deal.id);
-
-      onDone({ selectedItems, pickupDate, depositAmt, balanceDue });
-    } catch (e) {
-      alert("Error saving reservation: " + (e.message || "Unknown error"));
-    }
-    setSaving(false);
+  if (selectedItem) {
+    await supabase.from("stock").update({
+      status: "reserved",
+      reserved_for_customer_id: customer.id,
+      reserved_at: new Date().toISOString(),
+      pickup_date: pickupDate,
+      sold_price: agreedNum || null,
+    }).eq("id", selectedItem.id);
   }
 
-CHANGE 3 — Rebuild Reserved tab in Stock to show deal-centric cards
+And replace the deals update with:
+  await supabase.from("deals").update({
+    stage: "confirmed_pending_pickup",
+    value: agreedNum || undefined,
+    deposit_amount: depositAmt,
+    balance_due: balanceDue,
+    pickup_date: pickupDate,
+    stock_item_id: selectedItem?.id || null,
+  }).eq("id", deal.id);
 
-Find the stock tab devices view (stockView === "devices").
-Find the Reserved filter section — currently it shows individual 
-stock cards for reserved items.
+CHANGE 2 — Fix Reserved tab to show reserved items correctly
 
-Replace the entire reserved items display with a deal-centric view.
-
-Add these state variables near other useState declarations:
-  const [reservedDeals, setReservedDeals] = useState([]);
-  const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
-  const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
-  const [showCompleteReservation, setShowCompleteReservation] = useState(false);
-  const [completingDeal, setCompletingDeal] = useState(null);
-  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
-
-Add this function near other load functions:
-  const loadReservedDeals = useCallback(async () => {
-    setReservedDealsLoading(true);
-    const { data: deals } = await supabase
-      .from("deals")
-      .select("*, customers(id, name, number), deal_items(*)")
-      .eq("stage", "confirmed_pending_pickup")
-      .order("created_at", { ascending: false });
-    setReservedDeals(deals || []);
-    setReservedDealsLoading(false);
-  }, []);
-
-Add useEffect to load reserved deals when stock filter changes to reserved:
-  useEffect(() => {
-    if (stockFilter === "reserved") loadReservedDeals();
-  }, [stockFilter, loadReservedDeals]);
-
-Now replace the reserved cards rendering in the stock tab.
-Find where isReserved cards are rendered (the stock.map section).
-Add a condition at the top of filteredStock.map:
-  if (stockFilter === "reserved") return null; 
-  // reserved items handled separately below
-
-Then add this new reserved deals section BEFORE the filteredStock.map,
-but only when stockFilter === "reserved":
-
-  {stockFilter === "reserved" && (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {reservedDealsLoading && <Spinner />}
-      {!reservedDealsLoading && reservedDeals.length === 0 && (
-        <div style={{ textAlign: "center", padding: "60px 20px" }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No reservations</div>
-        </div>
-      )}
-      {!reservedDealsLoading && reservedDeals.map(deal => {
-        const customer = deal.customers;
-        const items = deal.deal_items || [];
-        const isExpanded = expandedReservedDeal === deal.id;
-        const today = new Date(); today.setHours(0,0,0,0);
-        const isOverdue = deal.pickup_date && new Date(deal.pickup_date) < today;
-        const pickupLabel = deal.pickup_date
-          ? new Date(deal.pickup_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
-          : null;
-        const deviceItems = items.filter(i => i.item_type === "device");
-        const partItems = items.filter(i => i.item_type === "part");
-        const itemSummary = [
-          ...deviceItems.map(i => [i.brand, i.model].filter(Boolean).join(" ") || "Device"),
-          ...partItems.map(i => i.category || "Part"),
-        ].join(" · ");
-
-        return (
-          <div key={deal.id} style={{
-            background: "#fff", borderRadius: 18,
-            border: `1.5px solid ${isOverdue ? "#FCA5A5" : "#FDE68A"}`,
-            boxShadow: "0 1px 6px rgba(245,158,11,0.15)",
-            overflow: "hidden",
-          }}>
-            {/* Deal header */}
-            <div style={{
-              padding: "12px 14px",
-              background: isOverdue ? "#FEF2F2" : "#FFFBEB",
-              borderBottom: isExpanded ? "1px solid #FDE68A" : "none",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>
-                    🔒 {customer?.name || "Walk-in"}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>
-                    {itemSummary || "No items"}
-                  </div>
-                  <div style={{ fontSize: 11, color: isOverdue ? "#EF4444" : "#B45309", marginTop: 3, fontWeight: 700 }}>
-                    {isOverdue ? `⚠️ Overdue — pickup was ${pickupLabel}` : `Pickup: ${pickupLabel || "—"}`}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#6366F1" }}>
-                    AED {Number(deal.value || 0).toLocaleString()}
-                  </div>
-                  {deal.deposit_amount > 0 && (
-                    <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700 }}>
-                      Deposit: AED {Number(deal.deposit_amount).toLocaleString()}
-                    </div>
-                  )}
-                  {deal.balance_due > 0 && (
-                    <div style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>
-                      Balance: AED {Number(deal.balance_due).toLocaleString()}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                <button onClick={() => setExpandedReservedDeal(isExpanded ? null : deal.id)}
-                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #FDE68A", background: "#fff", color: "#D97706", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  {isExpanded ? "▲ Hide Items" : `▼ ${items.length} Item${items.length !== 1 ? "s" : ""}`}
-                </button>
-                <button onClick={() => {
-                  setCompletingDeal(deal);
-                  setCompletionPaymentMethod("Cash");
-                  setShowCompleteReservation(true);
-                }}
-                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  ✅ Complete
-                </button>
-                <button onClick={() => {
-                  setEditReservationItem(deal);
-                  setEditReservationForm({
-                    agreedPrice: String(deal.value || ""),
-                    pickupDate: deal.pickup_date ? deal.pickup_date.split("T")[0] : "",
-                    depositAmount: String(deal.deposit_amount || ""),
-                    balanceDue: String(deal.balance_due || ""),
-                    notes: deal.reservation_notes || "",
-                  });
-                  setShowEditReservation(true);
-                }}
-                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  ✏️ Edit
-                </button>
-                <button onClick={async () => {
-                  if (!window.confirm("Release all items in this reservation?")) return;
-                  const deviceItems = (deal.deal_items || []).filter(i => i.item_type === "device");
-                  for (const item of deviceItems) {
-                    if (item.stock_id) {
-                      await supabase.from("stock").update({
-                        status: "available",
-                        reserved_for_customer_id: null,
-                        reserved_at: null,
-                        pickup_date: null,
-                        sold_price: null,
-                      }).eq("id", item.stock_id);
-                    }
-                  }
-                  await supabase.from("deal_items").delete().eq("deal_id", deal.id);
-                  await supabase.from("deals").update({
-                    stage: "device_found",
-                    value: null,
-                    deposit_amount: null,
-                    balance_due: null,
-                    pickup_date: null,
-                    stock_item_id: null,
-                  }).eq("id", deal.id);
-                  loadReservedDeals();
-                  loadStock();
-                  loadCustomers();
-                }}
-                  style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  🔓
-                </button>
-              </div>
-            </div>
-
-            {/* Expanded items list */}
-            {isExpanded && (
-              <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                {items.length === 0 && (
-                  <div style={{ fontSize: 12, color: "#94A3B8", textAlign: "center", padding: "12px 0" }}>
-                    No items recorded
-                  </div>
-                )}
-                {items.map((item, i) => (
-                  <div key={item.id || i} style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    padding: "8px 12px", borderRadius: 10,
-                    background: item.item_type === "device" ? "#F8FAFC" : "#F5F3FF",
-                    border: `1px solid ${item.item_type === "device" ? "#F1F5F9" : "#DDD6FE"}`,
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
-                        {item.item_type === "device"
-                          ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
-                          : `🔧 ${item.category || "Part"}${item.specs ? ` · ${item.specs}` : ""}`}
-                      </div>
-                      {item.item_type === "device" && (
-                        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
-                          {[item.ram, item.ssd, item.condition].filter(Boolean).join(" · ")}
-                          {item.upgrade_ram || item.upgrade_ssd ? " · ⬆ Upgraded" : ""}
-                        </div>
-                      )}
-                      {item.item_type === "part" && item.quantity > 1 && (
-                        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>×{item.quantity}</div>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
-                        AED {Number(item.agreed_price || 0).toLocaleString()}
-                      </div>
-                      <button onClick={async () => {
-                        if (!window.confirm("Release this item back to stock?")) return;
-                        if (item.item_type === "device" && item.stock_id) {
-                          await supabase.from("stock").update({
-                            status: "available",
-                            reserved_for_customer_id: null,
-                            reserved_at: null,
-                            pickup_date: null,
-                            sold_price: null,
-                          }).eq("id", item.stock_id);
-                        }
-                        await supabase.from("deal_items").delete().eq("id", item.id);
-                        const remaining = items.filter(x => x.id !== item.id);
-                        const newTotal = remaining.reduce((s, x) => s + (Number(x.agreed_price) || 0), 0);
-                        await supabase.from("deals").update({
-                          value: newTotal || null,
-                          balance_due: Math.max(0, newTotal - (Number(deal.deposit_amount) || 0)),
-                        }).eq("id", deal.id);
-                        loadReservedDeals();
-                        loadStock();
-                      }}
-                        style={{ padding: "3px 8px", borderRadius: 6, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                        🔓
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  )}
-
-CHANGE 4 — Add Complete Reservation modal
-Add this modal before the floating "+" button:
-
-  {showCompleteReservation && completingDeal && (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
-      <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 480 }}>
-          {/* Header */}
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F172A" }}>✅ Complete Sale</div>
-              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-                {completingDeal.customers?.name || "Customer"}
-              </div>
-            </div>
-            <button onClick={() => setShowCompleteReservation(false)}
-              style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
-          </div>
-
-          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Items list */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {(completingDeal.deal_items || []).map((item, i) => (
-                <div key={item.id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#F8FAFC", borderRadius: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A" }}>
-                    {item.item_type === "device"
-                      ? ([item.brand, item.model].filter(Boolean).join(" ") || "Device")
-                      : `🔧 ${item.category || "Part"}${item.quantity > 1 ? ` ×${item.quantity}` : ""}`}
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
-                    AED {Number(item.agreed_price || 0).toLocaleString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Payment summary */}
-            <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#475569", marginBottom: 6 }}>
-                <span>Total</span>
-                <span style={{ fontWeight: 700 }}>AED {Number(completingDeal.value || 0).toLocaleString()}</span>
-              </div>
-              {completingDeal.deposit_amount > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#F59E0B", marginBottom: 6 }}>
-                  <span>Deposit paid</span>
-                  <span style={{ fontWeight: 700 }}>AED {Number(completingDeal.deposit_amount).toLocaleString()}</span>
-                </div>
-              )}
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 800, color: "#10B981", borderTop: "1px solid #E2E8F0", paddingTop: 8 }}>
-                <span>Balance due today</span>
-                <span>AED {Number(completingDeal.balance_due || completingDeal.value || 0).toLocaleString()}</span>
-              </div>
-            </div>
-
-            {/* Payment method */}
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>PAYMENT METHOD</div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {["Cash", "Bank Transfer", "Partial"].map(m => (
-                  <button key={m} onClick={() => setCompletionPaymentMethod(m)}
-                    style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                             background: completionPaymentMethod === m ? "#6366F1" : "#F1F5F9",
-                             color: completionPaymentMethod === m ? "#fff" : "#64748B" }}>
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Complete button */}
-            <button onClick={async () => {
-              try {
-                const soldAt = new Date().toISOString();
-                const items = completingDeal.deal_items || [];
-
-                // Mark each device as sold
-                for (const item of items) {
-                  if (item.item_type === "device" && item.stock_id) {
-                    await supabase.from("stock").update({
-                      status: "sold",
-                      sold_at: soldAt,
-                      sold_to_customer_id: completingDeal.customers?.id || null,
-                    }).eq("id", item.stock_id);
-                  }
-                }
-
-                // Close the deal
-                await supabase.from("deals").update({
-                  stage: "closed",
-                  closed_at: soldAt,
-                  payment_method: completionPaymentMethod,
-                  payment_status: "received",
-                }).eq("id", completingDeal.id);
-
-                setShowCompleteReservation(false);
-                setCompletingDeal(null);
-                loadReservedDeals();
-                loadStock();
-                loadCustomers();
-                loadTodaySales();
-
-                // Show receipt option
-                const receiptItems = items.map(i => ({
-                  label: i.item_type === "device"
-                    ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
-                    : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
-                  price: Number(i.agreed_price || 0),
-                }));
-                setSaleReceiptData({
-                  type: "reserved",
-                  date: soldAt,
-                  customerName: completingDeal.customers?.name || "Customer",
-                  customerNumber: completingDeal.customers?.number || null,
-                  price: Number(completingDeal.value || 0),
-                  depositAmount: Number(completingDeal.deposit_amount || 0),
-                  balanceDue: Number(completingDeal.balance_due || 0),
-                  paymentMethod: completionPaymentMethod,
-                  items: receiptItems,
-                });
-                setReceiptEditName(completingDeal.customers?.name || "Customer");
-                setShowSaleReceipt(true);
-              } catch (e) {
-                alert("Error completing sale: " + (e.message || "Unknown error"));
-              }
-            }}
-              style={{ padding: 14, borderRadius: 12, border: "none", background: "#10B981", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
-              ✅ Complete Sale — AED {Number(completingDeal.balance_due || completingDeal.value || 0).toLocaleString()} Due
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )}
-
-CHANGE 5 — Update buildSaleReceiptText to support multi-item deals
-Find the buildSaleReceiptText function.
-Replace the DEVICE DETAILS / PART DETAILS section with:
-
-  ${sale.items && sale.items.length > 0
-    ? `ITEMS:\n${sale.items.map(i => 
-        `${i.label}${' '.repeat(Math.max(1, 30 - i.label.length))}AED ${Number(i.price).toLocaleString()}`
-      ).join('\n')}`
-    : sale.type === "part"
-      ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nCompatible With: ${sale.specs}` : ""}\nQuantity: ${sale.quantity || 1}`
-      : `DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`
-  }
-
-CHANGE 6 — Update LinkStockModal confirm() to save to deal_items
-Find the confirm() function inside LinkStockModal.
-After marking stock as sold and updating the deal,
-add this to save items to deal_items table:
-
-  // Save to deal_items for deal-centric tracking
-  if (selType === "device") {
-    await supabase.from("deal_items").insert({
-      deal_id: deal.id,
-      item_type: "device",
-      stock_id: selItem.id,
-      brand: selItem.brand || null,
-      model: selItem.model || null,
-      ram: selItem.ram || null,
-      ssd: selItem.ssd || null,
-      condition: selItem.condition || null,
-      processor: selItem.processor || null,
-      serial_number: selItem.serial_number || null,
-      agreed_price: agreedN,
-    });
-  } else {
-    await supabase.from("deal_items").insert({
-      deal_id: deal.id,
-      item_type: "part",
-      part_id: selItem.id,
-      category: selItem.category || null,
-      specs: selItem.specs || null,
-      quantity: 1,
-      agreed_price: agreedN,
-    });
-  }
-
-CHANGE 7 — Update Sales History to show deal-centric entries
-Find the loadSalesHistory function.
-Update the dealSales query to also fetch deal_items:
-
-  const dealQuery = supabase
-    .from("deals")
-    .select("*, customers(name, number), deal_items(*)")
-    .eq("stage", "closed")
-    .order("closed_at", { ascending: false });
-
-Update the combined.push for dealSales to include items:
-  combined.push({
-    ...existingFields,
-    items: (d.deal_items || []).map(i => ({
-      label: i.item_type === "device"
-        ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
-        : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
-      price: Number(i.agreed_price || 0),
-    })),
+Find the filteredStock computation in App.js:
+  const filteredStock = stock.filter(item => {
+    if (stockSearch) { ... }
+    if (stockFilter === "available") return item.status === "available";
+    if (stockFilter === "reserved") return item.status === "reserved";
+    if (stockFilter === "sold") return item.status === "sold";
+    return true;
   });
 
-CHANGE 8 — Add expandable items in Sales History
-Find the sales history tab content where sale cards are rendered.
-Add expand/collapse state:
-  const [expandedSaleId, setExpandedSaleId] = useState(null);
+This is correct. The issue is the reserved items are not 
+loading because loadStock() is not called after reservation.
 
-For each sale card, if sale.items and sale.items.length > 1, 
-show an expand button and expandable items list:
+Find where ReservationModal is rendered in App.js.
+It has an onDone prop. Replace it with:
 
-  {sale.items && sale.items.length > 1 && (
-    <div style={{ marginTop: 6 }}>
-      <button onClick={() => setExpandedSaleId(expandedSaleId === (sale.id || i) ? null : (sale.id || i))}
-        style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-        {expandedSaleId === (sale.id || i) ? "▲ Hide items" : `▼ ${sale.items.length} items`}
-      </button>
-      {expandedSaleId === (sale.id || i) && (
-        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-          {sale.items.map((item, j) => (
-            <div key={j} style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", background: "#F8FAFC", borderRadius: 8 }}>
-              <span style={{ fontSize: 12, color: "#475569" }}>{item.label}</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>AED {item.price.toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
-      )}
+  onDone={({ selectedItem, pickupDate, depositAmt, balanceDue }) => {
+    setShowReservation(false);
+    setLinkStockDeal(null);
+    loadStock();
+    loadCustomers();
+    refreshCachedStock();
+  }}
+
+Also find onClose prop and replace with:
+  onClose={() => { 
+    setShowReservation(false); 
+    setLinkStockDeal(null); 
+  }}
+
+CHANGE 3 — Add success notification system
+
+Add this state near other useState declarations in App():
+  const [toast, setToast] = useState(null);
+
+Add this helper function inside App() near other functions:
+  function showToast(message, type = "success") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }
+
+Add this toast UI just before the closing </div> of the 
+main app return, before the floating "+" button:
+
+  {/* ── TOAST NOTIFICATION ── */}
+  {toast && (
+    <div style={{
+      position: "fixed",
+      bottom: isMobile ? 90 : 24,
+      left: "50%",
+      transform: "translateX(-50%)",
+      zIndex: 999,
+      padding: "12px 24px",
+      borderRadius: 12,
+      background: toast.type === "success" ? "#10B981" 
+        : toast.type === "error" ? "#EF4444" 
+        : "#6366F1",
+      color: "#fff",
+      fontSize: 13,
+      fontWeight: 700,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+      whiteSpace: "nowrap",
+      animation: "slideUp 0.3s ease",
+    }}>
+      {toast.type === "success" ? "✅ " : toast.type === "error" ? "❌ " : "ℹ️ "}
+      {toast.message}
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+      `}</style>
     </div>
+  )}
+
+Now add showToast calls in key places:
+
+After reservation saves successfully — in ReservationModal onDone:
+  onDone={({ selectedItem, pickupDate, depositAmt, balanceDue }) => {
+    setShowReservation(false);
+    setLinkStockDeal(null);
+    loadStock();
+    loadCustomers();
+    refreshCachedStock();
+    showToast("Device reserved successfully 🔒");
+  }}
+
+After LinkStockModal onDone (confirm sale):
+  onDone={() => {
+    setShowLinkStock(false);
+    setLinkStockDeal(null);
+    loadCustomers();
+    loadStock();
+    refreshCachedStock();
+    loadTodaySales();
+    showToast("Sale confirmed successfully ✅");
+  }}
+
+After release reservation (the Release button on reserved cards):
+  showToast("Device released back to stock 🔓");
+
+After stock item deleted:
+  showToast("Item deleted");
+
+CHANGE 4 — Add WhatsApp one-tap reply button in chat window
+
+Find the chat detail view input bar section.
+It currently has:
+- AI generated reply box (when generatedReply exists)
+- Reserve Device button
+- Confirm Sale text link
+- TOP ROW — paste client incoming message
+- BOTTOM ROW — type your own outgoing message
+
+In the BOTTOM ROW, find the send button (the ↑ button).
+After the send button, add a WhatsApp button:
+
+  {activeCustomer?.number && directReplyText.trim() && (
+    <button
+      onClick={() => {
+        const text = directReplyText.trim();
+        if (!text) return;
+        const number = activeCustomer.number.replace(/\D/g, "");
+        window.open(
+          `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
+          "_blank"
+        );
+      }}
+      style={{
+        width: 46,
+        height: 52,
+        borderRadius: 12,
+        border: "none",
+        background: "#25D366",
+        color: "#fff",
+        fontWeight: 800,
+        fontSize: 18,
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+      title="Send via WhatsApp"
+    >
+      📱
+    </button>
+  )}
+
+Also add a WhatsApp button for the AI generated reply.
+Find the AI reply action buttons (Send, Edit, Skip).
+Add a WhatsApp button next to Send:
+
+  {activeCustomer?.number && (
+    <button
+      onClick={() => {
+        const text = generatedReply.trim();
+        const number = activeCustomer.number.replace(/\D/g, "");
+        window.open(
+          `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
+          "_blank"
+        );
+      }}
+      style={{
+        padding: "9px 12px",
+        borderRadius: 10,
+        border: "none",
+        background: "#25D366",
+        color: "#fff",
+        fontWeight: 700,
+        fontSize: 13,
+        cursor: "pointer",
+      }}
+    >
+      📱 WA
+    </button>
+  )}
+
+CHANGE 5 — Fix handleReserveDevice function
+
+Find the handleReserveDevice function.
+If it does not exist, add it near handleConfirmSale:
+
+  async function handleReserveDevice() {
+    let deal = activeDeal;
+    if (!deal && activeCustomer?.id) {
+      const { data: newD } = await supabase.from("deals").insert({
+        customer_id: activeCustomer.id,
+        stage: "new_inquiry",
+        brand: "", model: "",
+      }).select().single();
+      if (newD) {
+        deal = newD;
+        setActiveDealId(newD.id);
+        loadCustomers();
+      }
+    }
+    if (!deal) return;
+    setLinkStockDeal({ ...deal });
+    setShowReservation(true);
+  }
+
+Find the Reserve Device button in the chat window input bar.
+Make sure its onClick is:
+  onClick={handleReserveDevice}
+
+Find where ReservationModal is rendered.
+Make sure it appears in BOTH the detail view return AND 
+the list view return with this condition:
+  {showReservation && activeCustomer && linkStockDeal && (
+    <ReservationModal
+      customer={activeCustomer}
+      deal={linkStockDeal}
+      stock={stock}
+      onClose={() => { 
+        setShowReservation(false); 
+        setLinkStockDeal(null); 
+      }}
+      onDone={() => {
+        setShowReservation(false);
+        setLinkStockDeal(null);
+        loadStock();
+        loadCustomers();
+        refreshCachedStock();
+        showToast("Device reserved successfully 🔒");
+      }}
+    />
   )}
 
 After ALL changes: npm run build, fix any ESLint errors,
-git add -A && git commit -m "feat: deal-centric reservation and sales with deal_items table" 
+git add -A && git commit -m "fix: reservation showing in reserved tab, whatsapp one-tap reply, toast notifications" 
 && git push origin main --force
