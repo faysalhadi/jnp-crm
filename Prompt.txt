@@ -1,54 +1,39 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 3. Extract Claude API functions only.
+This is refactor step 4. Extract WhatsApp functions only.
 Do NOT change any logic. Do NOT move any components or hooks.
 
-STEP 3 — Create src/utils/claude.js
+STEP 4 — Create src/utils/whatsapp.js
 
-Create a new file src/utils/claude.js
+Create a new file src/utils/whatsapp.js
 
 Add these imports at the top of the new file:
   import { supabase } from "../supabase";
-  import { SYSTEM_PROMPT, STAGES } from "../constants";
 
 Copy these exact functions from App.js into the new file.
 Add "export" before each function definition:
 
-export async function callClaude(apiKey, messages, system) {
+export async function saveImportedMessages(dealId, rawChatText) {
   // exact same code from App.js
-}
-
-export function buildSystemPromptFromCache(cachedStock) {
-  // exact same code from App.js
-}
-
-export async function buildOwnerContext() {
-  // exact same code from App.js
-  // NOTE: this function uses supabase and STAGES
-  // make sure those imports are at top of this file
 }
 
 Then in App.js:
-1. Add this import after the helpers import:
-   import {
-     callClaude,
-     buildSystemPromptFromCache,
-     buildOwnerContext,
-   } from "./utils/claude";
+1. Add this import after the claude import:
+   import { saveImportedMessages } from "./utils/whatsapp";
 
-2. DELETE the original function definitions from App.js
+2. DELETE the original saveImportedMessages function from App.js
 
 VERIFICATION CHECKLIST before building:
-- All three functions are in utils/claude.js with "export"
-- All three are removed from App.js
-- utils/claude.js imports supabase and STAGES and SYSTEM_PROMPT
+- saveImportedMessages is in utils/whatsapp.js with "export"
+- saveImportedMessages is removed from App.js
+- utils/whatsapp.js imports supabase
 - No duplicate definitions anywhere
 
 After changes:
 1. Run npm run build
 2. If errors fix them
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 3: extract claude utils" 
+   git add -A && git commit -m "refactor v2 step 4: extract whatsapp utils" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app and confirm it works
