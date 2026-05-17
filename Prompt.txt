@@ -1,261 +1,87 @@
 Read src/App.js fully before making any changes.
 
-CHANGE 1 — Fix ReservationModal to use correct columns
+This is refactor step 1. Extract constants to a separate file.
+Do NOT change any logic. Do NOT move any functions.
+Only move constant values.
 
-Find the ReservationModal component's save() function.
-It currently updates stock with these fields:
-  status: "reserved"
-  reserved_for_customer_id: customer.id
+STEP 1 — Create src/constants/index.js
 
-Replace the entire stock update inside save() with:
+Create a new file src/constants/index.js
 
-  if (selectedItem) {
-    await supabase.from("stock").update({
-      status: "reserved",
-      reserved_for_customer_id: customer.id,
-      reserved_at: new Date().toISOString(),
-      pickup_date: pickupDate,
-      sold_price: agreedNum || null,
-    }).eq("id", selectedItem.id);
-  }
+Copy these exact values from App.js into the new file.
+Add "export const" before each one:
 
-And replace the deals update with:
-  await supabase.from("deals").update({
-    stage: "confirmed_pending_pickup",
-    value: agreedNum || undefined,
-    deposit_amount: depositAmt,
-    balance_due: balanceDue,
-    pickup_date: pickupDate,
-    stock_item_id: selectedItem?.id || null,
-  }).eq("id", deal.id);
+export const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
 
-CHANGE 2 — Fix Reserved tab to show reserved items correctly
+export const STAGES = [
+  // exact same array from App.js
+];
 
-Find the filteredStock computation in App.js:
-  const filteredStock = stock.filter(item => {
-    if (stockSearch) { ... }
-    if (stockFilter === "available") return item.status === "available";
-    if (stockFilter === "reserved") return item.status === "reserved";
-    if (stockFilter === "sold") return item.status === "sold";
-    return true;
-  });
+export const TIERS = {
+  // exact same object from App.js
+};
 
-This is correct. The issue is the reserved items are not 
-loading because loadStock() is not called after reservation.
+export const BRANDS = ["MacBook", "Lenovo", "Dell", "HP", "Other"];
 
-Find where ReservationModal is rendered in App.js.
-It has an onDone prop. Replace it with:
+export const LOSS_REASONS = [
+  // exact same array from App.js
+];
 
-  onDone={({ selectedItem, pickupDate, depositAmt, balanceDue }) => {
-    setShowReservation(false);
-    setLinkStockDeal(null);
-    loadStock();
-    loadCustomers();
-    refreshCachedStock();
-  }}
+export const PAYMENT_STATUSES = [
+  // exact same array from App.js
+];
 
-Also find onClose prop and replace with:
-  onClose={() => { 
-    setShowReservation(false); 
-    setLinkStockDeal(null); 
-  }}
+export const OUTREACH_REASONS = [
+  // exact same array from App.js
+];
 
-CHANGE 3 — Add success notification system
+export const QUICK_ACTIONS = [
+  // exact same array from App.js
+];
 
-Add this state near other useState declarations in App():
-  const [toast, setToast] = useState(null);
+export const SOURCING_STAGES = [
+  // exact same array from App.js
+];
 
-Add this helper function inside App() near other functions:
-  function showToast(message, type = "success") {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }
+export const SOURCING_STAGE_COLORS = {
+  // exact same object from App.js
+};
 
-Add this toast UI just before the closing </div> of the 
-main app return, before the floating "+" button:
+export const SOURCING_CHANNELS = [
+  // exact same array from App.js
+];
 
-  {/* ── TOAST NOTIFICATION ── */}
-  {toast && (
-    <div style={{
-      position: "fixed",
-      bottom: isMobile ? 90 : 24,
-      left: "50%",
-      transform: "translateX(-50%)",
-      zIndex: 999,
-      padding: "12px 24px",
-      borderRadius: 12,
-      background: toast.type === "success" ? "#10B981" 
-        : toast.type === "error" ? "#EF4444" 
-        : "#6366F1",
-      color: "#fff",
-      fontSize: 13,
-      fontWeight: 700,
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-      whiteSpace: "nowrap",
-      animation: "slideUp 0.3s ease",
-    }}>
-      {toast.type === "success" ? "✅ " : toast.type === "error" ? "❌ " : "ℹ️ "}
-      {toast.message}
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-      `}</style>
-    </div>
-  )}
+export const SYSTEM_PROMPT = `
+  // exact same string from App.js
+`;
 
-Now add showToast calls in key places:
+export const EMPTY_STOCK = {
+  // exact same object from App.js
+};
 
-After reservation saves successfully — in ReservationModal onDone:
-  onDone={({ selectedItem, pickupDate, depositAmt, balanceDue }) => {
-    setShowReservation(false);
-    setLinkStockDeal(null);
-    loadStock();
-    loadCustomers();
-    refreshCachedStock();
-    showToast("Device reserved successfully 🔒");
-  }}
+Then in App.js:
+1. Add this import at the very top after existing imports:
+   import {
+     ANTHROPIC_KEY_STORAGE, STAGES, TIERS, BRANDS,
+     LOSS_REASONS, PAYMENT_STATUSES, OUTREACH_REASONS,
+     QUICK_ACTIONS, SOURCING_STAGES, SOURCING_STAGE_COLORS,
+     SOURCING_CHANNELS, SYSTEM_PROMPT, EMPTY_STOCK
+   } from "./constants";
 
-After LinkStockModal onDone (confirm sale):
-  onDone={() => {
-    setShowLinkStock(false);
-    setLinkStockDeal(null);
-    loadCustomers();
-    loadStock();
-    refreshCachedStock();
-    loadTodaySales();
-    showToast("Sale confirmed successfully ✅");
-  }}
+2. DELETE the original definitions from App.js
 
-After release reservation (the Release button on reserved cards):
-  showToast("Device released back to stock 🔓");
+VERIFICATION CHECKLIST before building:
+- Every constant is in constants/index.js with "export const"
+- Every constant is removed from App.js
+- Import statement is at top of App.js
+- No duplicate definitions anywhere
 
-After stock item deleted:
-  showToast("Item deleted");
-
-CHANGE 4 — Add WhatsApp one-tap reply button in chat window
-
-Find the chat detail view input bar section.
-It currently has:
-- AI generated reply box (when generatedReply exists)
-- Reserve Device button
-- Confirm Sale text link
-- TOP ROW — paste client incoming message
-- BOTTOM ROW — type your own outgoing message
-
-In the BOTTOM ROW, find the send button (the ↑ button).
-After the send button, add a WhatsApp button:
-
-  {activeCustomer?.number && directReplyText.trim() && (
-    <button
-      onClick={() => {
-        const text = directReplyText.trim();
-        if (!text) return;
-        const number = activeCustomer.number.replace(/\D/g, "");
-        window.open(
-          `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
-          "_blank"
-        );
-      }}
-      style={{
-        width: 46,
-        height: 52,
-        borderRadius: 12,
-        border: "none",
-        background: "#25D366",
-        color: "#fff",
-        fontWeight: 800,
-        fontSize: 18,
-        cursor: "pointer",
-        flexShrink: 0,
-      }}
-      title="Send via WhatsApp"
-    >
-      📱
-    </button>
-  )}
-
-Also add a WhatsApp button for the AI generated reply.
-Find the AI reply action buttons (Send, Edit, Skip).
-Add a WhatsApp button next to Send:
-
-  {activeCustomer?.number && (
-    <button
-      onClick={() => {
-        const text = generatedReply.trim();
-        const number = activeCustomer.number.replace(/\D/g, "");
-        window.open(
-          `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
-          "_blank"
-        );
-      }}
-      style={{
-        padding: "9px 12px",
-        borderRadius: 10,
-        border: "none",
-        background: "#25D366",
-        color: "#fff",
-        fontWeight: 700,
-        fontSize: 13,
-        cursor: "pointer",
-      }}
-    >
-      📱 WA
-    </button>
-  )}
-
-CHANGE 5 — Fix handleReserveDevice function
-
-Find the handleReserveDevice function.
-If it does not exist, add it near handleConfirmSale:
-
-  async function handleReserveDevice() {
-    let deal = activeDeal;
-    if (!deal && activeCustomer?.id) {
-      const { data: newD } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: "new_inquiry",
-        brand: "", model: "",
-      }).select().single();
-      if (newD) {
-        deal = newD;
-        setActiveDealId(newD.id);
-        loadCustomers();
-      }
-    }
-    if (!deal) return;
-    setLinkStockDeal({ ...deal });
-    setShowReservation(true);
-  }
-
-Find the Reserve Device button in the chat window input bar.
-Make sure its onClick is:
-  onClick={handleReserveDevice}
-
-Find where ReservationModal is rendered.
-Make sure it appears in BOTH the detail view return AND 
-the list view return with this condition:
-  {showReservation && activeCustomer && linkStockDeal && (
-    <ReservationModal
-      customer={activeCustomer}
-      deal={linkStockDeal}
-      stock={stock}
-      onClose={() => { 
-        setShowReservation(false); 
-        setLinkStockDeal(null); 
-      }}
-      onDone={() => {
-        setShowReservation(false);
-        setLinkStockDeal(null);
-        loadStock();
-        loadCustomers();
-        refreshCachedStock();
-        showToast("Device reserved successfully 🔒");
-      }}
-    />
-  )}
-
-After ALL changes: npm run build, fix any ESLint errors,
-git add -A && git commit -m "fix: reservation showing in reserved tab, whatsapp one-tap reply, toast notifications" 
-&& git push origin main --force
+After changes:
+1. Run npm run build
+2. If errors, fix them
+3. Only when build is clean run:
+   git add -A && git commit -m "refactor v2 step 1: extract constants" 
+   && git push origin main --force
+4. Wait 2 minutes
+5. Open https://jnp-crm.vercel.app and confirm it works
+6. Tell me the new App.js line count
