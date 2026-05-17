@@ -1,42 +1,50 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 7c. Extract CustomersTab component.
+This is refactor step 7d. Extract TradersTab component.
 Do NOT change any logic.
 
 IMPORTANT: File MUST have "import React from 'react';" 
 as the very first import.
 
-Create src/components/tabs/CustomersTab.js
+Create src/components/tabs/TradersTab.js
 
 Add these at the top:
-  import React from "react";
-  import Badge from "../ui/Badge";
-  import StageBar from "../ui/StageBar";
+  import React, { useState } from "react";
+  import { supabase } from "../../supabase";
   import Spinner from "../ui/Spinner";
-  import { TIERS } from "../../constants";
-  import { daysSince, waTsFormat, timeAgo } from "../../utils/helpers";
+  import Badge from "../ui/Badge";
+  import { timeAgo, daysSince } from "../../utils/helpers";
 
-Find the customers tab content in App.js:
-  {activeTab === "customers" && ( ... )}
+Find the traders tab content in App.js:
+  {activeTab === "traders" && ( ... )}
 
 Extract ALL content inside that block into:
-  export default function CustomersTab({
+  export default function TradersTab({
+    anthropicKey,
     isMobile,
-    loading,
-    filtered,
-    lastMsgMap,
-    setActiveCustomerId,
-    setActiveDealId,
-    setView,
-    setPendingSuggestion,
-    openDeals,
-    closedDeals,
-    revenue,
-    search, setSearch,
-    filter, setFilter,
-    contactTypeFilter, setContactTypeFilter,
-    setShowContactModal,
-    setContactModalPreType,
+    stock,
+    customers,
+    traderListings,
+    traderListingsLoading,
+    loadTraderListings,
+    traderSection, setTraderSection,
+    traderSearch, setTraderSearch,
+    traderFilter, setTraderFilter,
+    showImportTrader, setShowImportTrader,
+    traderGroup, setTraderGroup,
+    traderChatText, setTraderChatText,
+    traderImportLoading, setTraderImportLoading,
+    traderImportPreview, setTraderImportPreview,
+    savingTraderListings, setSavingTraderListings,
+    traderImportResult, setTraderImportResult,
+    showTraderMatches, setShowTraderMatches,
+    showCheckTraders, setShowCheckTraders,
+    checkTradersResults, setCheckTradersResults,
+    checkTradersLoading, setCheckTradersLoading,
+    activeDeal,
+    extractTraderListings,
+    saveTraderListings,
+    checkTradersForDeal,
   }) {
     return (
       // exact same JSX
@@ -44,36 +52,56 @@ Extract ALL content inside that block into:
   }
 
 In App.js replace:
-  {activeTab === "customers" && ( ... )}
+  {activeTab === "traders" && ( ... )}
 With:
-  {activeTab === "customers" && (
-    <CustomersTab
+  {activeTab === "traders" && (
+    <TradersTab
+      anthropicKey={anthropicKey}
       isMobile={isMobile}
-      loading={loading}
-      filtered={filtered}
-      lastMsgMap={lastMsgMap}
-      setActiveCustomerId={setActiveCustomerId}
-      setActiveDealId={setActiveDealId}
-      setView={setView}
-      setPendingSuggestion={setPendingSuggestion}
-      openDeals={openDeals}
-      closedDeals={closedDeals}
-      revenue={revenue}
-      search={search}
-      setSearch={setSearch}
-      filter={filter}
-      setFilter={setFilter}
-      contactTypeFilter={contactTypeFilter}
-      setContactTypeFilter={setContactTypeFilter}
-      setShowContactModal={setShowContactModal}
-      setContactModalPreType={setContactModalPreType}
+      stock={stock}
+      customers={customers}
+      traderListings={traderListings}
+      traderListingsLoading={traderListingsLoading}
+      loadTraderListings={loadTraderListings}
+      traderSection={traderSection}
+      setTraderSection={setTraderSection}
+      traderSearch={traderSearch}
+      setTraderSearch={setTraderSearch}
+      traderFilter={traderFilter}
+      setTraderFilter={setTraderFilter}
+      showImportTrader={showImportTrader}
+      setShowImportTrader={setShowImportTrader}
+      traderGroup={traderGroup}
+      setTraderGroup={setTraderGroup}
+      traderChatText={traderChatText}
+      setTraderChatText={setTraderChatText}
+      traderImportLoading={traderImportLoading}
+      setTraderImportLoading={setTraderImportLoading}
+      traderImportPreview={traderImportPreview}
+      setTraderImportPreview={setTraderImportPreview}
+      savingTraderListings={savingTraderListings}
+      setSavingTraderListings={setSavingTraderListings}
+      traderImportResult={traderImportResult}
+      setTraderImportResult={setTraderImportResult}
+      showTraderMatches={showTraderMatches}
+      setShowTraderMatches={setShowTraderMatches}
+      showCheckTraders={showCheckTraders}
+      setShowCheckTraders={setShowCheckTraders}
+      checkTradersResults={checkTradersResults}
+      setCheckTradersResults={setCheckTradersResults}
+      checkTradersLoading={checkTradersLoading}
+      setCheckTradersLoading={setCheckTradersLoading}
+      activeDeal={activeDeal}
+      extractTraderListings={extractTraderListings}
+      saveTraderListings={saveTraderListings}
+      checkTradersForDeal={checkTradersForDeal}
     />
   )}
 
 Add import at top of App.js:
-  import CustomersTab from "./components/tabs/CustomersTab";
+  import TradersTab from "./components/tabs/TradersTab";
 
-DELETE the original customers tab block from App.js.
+DELETE the original traders tab block from App.js.
 
 VERIFICATION CHECKLIST before building:
 - File has "import React from 'react'" at very top
@@ -81,17 +109,18 @@ VERIFICATION CHECKLIST before building:
 - Imported in App.js
 - Original block deleted from App.js
 - No duplicate definitions
-- TIERS imported from constants
-- daysSince, waTsFormat, timeAgo imported from utils/helpers
+- showImportTrader, showTraderMatches, showCheckTraders
+  are all in the props destructuring
+- All props used in JSX are in the component signature
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors — if a variable is undefined add it 
    as a prop in both the component and App.js usage
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 7c: extract CustomersTab" 
+   git add -A && git commit -m "refactor v2 step 7d: extract TradersTab" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Check Contacts tab — do clients show correctly?
+6. Check Traders tab — does it show listings?
 7. Tell me the new App.js line count
