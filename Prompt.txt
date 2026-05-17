@@ -1,122 +1,88 @@
 Read src/App.js fully before making any changes.
 
-This is refactor step 7. Extract tab components one at a time.
-Start with the easiest ones first.
+This is refactor step 7b. Extract HomeTab component.
 Do NOT change any logic.
 
-IMPORTANT: Every new component file MUST have 
-"import React from 'react';" as the very first import.
-This is required to prevent the minifier from breaking the code.
+IMPORTANT: File MUST have "import React from 'react';" 
+as the very first import.
 
-STEP 7A — Create src/components/tabs/AskClaudeTab.js
-
-Create a new file src/components/tabs/AskClaudeTab.js
+Create src/components/tabs/HomeTab.js
 
 Add these at the top:
   import React from "react";
-  import { QUICK_ACTIONS } from "../../constants";
+  import { STAGES } from "../../constants";
+  import { daysSince, timeAgo, monthRevenue } from "../../utils/helpers";
   import Spinner from "../ui/Spinner";
 
-Find the ask claude tab content in App.js:
-  {activeTab === "ask" && ( ... )}
+Find the home tab content in App.js:
+  {activeTab === "home" && (() => { ... })()}
 
 Extract ALL content inside that block into:
-  export default function AskClaudeTab({
-    anthropicKey,
-    isMobile,
-    askMessages, setAskMessages,
-    askInput, setAskInput,
-    askLoading, setAskLoading,
-    askBottomRef,
-    sendAskMessage,
+  export default function HomeTab({
+    customers, stock, tasks, todaySales, partsRevMTD,
+    sourcingAlerts, isMobile, setActiveTab, setView,
+    setActiveCustomerId, setActiveDealId, setPendingSuggestion,
+    setShowQuickSale, setStockFilter, setFilter,
+    setShowAddStock, setEditingStock, setStockForm,
+    openDeals, closedDeals, revenue,
+    daysSince, timeAgo,
   }) {
     return (
-      // exact same JSX
+      // exact same JSX that was inside the home tab block
     );
   }
 
 In App.js replace:
-  {activeTab === "ask" && ( ... )}
+  {activeTab === "home" && (() => { ... })()}
 With:
-  {activeTab === "ask" && (
-    <AskClaudeTab
-      anthropicKey={anthropicKey}
+  {activeTab === "home" && (
+    <HomeTab
+      customers={customers}
+      stock={stock}
+      tasks={tasks}
+      todaySales={todaySales}
+      partsRevMTD={partsRevMTD}
+      sourcingAlerts={sourcingAlerts}
       isMobile={isMobile}
-      askMessages={askMessages}
-      setAskMessages={setAskMessages}
-      askInput={askInput}
-      setAskInput={setAskInput}
-      askLoading={askLoading}
-      setAskLoading={setAskLoading}
-      askBottomRef={askBottomRef}
-      sendAskMessage={sendAskMessage}
+      setActiveTab={setActiveTab}
+      setView={setView}
+      setActiveCustomerId={setActiveCustomerId}
+      setActiveDealId={setActiveDealId}
+      setPendingSuggestion={setPendingSuggestion}
+      setShowQuickSale={setShowQuickSale}
+      setStockFilter={setStockFilter}
+      setFilter={setFilter}
+      setShowAddStock={setShowAddStock}
+      setEditingStock={setEditingStock}
+      setStockForm={setStockForm}
+      openDeals={openDeals}
+      closedDeals={closedDeals}
+      revenue={revenue}
     />
   )}
 
 Add import at top of App.js:
-  import AskClaudeTab from "./components/tabs/AskClaudeTab";
+  import HomeTab from "./components/tabs/HomeTab";
 
-DELETE the original ask tab block from App.js.
-
-STEP 7B — Create src/components/tabs/SalesTab.js
-
-Create a new file src/components/tabs/SalesTab.js
-
-Add these at the top:
-  import React, { useState } from "react";
-  import Spinner from "../ui/Spinner";
-
-Find the sales tab content in App.js:
-  {activeTab === "sales" && ( ... )}
-
-Extract ALL content inside that block into:
-  export default function SalesTab({
-    isMobile,
-    salesHistory, salesHistoryLoading,
-    salesFilter, setSalesFilter,
-    setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
-  }) {
-    return (
-      // exact same JSX
-    );
-  }
-
-In App.js replace:
-  {activeTab === "sales" && ( ... )}
-With:
-  {activeTab === "sales" && (
-    <SalesTab
-      isMobile={isMobile}
-      salesHistory={salesHistory}
-      salesHistoryLoading={salesHistoryLoading}
-      salesFilter={salesFilter}
-      setSalesFilter={setSalesFilter}
-      setSaleReceiptData={setSaleReceiptData}
-      setReceiptEditName={setReceiptEditName}
-      setShowSaleReceipt={setShowSaleReceipt}
-    />
-  )}
-
-Add import at top of App.js:
-  import SalesTab from "./components/tabs/SalesTab";
-
-DELETE the original sales tab block from App.js.
+DELETE the original home tab block from App.js.
 
 VERIFICATION CHECKLIST before building:
-- Both files have "import React from 'react'" at very top
-- Both are exported as default
-- Both are imported in App.js
-- Original blocks deleted from App.js
+- File has "import React from 'react'" at very top
+- Exported as default
+- Imported in App.js
+- Original block deleted from App.js
 - No duplicate definitions
+- All variables used inside HomeTab are either 
+  imported from constants/utils OR passed as props
 
 After changes:
 1. Run npm run build
-2. Fix ALL errors
+2. Fix ALL errors — if a variable is undefined add it 
+   as a prop in both the component and App.js usage
 3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 7a: extract AskClaudeTab and SalesTab" 
+   git add -A && git commit -m "refactor v2 step 7b: extract HomeTab" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test Ask Claude tab — does it work?
-7. Test Sales History tab — does it show?
-8. Tell me the new App.js line count
+6. Check Dashboard — do stats show correctly?
+7. Tell me the new App.js line count
