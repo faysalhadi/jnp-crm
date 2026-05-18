@@ -1,212 +1,197 @@
 Read src/App.js and src/components/chat/ChatDetailView.js 
 fully before making any changes.
 
-CHANGE 1 — Add toast notification system
+CHANGE 1 — Make AI Reply always available
 
-In App.js add this state near other useState declarations:
-  const [toast, setToast] = useState(null);
+In ChatDetailView.js find the input bar section.
+Currently the AI reply option only shows after a client 
+message is added (replyMode and replyingToId logic).
 
-Add this function inside App() near other helper functions:
-  function showToast(message, type = "success") {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }
+Add a permanent "🤖 AI" button in the bottom input area 
+that is ALWAYS visible regardless of message history.
 
-Add this JSX just before the floating "+" button in the 
-main list view return:
+Find the BOTTOM ROW section with the textarea and 📱 Send button.
+Add an AI button to the LEFT of the textarea:
 
-  {toast && (
-    <div style={{
-      position: "fixed",
-      bottom: isMobile ? 90 : 24,
-      left: "50%",
-      transform: "translateX(-50%)",
-      zIndex: 999,
-      padding: "12px 24px",
-      borderRadius: 12,
-      background: toast.type === "success" ? "#10B981"
-        : toast.type === "error" ? "#EF4444"
-        : "#6366F1",
-      color: "#fff",
-      fontSize: 13,
-      fontWeight: 700,
-      boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
-      whiteSpace: "nowrap",
-      animation: "toastSlideUp 0.3s ease",
+  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+    {/* AI compose button — always visible */}
+    <button
+      onClick={() => {
+        setReplyMode("ai_compose");
+        setGeneratedReply("");
+        setEditingGenerated(true);
+      }}
+      style={{
+        width: 40, height: 52, borderRadius: 12, border: "none",
+        background: replyMode === "ai_compose" ? "#6366F1" : "#EEF2FF",
+        color: replyMode === "ai_compose" ? "#fff" : "#6366F1",
+        fontWeight: 800, fontSize: 11, cursor: "pointer",
+        flexShrink: 0, display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center", gap: 1,
+      }}>
+      <span style={{ fontSize: 16 }}>🤖</span>
+      <span style={{ fontSize: 8, fontWeight: 700 }}>AI</span>
+    </button>
+    {/* existing textarea */}
+    <textarea ... />
+    {/* existing send button */}
+  </div>
+
+When the 🤖 AI button is tapped it opens a compose box 
+above the input bar (same style as the existing AI reply box)
+but empty — user types context and taps Generate:
+
+Find where the generatedReply box is shown 
+(the blue/purple box that appears above the input bar).
+Add a new section ABOVE it that shows when 
+replyMode === "ai_compose":
+
+  {replyMode === "ai_compose" && (
+    <div style={{ 
+      marginBottom: 12, background: "#EEF2FF", borderRadius: 14, 
+      padding: 12, border: "1px solid #C7D2FE" 
     }}>
-      {toast.type === "success" ? "✅ " 
-        : toast.type === "error" ? "❌ " 
-        : "ℹ️ "}
-      {toast.message}
-      <style>{`
-        @keyframes toastSlideUp {
-          from { opacity: 0; transform: translateX(-50%) translateY(16px); }
-          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-      `}</style>
+      <div style={{ 
+        fontSize: 10, fontWeight: 700, color: "#6366F1", 
+        letterSpacing: 0.5, marginBottom: 6 
+      }}>
+        🤖 AI COMPOSE
+      </div>
+      <textarea
+        value={aiComposeContext}
+        onChange={e => setAiComposeContext(e.target.value)}
+        placeholder="What do you want to say? e.g. 'Follow up on MacBook, offer 10% discount'"
+        rows={2}
+        style={{ 
+          width: "100%", padding: "8px 10px", borderRadius: 10,
+          border: "1.5px solid #C7D2FE", fontSize: 13, outline: "none",
+          resize: "none", fontFamily: "inherit", lineHeight: 1.5,
+          boxSizing: "border-box", background: "#fff", marginBottom: 8
+        }}
+      />
+      <div style={{ display: "flex", gap: 6 }}>
+        <button
+          onClick={async () => {
+            if (!anthropicKey) { 
+              alert("Add Anthropic API key in Settings first."); 
+              return; 
+            }
+            setGeneratedReplyLoading(true);
+            setGeneratedReply("");
+            setReplyMode("ai");
+            try {
+              const history = messages.map(m => ({
+                role: m.role === "customer" ? "user" : "assistant",
+                content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
+              }));
+              const contextMsg = aiComposeContext.trim() 
+                ? `Context from owner: ${aiComposeContext.trim()}` 
+                : "Generate a friendly follow-up message";
+              const fullHistory = history.length > 0 
+                ? [...history, { role: "user", content: contextMsg }]
+                : [{ role: "user", content: contextMsg }];
+              const raw = await callClaude(
+                anthropicKey, 
+                fullHistory, 
+                buildSystemPromptFromCache(cachedStock)
+              );
+              const clean = raw.replace(/```json|```/g, "").trim();
+              let parsed;
+              try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
+              setGeneratedReply(parsed.reply || raw);
+              setAiComposeContext("");
+            } catch {
+              setGeneratedReply("⚠️ Error generating. Check your API key.");
+            }
+            setGeneratedReplyLoading(false);
+          }}
+          disabled={generatedReplyLoading}
+          style={{ 
+            flex: 1, padding: "8px", borderRadius: 10, border: "none",
+            background: generatedReplyLoading ? "#E2E8F0" : "#6366F1",
+            color: generatedReplyLoading ? "#94A3B8" : "#fff",
+            fontWeight: 700, fontSize: 12, cursor: "pointer"
+          }}>
+          {generatedReplyLoading ? "⏳ Generating..." : "⚡ Generate"}
+        </button>
+        <button
+          onClick={() => { 
+            setReplyMode(null); 
+            setAiComposeContext(""); 
+            setGeneratedReply(""); 
+          }}
+          style={{ 
+            padding: "8px 14px", borderRadius: 10, 
+            border: "1.5px solid #E2E8F0", background: "#fff",
+            color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer"
+          }}>
+          ✕
+        </button>
+      </div>
     </div>
   )}
 
-Pass showToast as a prop to ChatDetailView wherever 
-ChatDetailView is rendered:
-  showToast={showToast}
+Add this state in ChatDetailView.js props — it needs to be 
+passed from App.js or defined locally in ChatDetailView:
+  const [aiComposeContext, setAiComposeContext] = useState("");
 
-Also pass it to StockTab:
-  showToast={showToast}
+Add useState import if not already there in ChatDetailView.js.
 
-CHANGE 2 — Add showToast to ChatDetailView props
+Also import callClaude and buildSystemPromptFromCache 
+in ChatDetailView.js:
+  import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
 
-In ChatDetailView.js add showToast to the props destructuring:
-  showToast,
+CHANGE 2 — Fix Reserved tab to show one card per deal
 
-CHANGE 3 — Replace the send button with combined Save + WhatsApp button
+In src/components/tabs/StockTab.js find the reserved deals 
+section. It currently maps over reservedDeals and shows 
+all of them.
 
-In ChatDetailView.js find the BOTTOM ROW input bar.
-It currently has a textarea and a ↑ send button.
+The issue is loadReservedDeals fetches ALL deals with 
+stage "confirmed_pending_pickup" but shows them all 
+in one view without proper grouping.
 
-Replace the entire bottom row with this:
+Each deal should show as ONE card. The current code is 
+correct in structure but make sure the map key is deal.id 
+so React renders them separately:
 
-  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-    <textarea
-      id="ownerReplyInput"
-      value={directReplyText}
-      onChange={e => setDirectReplyText(e.target.value)}
-      onKeyDown={e => { 
-        if (e.key === "Enter" && !e.shiftKey) { 
-          e.preventDefault(); 
-          sendDirectReply(); 
-        } 
-      }}
-      placeholder="Type your message..."
-      rows={2}
-      style={{ 
-        flex: 1, padding: "10px 12px", borderRadius: 12, 
-        border: "1.5px solid #E2E8F0", fontSize: 13.5, 
-        outline: "none", resize: "none", 
-        fontFamily: "inherit", lineHeight: 1.5 
-      }}
-    />
-    {/* Save only button — shown when no number */}
-    {!activeCustomer?.number && (
-      <button onClick={sendDirectReply} 
-        disabled={!directReplyText.trim()}
-        style={{ 
-          width: 46, height: 52, borderRadius: 12, border: "none",
-          background: directReplyText.trim() ? "#6366F1" : "#E2E8F0",
-          color: directReplyText.trim() ? "#fff" : "#94A3B8",
-          fontWeight: 800, fontSize: 20, cursor: "pointer", flexShrink: 0 
-        }}>
-        ↑
-      </button>
-    )}
-    {/* Combined Save + WhatsApp button — shown when number exists */}
-    {activeCustomer?.number && (
-      <button 
-        onClick={async () => {
-          if (!directReplyText.trim()) return;
-          await sendDirectReply();
-          const number = activeCustomer.number.replace(/\D/g, "");
-          const text = directReplyText.trim();
-          window.open(
-            `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
-            "_blank"
-          );
-        }}
-        disabled={!directReplyText.trim()}
-        style={{ 
-          height: 52, padding: "0 14px", borderRadius: 12, border: "none",
-          background: directReplyText.trim() ? "#25D366" : "#E2E8F0",
-          color: directReplyText.trim() ? "#fff" : "#94A3B8",
-          fontWeight: 800, fontSize: 13, cursor: "pointer", 
-          flexShrink: 0, display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center", gap: 1,
-        }}>
-        <span style={{ fontSize: 16 }}>📱</span>
-        <span style={{ fontSize: 9, fontWeight: 700 }}>Send</span>
-      </button>
-    )}
-  </div>
+Find:
+  {!reservedDealsLoading && reservedDeals.map(deal => {
 
-NOTE: The sendDirectReply function clears directReplyText 
-after saving. So we need to capture the text BEFORE calling 
-sendDirectReply. Update the onClick to capture text first:
+Make sure each card has:
+  <div key={deal.id} style={{...}}>
 
-  onClick={async () => {
-    const text = directReplyText.trim();
-    if (!text) return;
-    await sendDirectReply();
-    if (activeCustomer?.number) {
-      const number = activeCustomer.number.replace(/\D/g, "");
-      window.open(
-        `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
-        "_blank"
-      );
-    }
-  }}
+If the cards are already showing one per deal but 
+you see duplicates, the issue is loadReservedDeals 
+is being called multiple times. 
 
-CHANGE 4 — Add WhatsApp button to AI generated reply
+Find the useEffect that calls loadReservedDeals in App.js:
+  useEffect(() => {
+    if (stockFilter === "reserved") loadReservedDeals();
+  }, [stockFilter, loadReservedDeals]);
 
-In ChatDetailView.js find the AI generated reply action buttons.
-They currently are: Send, Edit, Skip.
+Make sure this useEffect exists and only triggers 
+when stockFilter changes to "reserved".
 
-Replace with: Send + WA, Edit, Skip
+Also find any other place loadReservedDeals is called 
+and make sure it is not called on every render.
 
-Find the Send button:
-  <button onClick={sendAIReply}
-    style={{ flex: 1, padding: "9px", ... }}>
-    ✅ Send
-  </button>
+CHANGE 3 — Pass loadReservedDeals to StockTab
 
-Replace with:
-  <button onClick={async () => {
-    const text = generatedReply.trim();
-    await sendAIReply();
-    if (activeCustomer?.number) {
-      const number = activeCustomer.number.replace(/\D/g, "");
-      window.open(
-        `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
-        "_blank"
-      );
-    }
-  }}
-    style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", 
-             background: "#25D366", color: "#fff", fontWeight: 800, 
-             fontSize: 13, cursor: "pointer" }}>
-    📱 Send on WA
-  </button>
+Check if loadReservedDeals is being passed as a prop 
+to StockTab in App.js. If not, add it:
+  loadReservedDeals={loadReservedDeals}
 
-CHANGE 5 — Add toast notifications to key actions
-
-In App.js find where LinkStockModal onDone is called.
-Add showToast after the other calls:
-  showToast("Sale confirmed ✅");
-
-Find where ReservationModal onDone is called.
-Add:
-  showToast("Device reserved 🔒");
-
-Find the release reservation button onClick in App.js.
-After loadReservedDeals() add:
-  showToast("Device released back to stock 🔓");
-
-Find deleteStockItem function in App.js.
-After loadStock() add:
-  showToast("Item deleted", "error");
-
-CHANGE 6 — Add showToast to StockTab props
-
-In StockTab.js add showToast to the props destructuring.
-
-Find where stock items are deleted inside StockTab.js 
-and add toast calls if showToast is available.
+And add it to StockTab props destructuring in StockTab.js.
 
 After ALL changes:
 1. Run npm run build
 2. Fix ALL errors
-3. git add -A && git commit -m "feat: whatsapp send button, toast notifications" 
+3. git add -A && git commit -m "feat: AI compose always available, fix reserved cards" 
    && git push origin main --force
 4. Test:
-   - Open client chat with a phone number
-   - Type a message — does green 📱 Send button appear?
-   - Tap it — does it save AND open WhatsApp?
-   - Reserve a device — does toast appear?
+   - Open any client chat — is 🤖 AI button visible?
+   - Tap it — does compose box appear?
+   - Type context and tap Generate — does it generate?
+   - Go to Stock Reserved tab — does each reservation 
+     show as a separate card?

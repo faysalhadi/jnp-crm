@@ -7,6 +7,7 @@ import LinkStockModal from "../modals/LinkStockModal";
 import ReservationModal from "../modals/ReservationModal";
 import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS } from "../../constants";
 import { daysSince, timeAgo } from "../../utils/helpers";
+import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
 
 export default function ChatDetailView({
   isMobile,
@@ -69,6 +70,7 @@ export default function ChatDetailView({
   setShowSideDrawer,
   showToast,
 }) {
+    const [aiComposeContext, setAiComposeContext] = useState("");
     const tier = TIERS[activeCustomer.tier] || TIERS.cold;
     const overdue = daysSince(activeCustomer.last_active) >= 1 && (activeCustomer.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
     const closedDealValue = (activeCustomer.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
@@ -585,6 +587,59 @@ export default function ChatDetailView({
         {/* ── INPUT BAR — always visible ── */}
         <div style={{ padding: "10px 12px 20px", background: "#fff", borderTop: "1px solid #F1F5F9", position: "sticky", bottom: 0 }}>
 
+          {/* AI compose box — shown when user taps 🤖 AI button */}
+          {replyMode === "ai_compose" && (
+            <div style={{ marginBottom: 12, background: "#EEF2FF", borderRadius: 14, padding: 12, border: "1px solid #C7D2FE" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: 0.5, marginBottom: 6 }}>🤖 AI COMPOSE</div>
+              <textarea
+                value={aiComposeContext}
+                onChange={e => setAiComposeContext(e.target.value)}
+                placeholder="What do you want to say? e.g. 'Follow up on MacBook, offer 10% discount'"
+                rows={2}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #C7D2FE", fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box", background: "#fff", marginBottom: 8 }}
+              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={async () => {
+                    if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
+                    setGeneratedReplyLoading(true);
+                    setGeneratedReply("");
+                    setReplyMode("ai");
+                    try {
+                      const history = messages.map(m => ({
+                        role: m.role === "customer" ? "user" : "assistant",
+                        content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
+                      }));
+                      const contextMsg = aiComposeContext.trim()
+                        ? `Context from owner: ${aiComposeContext.trim()}`
+                        : "Generate a friendly follow-up message";
+                      const fullHistory = history.length > 0
+                        ? [...history, { role: "user", content: contextMsg }]
+                        : [{ role: "user", content: contextMsg }];
+                      const raw = await callClaude(anthropicKey, fullHistory, buildSystemPromptFromCache(cachedStock));
+                      const clean = raw.replace(/```json|```/g, "").trim();
+                      let parsed;
+                      try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
+                      setGeneratedReply(parsed.reply || raw);
+                      setAiComposeContext("");
+                    } catch {
+                      setGeneratedReply("⚠️ Error generating. Check your API key.");
+                    }
+                    setGeneratedReplyLoading(false);
+                  }}
+                  disabled={generatedReplyLoading}
+                  style={{ flex: 1, padding: "8px", borderRadius: 10, border: "none", background: generatedReplyLoading ? "#E2E8F0" : "#6366F1", color: generatedReplyLoading ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  {generatedReplyLoading ? "⏳ Generating..." : "⚡ Generate"}
+                </button>
+                <button
+                  onClick={() => { setReplyMode(null); setAiComposeContext(""); setGeneratedReply(""); }}
+                  style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* AI generated reply box — shown above inputs when ready */}
           {generatedReply && !generatedReplyLoading && (
             <div style={{ marginBottom: 12, background: "#EEF2FF", borderRadius: 14, padding: 12, border: "1px solid #C7D2FE" }}>
@@ -679,6 +734,17 @@ export default function ChatDetailView({
 
           {/* BOTTOM ROW — type your own outgoing message (always usable) */}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            {/* AI compose button — always visible */}
+            <button
+              onClick={() => {
+                setReplyMode(replyMode === "ai_compose" ? null : "ai_compose");
+                setGeneratedReply("");
+                setEditingGenerated(true);
+              }}
+              style={{ width: 40, height: 52, borderRadius: 12, border: "none", background: replyMode === "ai_compose" ? "#6366F1" : "#EEF2FF", color: replyMode === "ai_compose" ? "#fff" : "#6366F1", fontWeight: 800, fontSize: 11, cursor: "pointer", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
+              <span style={{ fontSize: 16 }}>🤖</span>
+              <span style={{ fontSize: 8, fontWeight: 700 }}>AI</span>
+            </button>
             <textarea
               id="ownerReplyInput"
               value={directReplyText}
