@@ -598,22 +598,17 @@ export default function ChatDetailView({
                 </div>
               )}
               <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                <button onClick={sendAIReply}
-                  style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                  ✅ Send
+                <button onClick={async () => {
+                  const text = generatedReply.trim();
+                  await sendAIReply();
+                  if (activeCustomer?.number) {
+                    const number = activeCustomer.number.replace(/\D/g, "");
+                    window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank");
+                  }
+                }}
+                  style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: "#25D366", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  📱 Send on WA
                 </button>
-                {activeCustomer?.number && (
-                  <button
-                    onClick={() => {
-                      const text = generatedReply.trim();
-                      const number = activeCustomer.number.replace(/\D/g, "");
-                      window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank");
-                    }}
-                    style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                  >
-                    📱 WA
-                  </button>
-                )}
                 <button onClick={() => setEditingGenerated(v => !v)}
                   style={{ padding: "9px 14px", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#fff", color: "#6366F1", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                   {editingGenerated ? "Done" : "✏️ Edit"}
@@ -693,22 +688,27 @@ export default function ChatDetailView({
               rows={2}
               style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
             />
-            <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
-              style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 20, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
-              ↑
-            </button>
-            {activeCustomer?.number && directReplyText.trim() && (
+            {/* Save only — shown when no number */}
+            {!activeCustomer?.number && (
+              <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
+                style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 20, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
+                ↑
+              </button>
+            )}
+            {/* Combined Save + WhatsApp — shown when number exists */}
+            {activeCustomer?.number && (
               <button
-                onClick={() => {
+                onClick={async () => {
                   const text = directReplyText.trim();
                   if (!text) return;
+                  await sendDirectReply();
                   const number = activeCustomer.number.replace(/\D/g, "");
                   window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank");
                 }}
-                style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 800, fontSize: 18, cursor: "pointer", flexShrink: 0 }}
-                title="Send via WhatsApp"
-              >
-                📱
+                disabled={!directReplyText.trim()}
+                style={{ height: 52, padding: "0 14px", borderRadius: 12, border: "none", background: directReplyText.trim() ? "#25D366" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 13, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
+                <span style={{ fontSize: 16 }}>📱</span>
+                <span style={{ fontSize: 9, fontWeight: 700 }}>Send</span>
               </button>
             )}
           </div>

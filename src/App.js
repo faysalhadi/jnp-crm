@@ -1059,6 +1059,7 @@ Return JSON with only a "reply" field containing the message.`;
     if (expandedStockId === id) setExpandedStockId(null);
     await loadStock();
     refreshCachedStock();
+    showToast("Item deleted", "error");
   }
 
   async function toggleStockStatus(item) {
@@ -2371,6 +2372,7 @@ For any issues contact us on WhatsApp.
           setEditReservationItem={setEditReservationItem}
           editReservationForm={editReservationForm}
           setEditReservationForm={setEditReservationForm}
+          showToast={showToast}
         />
       )}
 
@@ -2858,6 +2860,7 @@ For any issues contact us on WhatsApp.
                     loadStock();
                     loadCustomers();
                     loadReservedDeals();
+                    showToast("Device released back to stock 🔓");
                   } catch (e) {
                     alert("Error releasing reservation: " + (e.message || "Unknown error"));
                   }

@@ -1,79 +1,212 @@
-Read src/App.js fully before making any changes.
+Read src/App.js and src/components/chat/ChatDetailView.js 
+fully before making any changes.
 
-Find the Release Reservation button inside the 
-showEditReservation modal in App.js.
-It is around line 2810.
+CHANGE 1 — Add toast notification system
 
-The current release code does this:
-  await supabase.from("stock").update({...}).eq("id", editReservationItem.id);
-  const { data: dealData } = await supabase.from("deals")
-    .select("id").eq("stock_item_id", editReservationItem.id).single();
+In App.js add this state near other useState declarations:
+  const [toast, setToast] = useState(null);
 
-This is wrong because editReservationItem is a DEAL object 
-not a stock item. editReservationItem.id is the deal ID.
-
-Replace the entire release button onClick with:
-
-  async () => {
-    if (!window.confirm("Release this reservation? Device will return to available stock.")) return;
-    try {
-      const deal = editReservationItem;
-      
-      // Release all reserved stock items linked to this deal
-      const { data: dealItems } = await supabase
-        .from("deal_items")
-        .select("*")
-        .eq("deal_id", deal.id);
-      
-      for (const item of (dealItems || [])) {
-        if (item.item_type === "device" && item.stock_id) {
-          await supabase.from("stock").update({
-            status: "available",
-            reserved_for_customer_id: null,
-            reserved_at: null,
-            pickup_date: null,
-            sold_price: null,
-          }).eq("id", item.stock_id);
-        }
-      }
-
-      // Also try to release via stock_item_id on deal directly
-      if (deal.stock_item_id) {
-        await supabase.from("stock").update({
-          status: "available",
-          reserved_for_customer_id: null,
-          reserved_at: null,
-          pickup_date: null,
-          sold_price: null,
-        }).eq("id", deal.stock_item_id);
-      }
-
-      // Delete deal items
-      await supabase.from("deal_items").delete().eq("deal_id", deal.id);
-
-      // Reset the deal stage
-      await supabase.from("deals").update({
-        stage: "device_found",
-        value: null,
-        deposit_amount: null,
-        balance_due: null,
-        pickup_date: null,
-        stock_item_id: null,
-      }).eq("id", deal.id);
-
-      setShowEditReservation(false);
-      loadStock();
-      loadCustomers();
-      loadReservedDeals();
-    } catch (e) {
-      alert("Error releasing reservation: " + (e.message || "Unknown error"));
-    }
+Add this function inside App() near other helper functions:
+  function showToast(message, type = "success") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
   }
 
-After changes:
+Add this JSX just before the floating "+" button in the 
+main list view return:
+
+  {toast && (
+    <div style={{
+      position: "fixed",
+      bottom: isMobile ? 90 : 24,
+      left: "50%",
+      transform: "translateX(-50%)",
+      zIndex: 999,
+      padding: "12px 24px",
+      borderRadius: 12,
+      background: toast.type === "success" ? "#10B981"
+        : toast.type === "error" ? "#EF4444"
+        : "#6366F1",
+      color: "#fff",
+      fontSize: 13,
+      fontWeight: 700,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+      whiteSpace: "nowrap",
+      animation: "toastSlideUp 0.3s ease",
+    }}>
+      {toast.type === "success" ? "✅ " 
+        : toast.type === "error" ? "❌ " 
+        : "ℹ️ "}
+      {toast.message}
+      <style>{`
+        @keyframes toastSlideUp {
+          from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+      `}</style>
+    </div>
+  )}
+
+Pass showToast as a prop to ChatDetailView wherever 
+ChatDetailView is rendered:
+  showToast={showToast}
+
+Also pass it to StockTab:
+  showToast={showToast}
+
+CHANGE 2 — Add showToast to ChatDetailView props
+
+In ChatDetailView.js add showToast to the props destructuring:
+  showToast,
+
+CHANGE 3 — Replace the send button with combined Save + WhatsApp button
+
+In ChatDetailView.js find the BOTTOM ROW input bar.
+It currently has a textarea and a ↑ send button.
+
+Replace the entire bottom row with this:
+
+  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+    <textarea
+      id="ownerReplyInput"
+      value={directReplyText}
+      onChange={e => setDirectReplyText(e.target.value)}
+      onKeyDown={e => { 
+        if (e.key === "Enter" && !e.shiftKey) { 
+          e.preventDefault(); 
+          sendDirectReply(); 
+        } 
+      }}
+      placeholder="Type your message..."
+      rows={2}
+      style={{ 
+        flex: 1, padding: "10px 12px", borderRadius: 12, 
+        border: "1.5px solid #E2E8F0", fontSize: 13.5, 
+        outline: "none", resize: "none", 
+        fontFamily: "inherit", lineHeight: 1.5 
+      }}
+    />
+    {/* Save only button — shown when no number */}
+    {!activeCustomer?.number && (
+      <button onClick={sendDirectReply} 
+        disabled={!directReplyText.trim()}
+        style={{ 
+          width: 46, height: 52, borderRadius: 12, border: "none",
+          background: directReplyText.trim() ? "#6366F1" : "#E2E8F0",
+          color: directReplyText.trim() ? "#fff" : "#94A3B8",
+          fontWeight: 800, fontSize: 20, cursor: "pointer", flexShrink: 0 
+        }}>
+        ↑
+      </button>
+    )}
+    {/* Combined Save + WhatsApp button — shown when number exists */}
+    {activeCustomer?.number && (
+      <button 
+        onClick={async () => {
+          if (!directReplyText.trim()) return;
+          await sendDirectReply();
+          const number = activeCustomer.number.replace(/\D/g, "");
+          const text = directReplyText.trim();
+          window.open(
+            `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
+            "_blank"
+          );
+        }}
+        disabled={!directReplyText.trim()}
+        style={{ 
+          height: 52, padding: "0 14px", borderRadius: 12, border: "none",
+          background: directReplyText.trim() ? "#25D366" : "#E2E8F0",
+          color: directReplyText.trim() ? "#fff" : "#94A3B8",
+          fontWeight: 800, fontSize: 13, cursor: "pointer", 
+          flexShrink: 0, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 1,
+        }}>
+        <span style={{ fontSize: 16 }}>📱</span>
+        <span style={{ fontSize: 9, fontWeight: 700 }}>Send</span>
+      </button>
+    )}
+  </div>
+
+NOTE: The sendDirectReply function clears directReplyText 
+after saving. So we need to capture the text BEFORE calling 
+sendDirectReply. Update the onClick to capture text first:
+
+  onClick={async () => {
+    const text = directReplyText.trim();
+    if (!text) return;
+    await sendDirectReply();
+    if (activeCustomer?.number) {
+      const number = activeCustomer.number.replace(/\D/g, "");
+      window.open(
+        `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
+        "_blank"
+      );
+    }
+  }}
+
+CHANGE 4 — Add WhatsApp button to AI generated reply
+
+In ChatDetailView.js find the AI generated reply action buttons.
+They currently are: Send, Edit, Skip.
+
+Replace with: Send + WA, Edit, Skip
+
+Find the Send button:
+  <button onClick={sendAIReply}
+    style={{ flex: 1, padding: "9px", ... }}>
+    ✅ Send
+  </button>
+
+Replace with:
+  <button onClick={async () => {
+    const text = generatedReply.trim();
+    await sendAIReply();
+    if (activeCustomer?.number) {
+      const number = activeCustomer.number.replace(/\D/g, "");
+      window.open(
+        `https://wa.me/${number}?text=${encodeURIComponent(text)}`,
+        "_blank"
+      );
+    }
+  }}
+    style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", 
+             background: "#25D366", color: "#fff", fontWeight: 800, 
+             fontSize: 13, cursor: "pointer" }}>
+    📱 Send on WA
+  </button>
+
+CHANGE 5 — Add toast notifications to key actions
+
+In App.js find where LinkStockModal onDone is called.
+Add showToast after the other calls:
+  showToast("Sale confirmed ✅");
+
+Find where ReservationModal onDone is called.
+Add:
+  showToast("Device reserved 🔒");
+
+Find the release reservation button onClick in App.js.
+After loadReservedDeals() add:
+  showToast("Device released back to stock 🔓");
+
+Find deleteStockItem function in App.js.
+After loadStock() add:
+  showToast("Item deleted", "error");
+
+CHANGE 6 — Add showToast to StockTab props
+
+In StockTab.js add showToast to the props destructuring.
+
+Find where stock items are deleted inside StockTab.js 
+and add toast calls if showToast is available.
+
+After ALL changes:
 1. Run npm run build
-2. Fix any errors
-3. git add -A && git commit -m "fix: release reservation uses deal_items to find stock" 
+2. Fix ALL errors
+3. git add -A && git commit -m "feat: whatsapp send button, toast notifications" 
    && git push origin main --force
-4. Test: reserve a device, go to Stock Reserved tab, 
-   click Edit, click Release — does device go back to Available?
+4. Test:
+   - Open client chat with a phone number
+   - Type a message — does green 📱 Send button appear?
+   - Tap it — does it save AND open WhatsApp?
+   - Reserve a device — does toast appear?
