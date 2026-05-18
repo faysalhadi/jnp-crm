@@ -2809,19 +2809,58 @@ For any issues contact us on WhatsApp.
                 </div>
                 <button onClick={async () => {
                   if (!window.confirm("Release this reservation? Device will return to available stock.")) return;
-                  await supabase.from("stock").update({
-                    status: "available", reserved_for_customer_id: null, reserved_at: null, pickup_date: null, sold_price: null,
-                  }).eq("id", editReservationItem.id);
-                  const { data: dealData } = await supabase.from("deals")
-                    .select("id").eq("stock_item_id", editReservationItem.id).single();
-                  if (dealData) {
+                  try {
+                    const deal = editReservationItem;
+
+                    // Release all reserved stock items linked to this deal
+                    const { data: dealItems } = await supabase
+                      .from("deal_items")
+                      .select("*")
+                      .eq("deal_id", deal.id);
+
+                    for (const item of (dealItems || [])) {
+                      if (item.item_type === "device" && item.stock_id) {
+                        await supabase.from("stock").update({
+                          status: "available",
+                          reserved_for_customer_id: null,
+                          reserved_at: null,
+                          pickup_date: null,
+                          sold_price: null,
+                        }).eq("id", item.stock_id);
+                      }
+                    }
+
+                    // Also try to release via stock_item_id on deal directly
+                    if (deal.stock_item_id) {
+                      await supabase.from("stock").update({
+                        status: "available",
+                        reserved_for_customer_id: null,
+                        reserved_at: null,
+                        pickup_date: null,
+                        sold_price: null,
+                      }).eq("id", deal.stock_item_id);
+                    }
+
+                    // Delete deal items
+                    await supabase.from("deal_items").delete().eq("deal_id", deal.id);
+
+                    // Reset the deal stage
                     await supabase.from("deals").update({
-                      stage: "device_found", value: null, deposit_amount: null, balance_due: null, pickup_date: null,
-                    }).eq("id", dealData.id);
+                      stage: "device_found",
+                      value: null,
+                      deposit_amount: null,
+                      balance_due: null,
+                      pickup_date: null,
+                      stock_item_id: null,
+                    }).eq("id", deal.id);
+
+                    setShowEditReservation(false);
+                    loadStock();
+                    loadCustomers();
+                    loadReservedDeals();
+                  } catch (e) {
+                    alert("Error releasing reservation: " + (e.message || "Unknown error"));
                   }
-                  setShowEditReservation(false);
-                  loadStock();
-                  loadCustomers();
                 }}
                   style={{ padding: 12, borderRadius: 12, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                   🔓 Release Reservation

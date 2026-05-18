@@ -1,66 +1,79 @@
-Read src/App.js and src/components/tabs/StockTab.js 
-fully before making any changes.
+Read src/App.js fully before making any changes.
 
-Find where StockTab is rendered in App.js.
-Add these missing props to the StockTab usage:
+Find the Release Reservation button inside the 
+showEditReservation modal in App.js.
+It is around line 2810.
 
-  reservedDeals={reservedDeals}
-  reservedDealsLoading={reservedDealsLoading}
-  loadReservedDeals={loadReservedDeals}
-  expandedReservedDeal={expandedReservedDeal}
-  setExpandedReservedDeal={setExpandedReservedDeal}
-  showCompleteReservation={showCompleteReservation}
-  setShowCompleteReservation={setShowCompleteReservation}
-  completingDeal={completingDeal}
-  setCompletingDeal={setCompletingDeal}
-  completionPaymentMethod={completionPaymentMethod}
-  setCompletionPaymentMethod={setCompletionPaymentMethod}
-  showEditReservation={showEditReservation}
-  setShowEditReservation={setShowEditReservation}
-  editReservationItem={editReservationItem}
-  setEditReservationItem={setEditReservationItem}
-  editReservationForm={editReservationForm}
-  setEditReservationForm={setEditReservationForm}
+The current release code does this:
+  await supabase.from("stock").update({...}).eq("id", editReservationItem.id);
+  const { data: dealData } = await supabase.from("deals")
+    .select("id").eq("stock_item_id", editReservationItem.id).single();
 
-Then add ALL of these to the StockTab component 
-function signature in StockTab.js.
+This is wrong because editReservationItem is a DEAL object 
+not a stock item. editReservationItem.id is the deal ID.
 
-Also check if these state variables exist in App.js.
-If any are missing add them near other useState declarations:
+Replace the entire release button onClick with:
 
-  const [reservedDeals, setReservedDeals] = useState([]);
-  const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
-  const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
-  const [showCompleteReservation, setShowCompleteReservation] = useState(false);
-  const [completingDeal, setCompletingDeal] = useState(null);
-  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
-  const [showEditReservation, setShowEditReservation] = useState(false);
-  const [editReservationItem, setEditReservationItem] = useState(null);
-  const [editReservationForm, setEditReservationForm] = useState({
-    agreedPrice: "", pickupDate: "", 
-    depositAmount: "", balanceDue: "", notes: "",
-  });
+  async () => {
+    if (!window.confirm("Release this reservation? Device will return to available stock.")) return;
+    try {
+      const deal = editReservationItem;
+      
+      // Release all reserved stock items linked to this deal
+      const { data: dealItems } = await supabase
+        .from("deal_items")
+        .select("*")
+        .eq("deal_id", deal.id);
+      
+      for (const item of (dealItems || [])) {
+        if (item.item_type === "device" && item.stock_id) {
+          await supabase.from("stock").update({
+            status: "available",
+            reserved_for_customer_id: null,
+            reserved_at: null,
+            pickup_date: null,
+            sold_price: null,
+          }).eq("id", item.stock_id);
+        }
+      }
 
-Also check if loadReservedDeals function exists in App.js.
-If it does not exist add it near other load functions:
+      // Also try to release via stock_item_id on deal directly
+      if (deal.stock_item_id) {
+        await supabase.from("stock").update({
+          status: "available",
+          reserved_for_customer_id: null,
+          reserved_at: null,
+          pickup_date: null,
+          sold_price: null,
+        }).eq("id", deal.stock_item_id);
+      }
 
-  const loadReservedDeals = useCallback(async () => {
-    setReservedDealsLoading(true);
-    const { data: deals } = await supabase
-      .from("deals")
-      .select("*, customers(id, name, number), deal_items(*)")
-      .eq("stage", "confirmed_pending_pickup")
-      .order("created_at", { ascending: false });
-    setReservedDeals(deals || []);
-    setReservedDealsLoading(false);
-  }, []);
+      // Delete deal items
+      await supabase.from("deal_items").delete().eq("deal_id", deal.id);
+
+      // Reset the deal stage
+      await supabase.from("deals").update({
+        stage: "device_found",
+        value: null,
+        deposit_amount: null,
+        balance_due: null,
+        pickup_date: null,
+        stock_item_id: null,
+      }).eq("id", deal.id);
+
+      setShowEditReservation(false);
+      loadStock();
+      loadCustomers();
+      loadReservedDeals();
+    } catch (e) {
+      alert("Error releasing reservation: " + (e.message || "Unknown error"));
+    }
+  }
 
 After changes:
 1. Run npm run build
 2. Fix any errors
-3. git add -A && git commit -m "fix: pass reservation props to StockTab" 
+3. git add -A && git commit -m "fix: release reservation uses deal_items to find stock" 
    && git push origin main --force
-4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app
-6. Click Stock tab → Reserved filter
-7. Tell me if it works without blank page
+4. Test: reserve a device, go to Stock Reserved tab, 
+   click Edit, click Release — does device go back to Available?
