@@ -1,197 +1,34 @@
-Read src/App.js and src/components/chat/ChatDetailView.js 
-fully before making any changes.
+Read src/components/tabs/StockTab.js fully before making changes.
 
-CHANGE 1 — Make AI Reply always available
+Find the import from constants at the top of StockTab.js:
+  import { BRANDS, EMPTY_STOCK } from "../../constants";
 
-In ChatDetailView.js find the input bar section.
-Currently the AI reply option only shows after a client 
-message is added (replyMode and replyingToId logic).
+Replace it with:
+  import { BRANDS, EMPTY_STOCK, PART_ICONS, PART_CATEGORIES } from "../../constants";
 
-Add a permanent "🤖 AI" button in the bottom input area 
-that is ALWAYS visible regardless of message history.
+Also check if PART_CATEGORIES is used in StockTab.js 
+and add it if missing from the import.
 
-Find the BOTTOM ROW section with the textarea and 📱 Send button.
-Add an AI button to the LEFT of the textarea:
+Then check src/constants/index.js and confirm that 
+PART_ICONS and PART_CATEGORIES are exported there.
+If they are not, add them:
 
-  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-    {/* AI compose button — always visible */}
-    <button
-      onClick={() => {
-        setReplyMode("ai_compose");
-        setGeneratedReply("");
-        setEditingGenerated(true);
-      }}
-      style={{
-        width: 40, height: 52, borderRadius: 12, border: "none",
-        background: replyMode === "ai_compose" ? "#6366F1" : "#EEF2FF",
-        color: replyMode === "ai_compose" ? "#fff" : "#6366F1",
-        fontWeight: 800, fontSize: 11, cursor: "pointer",
-        flexShrink: 0, display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center", gap: 1,
-      }}>
-      <span style={{ fontSize: 16 }}>🤖</span>
-      <span style={{ fontSize: 8, fontWeight: 700 }}>AI</span>
-    </button>
-    {/* existing textarea */}
-    <textarea ... />
-    {/* existing send button */}
-  </div>
+export const PART_CATEGORIES = [
+  "RAM", "SSD", "HDD", "Screen", "Battery", 
+  "Charger", "Keyboard", "Trackpad", "Other"
+];
 
-When the 🤖 AI button is tapped it opens a compose box 
-above the input bar (same style as the existing AI reply box)
-but empty — user types context and taps Generate:
+export const PART_ICONS = { 
+  RAM: "🧠", SSD: "💾", HDD: "💿", Screen: "🖥️", 
+  Battery: "🔋", Charger: "🔌", Keyboard: "⌨️", 
+  Trackpad: "🖱️", Other: "🔧" 
+};
 
-Find where the generatedReply box is shown 
-(the blue/purple box that appears above the input bar).
-Add a new section ABOVE it that shows when 
-replyMode === "ai_compose":
-
-  {replyMode === "ai_compose" && (
-    <div style={{ 
-      marginBottom: 12, background: "#EEF2FF", borderRadius: 14, 
-      padding: 12, border: "1px solid #C7D2FE" 
-    }}>
-      <div style={{ 
-        fontSize: 10, fontWeight: 700, color: "#6366F1", 
-        letterSpacing: 0.5, marginBottom: 6 
-      }}>
-        🤖 AI COMPOSE
-      </div>
-      <textarea
-        value={aiComposeContext}
-        onChange={e => setAiComposeContext(e.target.value)}
-        placeholder="What do you want to say? e.g. 'Follow up on MacBook, offer 10% discount'"
-        rows={2}
-        style={{ 
-          width: "100%", padding: "8px 10px", borderRadius: 10,
-          border: "1.5px solid #C7D2FE", fontSize: 13, outline: "none",
-          resize: "none", fontFamily: "inherit", lineHeight: 1.5,
-          boxSizing: "border-box", background: "#fff", marginBottom: 8
-        }}
-      />
-      <div style={{ display: "flex", gap: 6 }}>
-        <button
-          onClick={async () => {
-            if (!anthropicKey) { 
-              alert("Add Anthropic API key in Settings first."); 
-              return; 
-            }
-            setGeneratedReplyLoading(true);
-            setGeneratedReply("");
-            setReplyMode("ai");
-            try {
-              const history = messages.map(m => ({
-                role: m.role === "customer" ? "user" : "assistant",
-                content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
-              }));
-              const contextMsg = aiComposeContext.trim() 
-                ? `Context from owner: ${aiComposeContext.trim()}` 
-                : "Generate a friendly follow-up message";
-              const fullHistory = history.length > 0 
-                ? [...history, { role: "user", content: contextMsg }]
-                : [{ role: "user", content: contextMsg }];
-              const raw = await callClaude(
-                anthropicKey, 
-                fullHistory, 
-                buildSystemPromptFromCache(cachedStock)
-              );
-              const clean = raw.replace(/```json|```/g, "").trim();
-              let parsed;
-              try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-              setGeneratedReply(parsed.reply || raw);
-              setAiComposeContext("");
-            } catch {
-              setGeneratedReply("⚠️ Error generating. Check your API key.");
-            }
-            setGeneratedReplyLoading(false);
-          }}
-          disabled={generatedReplyLoading}
-          style={{ 
-            flex: 1, padding: "8px", borderRadius: 10, border: "none",
-            background: generatedReplyLoading ? "#E2E8F0" : "#6366F1",
-            color: generatedReplyLoading ? "#94A3B8" : "#fff",
-            fontWeight: 700, fontSize: 12, cursor: "pointer"
-          }}>
-          {generatedReplyLoading ? "⏳ Generating..." : "⚡ Generate"}
-        </button>
-        <button
-          onClick={() => { 
-            setReplyMode(null); 
-            setAiComposeContext(""); 
-            setGeneratedReply(""); 
-          }}
-          style={{ 
-            padding: "8px 14px", borderRadius: 10, 
-            border: "1.5px solid #E2E8F0", background: "#fff",
-            color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer"
-          }}>
-          ✕
-        </button>
-      </div>
-    </div>
-  )}
-
-Add this state in ChatDetailView.js props — it needs to be 
-passed from App.js or defined locally in ChatDetailView:
-  const [aiComposeContext, setAiComposeContext] = useState("");
-
-Add useState import if not already there in ChatDetailView.js.
-
-Also import callClaude and buildSystemPromptFromCache 
-in ChatDetailView.js:
-  import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
-
-CHANGE 2 — Fix Reserved tab to show one card per deal
-
-In src/components/tabs/StockTab.js find the reserved deals 
-section. It currently maps over reservedDeals and shows 
-all of them.
-
-The issue is loadReservedDeals fetches ALL deals with 
-stage "confirmed_pending_pickup" but shows them all 
-in one view without proper grouping.
-
-Each deal should show as ONE card. The current code is 
-correct in structure but make sure the map key is deal.id 
-so React renders them separately:
-
-Find:
-  {!reservedDealsLoading && reservedDeals.map(deal => {
-
-Make sure each card has:
-  <div key={deal.id} style={{...}}>
-
-If the cards are already showing one per deal but 
-you see duplicates, the issue is loadReservedDeals 
-is being called multiple times. 
-
-Find the useEffect that calls loadReservedDeals in App.js:
-  useEffect(() => {
-    if (stockFilter === "reserved") loadReservedDeals();
-  }, [stockFilter, loadReservedDeals]);
-
-Make sure this useEffect exists and only triggers 
-when stockFilter changes to "reserved".
-
-Also find any other place loadReservedDeals is called 
-and make sure it is not called on every render.
-
-CHANGE 3 — Pass loadReservedDeals to StockTab
-
-Check if loadReservedDeals is being passed as a prop 
-to StockTab in App.js. If not, add it:
-  loadReservedDeals={loadReservedDeals}
-
-And add it to StockTab props destructuring in StockTab.js.
-
-After ALL changes:
+After changes:
 1. Run npm run build
-2. Fix ALL errors
-3. git add -A && git commit -m "feat: AI compose always available, fix reserved cards" 
+2. Fix any errors
+3. git add -A && git commit -m "fix: import PART_ICONS and PART_CATEGORIES in StockTab" 
    && git push origin main --force
-4. Test:
-   - Open any client chat — is 🤖 AI button visible?
-   - Tap it — does compose box appear?
-   - Type context and tap Generate — does it generate?
-   - Go to Stock Reserved tab — does each reservation 
-     show as a separate card?
+4. Open https://jnp-crm.vercel.app
+5. Go to Stock tab → click Parts toggle
+6. Tell me if it works

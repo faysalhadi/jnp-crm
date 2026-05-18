@@ -152,3 +152,14 @@ STAGE LOGIC:
 - lost: deal fell through`;
 
 export const EMPTY_STOCK = { brand: "", model: "", processor: "", ram: "", ssd: "", screen: "", condition: "", charger: "", box: "", activation_lock: "unknown", cost_price: "", min_price: "", max_price: "", serial_number: "", notes: "", photo_url: "", status: "available" };
+
+export const PART_CATEGORIES = [
+  "RAM", "SSD", "HDD", "Screen", "Battery",
+  "Charger", "Keyboard", "Trackpad", "Other"
+];
+
+export const PART_ICONS = {
+  RAM: "🧠", SSD: "💾", HDD: "💿", Screen: "🖥️",
+  Battery: "🔋", Charger: "🔌", Keyboard: "⌨️",
+  Trackpad: "🖱️", Other: "🔧"
+};
