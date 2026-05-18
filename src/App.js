@@ -2353,6 +2353,7 @@ For any issues contact us on WhatsApp.
           setSaleReceiptData={setSaleReceiptData}
           setReceiptEditName={setReceiptEditName}
           setShowSaleReceipt={setShowSaleReceipt}
+          filteredStock={filteredStock}
         />
       )}
 

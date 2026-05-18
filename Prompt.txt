@@ -1,255 +1,36 @@
-Read src/App.js fully before making any changes.
+Read src/App.js and src/components/tabs/StockTab.js 
+fully before making any changes.
 
-This is refactor step 7f. Extract ChatDetailView component.
-Do NOT change any logic.
+CHANGE 1 — Pass filteredStock to StockTab
 
-IMPORTANT: File MUST have "import React from 'react';" 
-as the very first import.
-
-Create src/components/chat/ChatDetailView.js
-
-Add these at the top:
-  import React, { useState } from "react";
-  import { supabase } from "../../supabase";
-  import Badge from "../ui/Badge";
-  import StageBar from "../ui/StageBar";
-  import Spinner from "../ui/Spinner";
-  import LinkStockModal from "../modals/LinkStockModal";
-  import ReservationModal from "../modals/ReservationModal";
-  import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS } from "../../constants";
-  import { daysSince, timeAgo } from "../../utils/helpers";
-
-Find the detail view in App.js.
+In App.js find where StockTab is rendered.
 It starts with:
-  if (view === "detail" && activeCustomer) {
+  {activeTab === "stock" && (
+    <StockTab
 
-And ends just before:
-  // list view
-  return (
+Add this prop to the StockTab usage:
+  filteredStock={filteredStock}
 
-Extract everything inside that if block into:
-  export default function ChatDetailView({
-    isMobile,
-    activeCustomer, activeDeal, activeDealId, setActiveDealId,
-    activeCustomerId, setActiveCustomerId,
-    messages, setMessages,
-    customers,
-    view, setView,
-    msgLoading,
-    incomingText, setIncomingText,
-    replyMode, setReplyMode,
-    replyingToId, setReplyingToId,
-    directReplyText, setDirectReplyText,
-    generatedReply, setGeneratedReply,
-    generatedReplyLoading, setGeneratedReplyLoading,
-    editingGenerated, setEditingGenerated,
-    pendingSuggestion, setPendingSuggestion,
-    copied, setCopied,
-    editSent, setEditSent,
-    editingName, setEditingName,
-    nameInput, setNameInput,
-    editingNumber, setEditingNumber,
-    numberInput, setNumberInput,
-    outreachMode, setOutreachMode,
-    outreachReason, setOutreachReason,
-    outreachCustom, setOutreachCustom,
-    showAddDeal, setShowAddDeal,
-    showDeleteConfirm, setShowDeleteConfirm,
-    showLossReason, setShowLossReason,
-    showReceipt, setShowReceipt,
-    receiptPaymentMethod, setReceiptPaymentMethod,
-    showSupplierReply, setShowSupplierReply,
-    supplierReplyCtx, setSupplierReplyCtx,
-    supplierReplyGmail, setSupplierReplyGmail,
-    supplierReplyWA, setSupplierReplyWA,
-    supplierReplyLoading, setSupplierReplyLoading,
-    copiedSupGmail, setCopiedSupGmail,
-    copiedSupWA, setCopiedSupWA,
-    showCheckTraders, setShowCheckTraders,
-    checkTradersResults, setCheckTradersResults,
-    checkTradersLoading, setCheckTradersLoading,
-    showLinkStock, setShowLinkStock,
-    linkStockDeal, setLinkStockDeal,
-    showReservation, setShowReservation,
-    newDeal, setNewDeal,
-    anthropicKey, cachedStock,
-    bottomRef,
-    NAV_TABS, activeTab, setActiveTab,
-    stock,
-    loadCustomers, loadStock, refreshCachedStock, loadTodaySales,
-    updateCustomer, updateDeal, addDeal, deleteCustomer,
-    moveStage, handleConfirmSale, handleReserveDevice,
-    addIncomingMessage, generateAIReply, sendAIReply,
-    sendDirectReply, generateOpeningMessage,
-    confirmSent, markNotSent, copyMsg,
-    generateOutreach, generateSupplierReply,
-    checkTradersForDeal,
-    buildReceiptText, saveReceiptNumber,
-    traderListings,
-    setShowSideDrawer,
-  }) {
-    return (
-      // exact same code that was inside:
-      // if (view === "detail" && activeCustomer) { return (...) }
-    );
-  }
+CHANGE 2 — Add filteredStock to StockTab props
 
-In App.js replace:
-  if (view === "detail" && activeCustomer) {
-    ...
-    return ( ... );
-  }
+In src/components/tabs/StockTab.js find the component 
+function signature:
+  export default function StockTab({
 
-With:
-  if (view === "detail" && activeCustomer) {
-    return (
-      <ChatDetailView
-        isMobile={isMobile}
-        activeCustomer={activeCustomer}
-        activeDeal={activeDeal}
-        activeDealId={activeDealId}
-        setActiveDealId={setActiveDealId}
-        activeCustomerId={activeCustomerId}
-        setActiveCustomerId={setActiveCustomerId}
-        messages={messages}
-        setMessages={setMessages}
-        customers={customers}
-        view={view}
-        setView={setView}
-        msgLoading={msgLoading}
-        incomingText={incomingText}
-        setIncomingText={setIncomingText}
-        replyMode={replyMode}
-        setReplyMode={setReplyMode}
-        replyingToId={replyingToId}
-        setReplyingToId={setReplyingToId}
-        directReplyText={directReplyText}
-        setDirectReplyText={setDirectReplyText}
-        generatedReply={generatedReply}
-        setGeneratedReply={setGeneratedReply}
-        generatedReplyLoading={generatedReplyLoading}
-        setGeneratedReplyLoading={setGeneratedReplyLoading}
-        editingGenerated={editingGenerated}
-        setEditingGenerated={setEditingGenerated}
-        pendingSuggestion={pendingSuggestion}
-        setPendingSuggestion={setPendingSuggestion}
-        copied={copied}
-        setCopied={setCopied}
-        editSent={editSent}
-        setEditSent={setEditSent}
-        editingName={editingName}
-        setEditingName={setEditingName}
-        nameInput={nameInput}
-        setNameInput={setNameInput}
-        editingNumber={editingNumber}
-        setEditingNumber={setEditingNumber}
-        numberInput={numberInput}
-        setNumberInput={setNumberInput}
-        outreachMode={outreachMode}
-        setOutreachMode={setOutreachMode}
-        outreachReason={outreachReason}
-        setOutreachReason={setOutreachReason}
-        outreachCustom={outreachCustom}
-        setOutreachCustom={setOutreachCustom}
-        showAddDeal={showAddDeal}
-        setShowAddDeal={setShowAddDeal}
-        showDeleteConfirm={showDeleteConfirm}
-        setShowDeleteConfirm={setShowDeleteConfirm}
-        showLossReason={showLossReason}
-        setShowLossReason={setShowLossReason}
-        showReceipt={showReceipt}
-        setShowReceipt={setShowReceipt}
-        receiptPaymentMethod={receiptPaymentMethod}
-        setReceiptPaymentMethod={setReceiptPaymentMethod}
-        showSupplierReply={showSupplierReply}
-        setShowSupplierReply={setShowSupplierReply}
-        supplierReplyCtx={supplierReplyCtx}
-        setSupplierReplyCtx={setSupplierReplyCtx}
-        supplierReplyGmail={supplierReplyGmail}
-        setSupplierReplyGmail={setSupplierReplyGmail}
-        supplierReplyWA={supplierReplyWA}
-        setSupplierReplyWA={setSupplierReplyWA}
-        supplierReplyLoading={supplierReplyLoading}
-        setSupplierReplyLoading={setSupplierReplyLoading}
-        copiedSupGmail={copiedSupGmail}
-        setCopiedSupGmail={setCopiedSupGmail}
-        copiedSupWA={copiedSupWA}
-        setCopiedSupWA={setCopiedSupWA}
-        showCheckTraders={showCheckTraders}
-        setShowCheckTraders={setShowCheckTraders}
-        checkTradersResults={checkTradersResults}
-        setCheckTradersResults={setCheckTradersResults}
-        checkTradersLoading={checkTradersLoading}
-        setCheckTradersLoading={setCheckTradersLoading}
-        showLinkStock={showLinkStock}
-        setShowLinkStock={setShowLinkStock}
-        linkStockDeal={linkStockDeal}
-        setLinkStockDeal={setLinkStockDeal}
-        showReservation={showReservation}
-        setShowReservation={setShowReservation}
-        newDeal={newDeal}
-        setNewDeal={setNewDeal}
-        anthropicKey={anthropicKey}
-        cachedStock={cachedStock}
-        bottomRef={bottomRef}
-        NAV_TABS={NAV_TABS}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        stock={stock}
-        loadCustomers={loadCustomers}
-        loadStock={loadStock}
-        refreshCachedStock={refreshCachedStock}
-        loadTodaySales={loadTodaySales}
-        updateCustomer={updateCustomer}
-        updateDeal={updateDeal}
-        addDeal={addDeal}
-        deleteCustomer={deleteCustomer}
-        moveStage={moveStage}
-        handleConfirmSale={handleConfirmSale}
-        handleReserveDevice={handleReserveDevice}
-        addIncomingMessage={addIncomingMessage}
-        generateAIReply={generateAIReply}
-        sendAIReply={sendAIReply}
-        sendDirectReply={sendDirectReply}
-        generateOpeningMessage={generateOpeningMessage}
-        confirmSent={confirmSent}
-        markNotSent={markNotSent}
-        copyMsg={copyMsg}
-        generateOutreach={generateOutreach}
-        generateSupplierReply={generateSupplierReply}
-        checkTradersForDeal={checkTradersForDeal}
-        buildReceiptText={buildReceiptText}
-        saveReceiptNumber={saveReceiptNumber}
-        traderListings={traderListings}
-        setShowSideDrawer={setShowSideDrawer}
-      />
-    );
-  }
+Add filteredStock to the destructured props list.
 
-Add import at top of App.js:
-  import ChatDetailView from "./components/chat/ChatDetailView";
+CHANGE 3 — Fix StockTab to use filteredStock prop
 
-DELETE the original detail view block from App.js.
-
-VERIFICATION CHECKLIST before building:
-- File has "import React from 'react'" at very top
-- Exported as default
-- Imported in App.js
-- Original block deleted from App.js
-- LinkStockModal and ReservationModal imported inside 
-  ChatDetailView.js since they render there
-- No duplicate definitions
-- If build fails due to undefined variable add it as prop
+In StockTab.js find any place that tries to compute 
+filteredStock locally or uses it without it being in props.
+Make sure it uses the filteredStock passed from App.js.
 
 After changes:
 1. Run npm run build
-2. Fix ALL errors one by one
-3. Only when build is clean run:
-   git add -A && git commit -m "refactor v2 step 7f: extract ChatDetailView" 
+2. Fix any errors
+3. git add -A && git commit -m "fix: pass filteredStock prop to StockTab" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Open a client chat — does it work?
-7. Does the Reserve button work?
-8. Does the Confirm Sale link work?
-9. Tell me the new App.js line count
+6. Check Stock tab — do devices show now?
+7. Tell me if it works
