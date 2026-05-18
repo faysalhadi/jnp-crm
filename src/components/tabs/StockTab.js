@@ -49,6 +49,14 @@ export default function StockTab({
   stockFileInputRef, importStockFileRef,
   setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
   filteredStock,
+  reservedDeals, reservedDealsLoading, loadReservedDeals,
+  expandedReservedDeal, setExpandedReservedDeal,
+  showCompleteReservation, setShowCompleteReservation,
+  completingDeal, setCompletingDeal,
+  completionPaymentMethod, setCompletionPaymentMethod,
+  showEditReservation, setShowEditReservation,
+  editReservationItem, setEditReservationItem,
+  editReservationForm, setEditReservationForm,
 }) {
   return (
         <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 32px 40px", display: "flex", flexDirection: "column", gap: 10 }}>

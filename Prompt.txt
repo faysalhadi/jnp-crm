@@ -1,36 +1,66 @@
 Read src/App.js and src/components/tabs/StockTab.js 
 fully before making any changes.
 
-CHANGE 1 — Pass filteredStock to StockTab
+Find where StockTab is rendered in App.js.
+Add these missing props to the StockTab usage:
 
-In App.js find where StockTab is rendered.
-It starts with:
-  {activeTab === "stock" && (
-    <StockTab
+  reservedDeals={reservedDeals}
+  reservedDealsLoading={reservedDealsLoading}
+  loadReservedDeals={loadReservedDeals}
+  expandedReservedDeal={expandedReservedDeal}
+  setExpandedReservedDeal={setExpandedReservedDeal}
+  showCompleteReservation={showCompleteReservation}
+  setShowCompleteReservation={setShowCompleteReservation}
+  completingDeal={completingDeal}
+  setCompletingDeal={setCompletingDeal}
+  completionPaymentMethod={completionPaymentMethod}
+  setCompletionPaymentMethod={setCompletionPaymentMethod}
+  showEditReservation={showEditReservation}
+  setShowEditReservation={setShowEditReservation}
+  editReservationItem={editReservationItem}
+  setEditReservationItem={setEditReservationItem}
+  editReservationForm={editReservationForm}
+  setEditReservationForm={setEditReservationForm}
 
-Add this prop to the StockTab usage:
-  filteredStock={filteredStock}
+Then add ALL of these to the StockTab component 
+function signature in StockTab.js.
 
-CHANGE 2 — Add filteredStock to StockTab props
+Also check if these state variables exist in App.js.
+If any are missing add them near other useState declarations:
 
-In src/components/tabs/StockTab.js find the component 
-function signature:
-  export default function StockTab({
+  const [reservedDeals, setReservedDeals] = useState([]);
+  const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
+  const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
+  const [showCompleteReservation, setShowCompleteReservation] = useState(false);
+  const [completingDeal, setCompletingDeal] = useState(null);
+  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
+  const [showEditReservation, setShowEditReservation] = useState(false);
+  const [editReservationItem, setEditReservationItem] = useState(null);
+  const [editReservationForm, setEditReservationForm] = useState({
+    agreedPrice: "", pickupDate: "", 
+    depositAmount: "", balanceDue: "", notes: "",
+  });
 
-Add filteredStock to the destructured props list.
+Also check if loadReservedDeals function exists in App.js.
+If it does not exist add it near other load functions:
 
-CHANGE 3 — Fix StockTab to use filteredStock prop
-
-In StockTab.js find any place that tries to compute 
-filteredStock locally or uses it without it being in props.
-Make sure it uses the filteredStock passed from App.js.
+  const loadReservedDeals = useCallback(async () => {
+    setReservedDealsLoading(true);
+    const { data: deals } = await supabase
+      .from("deals")
+      .select("*, customers(id, name, number), deal_items(*)")
+      .eq("stage", "confirmed_pending_pickup")
+      .order("created_at", { ascending: false });
+    setReservedDeals(deals || []);
+    setReservedDealsLoading(false);
+  }, []);
 
 After changes:
 1. Run npm run build
 2. Fix any errors
-3. git add -A && git commit -m "fix: pass filteredStock prop to StockTab" 
+3. git add -A && git commit -m "fix: pass reservation props to StockTab" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Check Stock tab — do devices show now?
-7. Tell me if it works
+6. Click Stock tab → Reserved filter
+7. Tell me if it works without blank page

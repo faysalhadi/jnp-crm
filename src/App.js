@@ -2354,6 +2354,23 @@ For any issues contact us on WhatsApp.
           setReceiptEditName={setReceiptEditName}
           setShowSaleReceipt={setShowSaleReceipt}
           filteredStock={filteredStock}
+          reservedDeals={reservedDeals}
+          reservedDealsLoading={reservedDealsLoading}
+          loadReservedDeals={loadReservedDeals}
+          expandedReservedDeal={expandedReservedDeal}
+          setExpandedReservedDeal={setExpandedReservedDeal}
+          showCompleteReservation={showCompleteReservation}
+          setShowCompleteReservation={setShowCompleteReservation}
+          completingDeal={completingDeal}
+          setCompletingDeal={setCompletingDeal}
+          completionPaymentMethod={completionPaymentMethod}
+          setCompletionPaymentMethod={setCompletionPaymentMethod}
+          showEditReservation={showEditReservation}
+          setShowEditReservation={setShowEditReservation}
+          editReservationItem={editReservationItem}
+          setEditReservationItem={setEditReservationItem}
+          editReservationForm={editReservationForm}
+          setEditReservationForm={setEditReservationForm}
         />
       )}
 
