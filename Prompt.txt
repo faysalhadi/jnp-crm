@@ -1,34 +1,31 @@
-Read src/components/tabs/StockTab.js fully before making changes.
+Read src/components/tabs/HomeTab.js fully before making changes.
 
-Find the import from constants at the top of StockTab.js:
-  import { BRANDS, EMPTY_STOCK } from "../../constants";
+Find this line in HomeTab.js:
+  {overdueFollowUps > 0 && <button onClick={() => setActiveTab("tasks")}
 
-Replace it with:
-  import { BRANDS, EMPTY_STOCK, PART_ICONS, PART_CATEGORIES } from "../../constants";
+Replace the onClick with:
+  onClick={() => { setActiveTab("customers"); setFilter("overdue"); }}
 
-Also check if PART_CATEGORIES is used in StockTab.js 
-and add it if missing from the import.
+Also find the Follow Ups stat card in the stats row.
+It looks like:
+  { label: "Follow Ups", value: followUpsDue, ... }
 
-Then check src/constants/index.js and confirm that 
-PART_ICONS and PART_CATEGORIES are exported there.
-If they are not, add them:
+Make sure it also has an onClick:
+  onClick={() => { setActiveTab("customers"); setFilter("overdue"); }}
 
-export const PART_CATEGORIES = [
-  "RAM", "SSD", "HDD", "Screen", "Battery", 
-  "Charger", "Keyboard", "Trackpad", "Other"
-];
+Add cursor pointer to that stat card style.
 
-export const PART_ICONS = { 
-  RAM: "🧠", SSD: "💾", HDD: "💿", Screen: "🖥️", 
-  Battery: "🔋", Charger: "🔌", Keyboard: "⌨️", 
-  Trackpad: "🖱️", Other: "🔧" 
-};
+Also check if setFilter is being passed as a prop to HomeTab.
+Find where HomeTab is rendered in App.js and confirm 
+setFilter is passed:
+  setFilter={setFilter}
+
+If it is not passed add it.
 
 After changes:
 1. Run npm run build
 2. Fix any errors
-3. git add -A && git commit -m "fix: import PART_ICONS and PART_CATEGORIES in StockTab" 
+3. git add -A && git commit -m "fix: follow ups button navigates to overdue clients" 
    && git push origin main --force
-4. Open https://jnp-crm.vercel.app
-5. Go to Stock tab → click Parts toggle
-6. Tell me if it works
+4. Test: tap Follow Ups on dashboard — 
+   does it go to Contacts tab showing overdue clients?
