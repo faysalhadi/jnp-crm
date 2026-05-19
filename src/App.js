@@ -133,8 +133,6 @@ export default function App() {
   const [askLoading, setAskLoading] = useState(false);
   const askBottomRef = useRef(null);
   const [toast, setToast] = useState(null);
-  const [returnToCustomerId, setReturnToCustomerId] = useState(null);
-  const [returnToCustomerName, setReturnToCustomerName] = useState("");
 
   // ── traders ──
   const [traderListings, setTraderListings] = useState([]);
@@ -2110,10 +2108,6 @@ For any issues contact us on WhatsApp.
         traderListings={traderListings}
         setShowSideDrawer={setShowSideDrawer}
         showToast={showToast}
-        returnToCustomerId={returnToCustomerId}
-        setReturnToCustomerId={setReturnToCustomerId}
-        returnToCustomerName={returnToCustomerName}
-        setReturnToCustomerName={setReturnToCustomerName}
         setStockSearch={setStockSearch}
         setStockFilter={setStockFilter}
         setTraderSearch={setTraderSearch}
@@ -2144,7 +2138,7 @@ For any issues contact us on WhatsApp.
           <div style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
             {NAV_TABS.map(t => (
               <button key={t.key}
-                onClick={() => { setActiveTab(t.key); setView("list"); setActiveCustomerId(null); setActiveDealId(null); setReturnToCustomerId(null); setReturnToCustomerName(""); }}
+                onClick={() => { setActiveTab(t.key); setView("list"); setActiveCustomerId(null); setActiveDealId(null); }}
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", width: "100%", fontSize: 14,
                          fontWeight: activeTab === t.key ? 700 : 500, background: activeTab === t.key ? "#EEF2FF" : "transparent",
                          color: activeTab === t.key ? "#6366F1" : "#64748B", transition: "all 0.15s" }}>
@@ -2382,14 +2376,6 @@ For any issues contact us on WhatsApp.
           editReservationForm={editReservationForm}
           setEditReservationForm={setEditReservationForm}
           showToast={showToast}
-          returnToCustomerId={returnToCustomerId}
-          setReturnToCustomerId={setReturnToCustomerId}
-          returnToCustomerName={returnToCustomerName}
-          setReturnToCustomerName={setReturnToCustomerName}
-          setActiveTab={setActiveTab}
-          setActiveCustomerId={setActiveCustomerId}
-          setActiveDealId={setActiveDealId}
-          setView={setView}
         />
       )}
 
@@ -2437,15 +2423,6 @@ For any issues contact us on WhatsApp.
           extractTraderListings={extractTraderListings}
           saveTraderListings={saveTraderListings}
           checkTradersForDeal={checkTradersForDeal}
-          returnToCustomerId={returnToCustomerId}
-          setReturnToCustomerId={setReturnToCustomerId}
-          returnToCustomerName={returnToCustomerName}
-          setReturnToCustomerName={setReturnToCustomerName}
-          setActiveCustomerId={setActiveCustomerId}
-          setActiveDealId={setActiveDealId}
-          setView={setView}
-          setActiveTab={setActiveTab}
-          customers={customers}
         />
       )}
 
@@ -3087,7 +3064,7 @@ For any issues contact us on WhatsApp.
             { key: "traders", icon: "🏪", label: "Traders" },
             { key: "ask", icon: "🤖", label: "Ask" },
           ].map(t => (
-            <button key={t.key} onClick={() => { setActiveTab(t.key); setReturnToCustomerId(null); setReturnToCustomerName(""); }}
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
               style={{ flex: 1, padding: "8px 2px 12px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position: "relative" }}>
               {t.badge > 0 && (
                 <div style={{ position: "absolute", top: 6, right: "25%", width: 16, height: 16, borderRadius: "50%", background: "#EF4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{t.badge}</div>

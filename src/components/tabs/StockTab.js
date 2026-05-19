@@ -58,31 +58,9 @@ export default function StockTab({
   editReservationItem, setEditReservationItem,
   editReservationForm, setEditReservationForm,
   showToast,
-  returnToCustomerId, setReturnToCustomerId,
-  returnToCustomerName, setReturnToCustomerName,
-  setActiveTab, setActiveCustomerId, setActiveDealId, setView,
 }) {
   return (
         <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 32px 40px", display: "flex", flexDirection: "column", gap: 10 }}>
-
-          {/* Back to client banner */}
-          {returnToCustomerId && (
-            <div style={{ padding: "10px 14px", background: "#EEF2FF", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 13, color: "#6366F1", fontWeight: 700 }}>🔍 Finding device for {returnToCustomerName}</span>
-              <button onClick={() => {
-                const customer = customers.find(c => c.id === returnToCustomerId);
-                const deal = customer?.deals?.[0];
-                setActiveCustomerId(returnToCustomerId);
-                setActiveDealId(deal?.id || null);
-                setView("detail");
-                setActiveTab("customers");
-                setReturnToCustomerId(null);
-                setReturnToCustomerName("");
-              }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                ← Back to {returnToCustomerName}
-              </button>
-            </div>
-          )}
 
           {/* Devices / Parts toggle */}
           <div style={{ display: "flex", gap: 6 }}>

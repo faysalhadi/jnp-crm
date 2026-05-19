@@ -29,30 +29,9 @@ export default function TradersTab({
   extractTraderListings,
   saveTraderListings,
   checkTradersForDeal,
-  returnToCustomerId, setReturnToCustomerId,
-  returnToCustomerName, setReturnToCustomerName,
-  setActiveCustomerId, setActiveDealId, setView, setActiveTab,
 }) {
   return (
     <>
-      {/* Back to client banner */}
-      {returnToCustomerId && (
-        <div style={{ padding: "10px 14px", background: "#FFFBEB", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", margin: "8px 12px 0" }}>
-          <span style={{ fontSize: 13, color: "#D97706", fontWeight: 700 }}>🔍 Finding device for {returnToCustomerName}</span>
-          <button onClick={() => {
-            const customer = customers.find(c => c.id === returnToCustomerId);
-            const deal = customer?.deals?.[0];
-            setActiveCustomerId(returnToCustomerId);
-            setActiveDealId(deal?.id || null);
-            setView("detail");
-            setActiveTab("customers");
-            setReturnToCustomerId(null);
-            setReturnToCustomerName("");
-          }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "#F59E0B", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-            ← Back to {returnToCustomerName}
-          </button>
-        </div>
-      )}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Section toggle */}
         <div style={{ display: "flex", padding: "10px 12px 0", gap: 8, background: "#fff", borderBottom: "1px solid #F1F5F9" }}>

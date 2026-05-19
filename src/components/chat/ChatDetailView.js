@@ -69,9 +69,6 @@ export default function ChatDetailView({
   traderListings,
   setShowSideDrawer,
   showToast,
-  returnToCustomerId, setReturnToCustomerId,
-  returnToCustomerName, setReturnToCustomerName,
-  setStockSearch, setStockFilter, setTraderSearch,
 }) {
     const [aiComposeContext, setAiComposeContext] = useState("");
     const tier = TIERS[activeCustomer.tier] || TIERS.cold;
@@ -276,83 +273,6 @@ export default function ChatDetailView({
             </div>
 
             <StageBar stageId={activeDeal.stage} />
-
-            {/* Stage-specific action buttons */}
-            {activeDeal && (() => {
-              const stage = activeDeal.stage;
-              const brand = activeDeal.brand || "";
-              const model = activeDeal.model || "";
-              const budget = activeDeal.budget || "";
-              const searchQuery = [brand, model].filter(Boolean).join(" ");
-
-              if (["new_inquiry", "requirement_noted", "searching"].includes(stage)) {
-                return (
-                  <div style={{ padding: "10px 12px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9", marginTop: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>🔍 FIND THIS DEVICE</div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button onClick={() => {
-                        setReturnToCustomerId(activeCustomerId);
-                        setReturnToCustomerName(activeCustomer.name);
-                        setStockSearch(searchQuery);
-                        setStockFilter("available");
-                        setActiveTab("stock");
-                        setView("list");
-                      }} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "none", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                        📦 My Stock
-                      </button>
-                      <button onClick={() => {
-                        setReturnToCustomerId(activeCustomerId);
-                        setReturnToCustomerName(activeCustomer.name);
-                        setTraderSearch(searchQuery);
-                        setActiveTab("traders");
-                        setView("list");
-                      }} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "none", background: "#FFFBEB", color: "#D97706", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                        🏪 Traders
-                      </button>
-                      <button onClick={() => {
-                        setReturnToCustomerId(activeCustomerId);
-                        setReturnToCustomerName(activeCustomer.name);
-                        setActiveTab("sourcing");
-                        setView("list");
-                      }} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "none", background: "#F0FDF4", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                        🌍 Source
-                      </button>
-                    </div>
-                    {searchQuery && (
-                      <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 6, textAlign: "center" }}>
-                        Searching for: {searchQuery}{budget ? ` · Budget: AED ${Number(budget).toLocaleString()}` : ""}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              if (stage === "device_found") {
-                return (
-                  <div style={{ padding: "10px 12px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9", marginTop: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>📤 SEND TO CLIENT</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => {
-                        const device = [activeDeal.brand, activeDeal.model].filter(Boolean).join(" ") || "Device";
-                        const specs = [activeDeal.ram, activeDeal.storage, activeDeal.condition].filter(Boolean).join(", ");
-                        const msg = `Hi! I found a ${device}${specs ? ` (${specs})` : ""}${activeDeal.budget ? ` within your budget of AED ${Number(activeDeal.budget).toLocaleString()}` : ""}. Interested? Let me know! 😊`;
-                        setDirectReplyText(msg);
-                      }} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "none", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        📤 Draft Message
-                      </button>
-                      <button onClick={() => {
-                        setOutreachReason("New stock arrived that matches their interest");
-                        setReplyMode("ai_compose");
-                      }} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        🤖 AI Message
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-
-              return null;
-            })()}
 
             {/* quick info pills */}
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
