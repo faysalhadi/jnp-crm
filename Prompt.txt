@@ -1,31 +1,311 @@
-Read src/components/tabs/HomeTab.js fully before making changes.
+Read src/App.js and src/components/chat/ChatDetailView.js 
+and src/components/tabs/StockTab.js fully before making changes.
 
-Find this line in HomeTab.js:
-  {overdueFollowUps > 0 && <button onClick={() => setActiveTab("tasks")}
+We are adding stage-specific action buttons in the chat window
+and pre-filled search when switching tabs.
 
-Replace the onClick with:
-  onClick={() => { setActiveTab("customers"); setFilter("overdue"); }}
+CHANGE 1 — Add returnToCustomer state in App.js
 
-Also find the Follow Ups stat card in the stats row.
-It looks like:
-  { label: "Follow Ups", value: followUpsDue, ... }
+Add these state variables near other useState declarations:
+  const [returnToCustomerId, setReturnToCustomerId] = useState(null);
+  const [returnToCustomerName, setReturnToCustomerName] = useState("");
 
-Make sure it also has an onClick:
-  onClick={() => { setActiveTab("customers"); setFilter("overdue"); }}
+Pass these as props to ChatDetailView and StockTab:
+  returnToCustomerId={returnToCustomerId}
+  setReturnToCustomerId={setReturnToCustomerId}
+  returnToCustomerName={returnToCustomerName}
+  setReturnToCustomerName={setReturnToCustomerName}
 
-Add cursor pointer to that stat card style.
+Also pass these to TradersTab:
+  returnToCustomerId={returnToCustomerId}
+  setReturnToCustomerId={setReturnToCustomerId}
+  returnToCustomerName={returnToCustomerName}
+  setReturnToCustomerName={setReturnToCustomerName}
 
-Also check if setFilter is being passed as a prop to HomeTab.
-Find where HomeTab is rendered in App.js and confirm 
-setFilter is passed:
-  setFilter={setFilter}
+CHANGE 2 — Add stage action buttons in ChatDetailView
 
-If it is not passed add it.
+In ChatDetailView.js find the deal card section.
+It shows the stage bar, specs, and action buttons.
 
-After changes:
+After the stage bar and before the serial number input,
+add stage-specific action buttons:
+
+  {/* Stage-specific action buttons */}
+  {activeDeal && (() => {
+    const stage = activeDeal.stage;
+    const brand = activeDeal.brand || "";
+    const model = activeDeal.model || "";
+    const budget = activeDeal.budget || "";
+    const searchQuery = [brand, model].filter(Boolean).join(" ");
+
+    // Moment 1 — Finding the device
+    if (["new_inquiry", "requirement_noted", "searching"].includes(stage)) {
+      return (
+        <div style={{ 
+          padding: "10px 12px", background: "#F8FAFC", 
+          borderRadius: 12, border: "1px solid #F1F5F9",
+          marginTop: 8 
+        }}>
+          <div style={{ 
+            fontSize: 10, fontWeight: 700, color: "#94A3B8", 
+            letterSpacing: 0.5, marginBottom: 8 
+          }}>
+            🔍 FIND THIS DEVICE
+          </div>
+          <div style={{ display: "flex", gap: 6", flexWrap: "wrap" }}>
+            <button onClick={() => {
+              setReturnToCustomerId(activeCustomerId);
+              setReturnToCustomerName(activeCustomer.name);
+              setStockSearch(searchQuery);
+              setStockFilter("available");
+              setActiveTab("stock");
+              setView("list");
+            }}
+              style={{ flex: 1, padding: "8px 6px", borderRadius: 10, 
+                       border: "none", background: "#EEF2FF", 
+                       color: "#6366F1", fontSize: 11, fontWeight: 700, 
+                       cursor: "pointer", whiteSpace: "nowrap" }}>
+              📦 My Stock
+            </button>
+            <button onClick={() => {
+              setReturnToCustomerId(activeCustomerId);
+              setReturnToCustomerName(activeCustomer.name);
+              setTraderSearch(searchQuery);
+              setActiveTab("traders");
+              setView("list");
+            }}
+              style={{ flex: 1, padding: "8px 6px", borderRadius: 10,
+                       border: "none", background: "#FFFBEB",
+                       color: "#D97706", fontSize: 11, fontWeight: 700,
+                       cursor: "pointer", whiteSpace: "nowrap" }}>
+              🏪 Traders
+            </button>
+            <button onClick={() => {
+              setReturnToCustomerId(activeCustomerId);
+              setReturnToCustomerName(activeCustomer.name);
+              setActiveTab("sourcing");
+              setView("list");
+            }}
+              style={{ flex: 1, padding: "8px 6px", borderRadius: 10,
+                       border: "none", background: "#F0FDF4",
+                       color: "#10B981", fontSize: 11, fontWeight: 700,
+                       cursor: "pointer", whiteSpace: "nowrap" }}>
+              🌍 Source
+            </button>
+          </div>
+          {searchQuery && (
+            <div style={{ 
+              fontSize: 10, color: "#94A3B8", marginTop: 6, 
+              textAlign: "center" 
+            }}>
+              Searching for: {searchQuery}
+              {budget ? ` · Budget: AED ${Number(budget).toLocaleString()}` : ""}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Moment 2 — Device found, send to client
+    if (stage === "device_found") {
+      return (
+        <div style={{
+          padding: "10px 12px", background: "#F8FAFC",
+          borderRadius: 12, border: "1px solid #F1F5F9",
+          marginTop: 8
+        }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, color: "#94A3B8",
+            letterSpacing: 0.5, marginBottom: 8
+          }}>
+            📤 SEND TO CLIENT
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => {
+              const device = [activeDeal.brand, activeDeal.model]
+                .filter(Boolean).join(" ") || "Device";
+              const specs = [activeDeal.ram, activeDeal.storage, 
+                activeDeal.condition].filter(Boolean).join(", ");
+              const msg = `Hi! I found a ${device}${specs ? ` (${specs})` : ""}` +
+                `${activeDeal.budget ? ` within your budget of AED ${Number(activeDeal.budget).toLocaleString()}` : ""}. ` +
+                `Interested? Let me know! 😊`;
+              setDirectReplyText(msg);
+            }}
+              style={{ flex: 1, padding: "8px 6px", borderRadius: 10,
+                       border: "none", background: "#EEF2FF",
+                       color: "#6366F1", fontSize: 11, fontWeight: 700,
+                       cursor: "pointer" }}>
+              📤 Draft Message
+            </button>
+            <button onClick={() => {
+              setOutreachReason("New stock arrived that matches their interest");
+              setReplyMode("ai_compose");
+            }}
+              style={{ flex: 1, padding: "8px 6px", borderRadius: 10,
+                       border: "none", background: "#6366F1",
+                       color: "#fff", fontSize: 11, fontWeight: 700,
+                       cursor: "pointer" }}>
+              🤖 AI Message
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  })()}
+
+Add these to ChatDetailView props destructuring:
+  setReturnToCustomerId,
+  setReturnToCustomerName,
+  setStockSearch,
+  setStockFilter,
+  setTraderSearch,
+  setActiveTab,
+  setView,
+  setDirectReplyText,
+  setOutreachReason,
+  setReplyMode,
+
+Pass all these from App.js to ChatDetailView.
+
+CHANGE 3 — Add "← Back to client" button in StockTab
+
+In StockTab.js add these to props destructuring:
+  returnToCustomerId,
+  setReturnToCustomerId,
+  returnToCustomerName,
+  setReturnToCustomerName,
+  setActiveTab,
+  setActiveCustomerId,
+  setActiveDealId,
+  setView,
+  customers,
+
+At the very top of the StockTab return, 
+BEFORE the devices/parts toggle, add:
+
+  {returnToCustomerId && (
+    <div style={{
+      padding: "10px 14px",
+      background: "#EEF2FF",
+      borderRadius: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 4,
+    }}>
+      <span style={{ fontSize: 13, color: "#6366F1", fontWeight: 700 }}>
+        🔍 Finding device for {returnToCustomerName}
+      </span>
+      <button onClick={() => {
+        const customer = customers.find(c => c.id === returnToCustomerId);
+        const deal = customer?.deals?.[0];
+        setActiveCustomerId(returnToCustomerId);
+        setActiveDealId(deal?.id || null);
+        setView("detail");
+        setActiveTab("customers");
+        setReturnToCustomerId(null);
+        setReturnToCustomerName("");
+      }}
+        style={{
+          padding: "6px 14px",
+          borderRadius: 8,
+          border: "none",
+          background: "#6366F1",
+          color: "#fff",
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: "pointer",
+        }}>
+        ← Back to {returnToCustomerName}
+      </button>
+    </div>
+  )}
+
+CHANGE 4 — Add "← Back to client" button in TradersTab
+
+In TradersTab.js add these to props destructuring:
+  returnToCustomerId,
+  setReturnToCustomerId,
+  returnToCustomerName,
+  setReturnToCustomerName,
+  setActiveCustomerId,
+  setActiveDealId,
+  setView,
+  setActiveTab,
+  customers,
+
+At the very top of the TradersTab return,
+BEFORE the section toggle, add the same back button:
+
+  {returnToCustomerId && (
+    <div style={{
+      padding: "10px 14px",
+      background: "#FFFBEB",
+      borderRadius: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      margin: "8px 12px 0",
+    }}>
+      <span style={{ fontSize: 13, color: "#D97706", fontWeight: 700 }}>
+        🔍 Finding device for {returnToCustomerName}
+      </span>
+      <button onClick={() => {
+        const customer = customers.find(c => c.id === returnToCustomerId);
+        const deal = customer?.deals?.[0];
+        setActiveCustomerId(returnToCustomerId);
+        setActiveDealId(deal?.id || null);
+        setView("detail");
+        setActiveTab("customers");
+        setReturnToCustomerId(null);
+        setReturnToCustomerName("");
+      }}
+        style={{
+          padding: "6px 14px",
+          borderRadius: 8,
+          border: "none",
+          background: "#F59E0B",
+          color: "#fff",
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: "pointer",
+        }}>
+        ← Back to {returnToCustomerName}
+      </button>
+    </div>
+  )}
+
+CHANGE 5 — Clear returnToCustomer when navigating away normally
+
+In App.js find the bottom tab bar navigation buttons.
+When any tab is clicked normally (not from chat),
+clear the return state:
+
+Find each tab button onClick and add:
+  setReturnToCustomerId(null);
+  setReturnToCustomerName("");
+
+For example the home tab button:
+  onClick={() => { 
+    setActiveTab("home"); 
+    setReturnToCustomerId(null);
+    setReturnToCustomerName("");
+  }}
+
+Do this for all 6 tab buttons in the bottom tab bar.
+
+Also do the same for the desktop sidebar nav buttons.
+
+After ALL changes:
 1. Run npm run build
-2. Fix any errors
-3. git add -A && git commit -m "fix: follow ups button navigates to overdue clients" 
+2. Fix ALL errors — if undefined variable add as prop
+3. git add -A && git commit -m "feat: stage action buttons, back to client navigation" 
    && git push origin main --force
-4. Test: tap Follow Ups on dashboard — 
-   does it go to Contacts tab showing overdue clients?
+4. Test:
+   - Open client chat with open deal in Searching stage
+   - Do you see Find This Device buttons?
+   - Tap My Stock — does it go to stock with search filled?
+   - Does Back to [name] button appear in Stock tab?
+   - Tap it — does it return to the client chat?
