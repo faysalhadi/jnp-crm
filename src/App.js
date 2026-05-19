@@ -2275,6 +2275,7 @@ For any issues contact us on WhatsApp.
           setContactTypeFilter={setContactTypeFilter}
           setShowContactModal={setShowContactModal}
           setContactModalPreType={setContactModalPreType}
+          setShowSideDrawer={setShowSideDrawer}
         />
       )}
 

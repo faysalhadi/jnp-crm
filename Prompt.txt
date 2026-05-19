@@ -1,104 +1,146 @@
-Read src/App.js, src/components/chat/ChatDetailView.js,
-src/components/tabs/StockTab.js, and 
-src/components/tabs/TradersTab.js fully before making changes.
+Read src/components/tabs/CustomersTab.js fully before making changes.
 
-CHANGE 1 — Remove returnToCustomer state from App.js
+CHANGE 1 — Add search bar and header to CustomersTab
 
-Find and remove these state declarations:
-  const [returnToCustomerId, setReturnToCustomerId] = useState(null);
-  const [returnToCustomerName, setReturnToCustomerName] = useState("");
+Find the very beginning of the return statement in CustomersTab.js.
+It currently starts with the customer list directly.
 
-Remove these props from wherever ChatDetailView is rendered:
-  returnToCustomerId={returnToCustomerId}
-  setReturnToCustomerId={setReturnToCustomerId}
-  returnToCustomerName={returnToCustomerName}
-  setReturnToCustomerName={setReturnToCustomerName}
+Add this header section at the very top of the return,
+BEFORE the customer list:
 
-Remove these props from wherever StockTab is rendered:
-  returnToCustomerId={returnToCustomerId}
-  setReturnToCustomerId={setReturnToCustomerId}
-  returnToCustomerName={returnToCustomerName}
-  setReturnToCustomerName={setReturnToCustomerName}
-
-Remove these props from wherever TradersTab is rendered:
-  returnToCustomerId={returnToCustomerId}
-  setReturnToCustomerId={setReturnToCustomerId}
-  returnToCustomerName={returnToCustomerName}
-  setReturnToCustomerName={setReturnToCustomerName}
-
-Also remove the setReturnToCustomerId and 
-setReturnToCustomerName calls from all tab button 
-onClick handlers in the bottom tab bar and desktop sidebar.
-
-CHANGE 2 — Remove stage action buttons from ChatDetailView
-
-In ChatDetailView.js find and remove the entire block:
-  {/* Stage-specific action buttons */}
-  {activeDeal && (() => {
-    const stage = activeDeal.stage;
-    ...
-    return null;
-  })()}
-
-Also remove these from ChatDetailView props destructuring:
-  setReturnToCustomerId,
-  setReturnToCustomerName,
-  setStockSearch,
-  setStockFilter,
-  setTraderSearch,
-
-CHANGE 3 — Remove back button from StockTab
-
-In StockTab.js find and remove the entire block:
-  {returnToCustomerId && (
-    <div style={{...}}>
-      ...
-      ← Back to {returnToCustomerName}
+  <div style={{ background: "#fff", padding: "16px 14px 0", 
+                borderBottom: "1px solid #F1F5F9", 
+                position: "sticky", top: 0, zIndex: 10 }}>
+    
+    {/* Title row */}
+    <div style={{ display: "flex", justifyContent: "space-between", 
+                  alignItems: "flex-start", marginBottom: 14 }}>
+      <div>
+        <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, 
+                      letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", 
+                      letterSpacing: -0.5 }}>Contacts</div>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button onClick={() => setShowSideDrawer(true)}
+          style={{ width: 36, height: 36, borderRadius: 10, border: "none", 
+                   background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>
+          📊
+        </button>
+        <button onClick={() => { setContactModalPreType("client"); setShowContactModal(true); }}
+          style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", 
+                   background: "#6366F1", color: "#fff", fontWeight: 800, 
+                   fontSize: 13, cursor: "pointer" }}>
+          + Add
+        </button>
+      </div>
     </div>
-  )}
 
-Also remove these from StockTab props destructuring:
-  returnToCustomerId,
-  setReturnToCustomerId,
-  returnToCustomerName,
-  setReturnToCustomerName,
-  setActiveCustomerId,
-  setActiveDealId,
-  setView,
-  customers,
-
-Only remove them if they are not used elsewhere in StockTab.
-
-CHANGE 4 — Remove back button from TradersTab
-
-In TradersTab.js find and remove the entire block:
-  {returnToCustomerId && (
-    <div style={{...}}>
-      ...
-      ← Back to {returnToCustomerName}
+    {/* Stats row */}
+    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+      {[
+        { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF" },
+        { label: "Closed", value: closedDeals, color: "#10B981", bg: "#ECFDF5" },
+        { label: "This Month", value: `AED ${revenue >= 1000 ? (revenue/1000).toFixed(1)+"k" : revenue}`, 
+          color: "#F59E0B", bg: "#FFFBEB" },
+      ].map(s => (
+        <div key={s.label} style={{ flex: 1, background: s.bg, borderRadius: 14, 
+                                     padding: "10px 8px", textAlign: "center" }}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: s.color }}>{s.value}</div>
+          <div style={{ fontSize: 9, color: s.color, fontWeight: 700, 
+                        opacity: 0.75, marginTop: 1 }}>{s.label}</div>
+        </div>
+      ))}
     </div>
-  )}
 
-Also remove these from TradersTab props destructuring:
-  returnToCustomerId,
-  setReturnToCustomerId,
-  returnToCustomerName,
-  setReturnToCustomerName,
-  setActiveCustomerId,
-  setActiveDealId,
-  setView,
-  setActiveTab,
-  customers,
+    {/* Search bar */}
+    <input 
+      value={search} 
+      onChange={e => setSearch(e.target.value)} 
+      placeholder="🔍  Search name or number..."
+      style={{ width: "100%", padding: "9px 13px", borderRadius: 12, 
+               border: "1.5px solid #F1F5F9", background: "#F8FAFC", 
+               fontSize: 13, outline: "none", boxSizing: "border-box", 
+               marginBottom: 10 }} 
+    />
 
-Only remove them if they are not used elsewhere in TradersTab.
+    {/* Contact type filter pills */}
+    <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+      {[
+        { key: "all",      label: "All" },
+        { key: "client",   label: "🔴 Clients" },
+        { key: "trader",   label: "🟡 Traders" },
+        { key: "supplier", label: "🔵 Suppliers" },
+        { key: "walkin",   label: "⚡ Walk-in" },
+      ].map(f => (
+        <button key={f.key} onClick={() => setContactTypeFilter(f.key)}
+          style={{ padding: "5px 14px", borderRadius: 20, border: "none", 
+                   flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                   background: contactTypeFilter === f.key ? "#0F172A" : "#F1F5F9",
+                   color: contactTypeFilter === f.key ? "#fff" : "#64748B" }}>
+          {f.label}
+        </button>
+      ))}
+    </div>
+
+    {/* Behaviour filter pills */}
+    <div style={{ display: "flex", gap: 6, overflowX: "auto", 
+                  scrollbarWidth: "none", paddingBottom: 10 }}>
+      {[
+        { key: "all",     label: "All" },
+        { key: "urgent",  label: "🔴 Urgent" },
+        { key: "overdue", label: "⏰ Overdue" },
+        { key: "vip",     label: "⭐ VIP" },
+        { key: "cold",    label: "❄️ Cold" },
+      ].map(f => (
+        <button key={f.key} onClick={() => setFilter(f.key)}
+          style={{ padding: "5px 14px", borderRadius: 20, border: "none", 
+                   flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                   background: filter === f.key ? "#6366F1" : "#F1F5F9",
+                   color: filter === f.key ? "#fff" : "#64748B" }}>
+          {f.label}
+        </button>
+      ))}
+    </div>
+  </div>
+
+CHANGE 2 — Add missing props to CustomersTab
+
+Add these to the CustomersTab props destructuring:
+  openDeals,
+  closedDeals, 
+  revenue,
+  setShowSideDrawer,
+  setShowContactModal,
+  setContactModalPreType,
+
+CHANGE 3 — Pass missing props from App.js to CustomersTab
+
+Find where CustomersTab is rendered in App.js.
+Add these props if missing:
+  openDeals={openDeals}
+  closedDeals={closedDeals}
+  revenue={revenue}
+  setShowSideDrawer={setShowSideDrawer}
+  setShowContactModal={setShowContactModal}
+  setContactModalPreType={setContactModalPreType}
+
+CHANGE 4 — Fix Ctrl+V paste in ContactModal
+
+In src/ContactModal.js find the modal overlay div.
+It is the outermost div with position fixed.
+Add this prop to it:
+  onKeyDown={e => e.stopPropagation()}
+
+This prevents the app from intercepting keyboard shortcuts
+inside the modal.
 
 After ALL changes:
 1. Run npm run build
 2. Fix ALL errors
-3. git add -A && git commit -m "revert: remove stage action buttons and back to client feature" 
+3. git add -A && git commit -m "fix: add search bar to contacts tab, fix paste in modal" 
    && git push origin main --force
 4. Test:
-   - Open a client chat — no Find This Device buttons
-   - Go to Stock tab — no back button at top
-   - Go to Traders tab — no back button at top
-   - Everything else still works normally
+   - Contacts tab shows search bar
+   - Type in search — does it filter clients?
+   - Open Add Contact modal — does Ctrl+V paste work?

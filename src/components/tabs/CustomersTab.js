@@ -22,9 +22,92 @@ export default function CustomersTab({
   contactTypeFilter, setContactTypeFilter,
   setShowContactModal,
   setContactModalPreType,
+  setShowSideDrawer,
 }) {
   return (
-    <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 24px 40px", display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+
+      {/* Sticky header with search and filters */}
+      <div style={{ background: "#fff", padding: "16px 14px 0", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 10 }}>
+        {/* Title row */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>Contacts</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button onClick={() => setShowSideDrawer(true)}
+              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>
+              📊
+            </button>
+            <button onClick={() => { setContactModalPreType("client"); setShowContactModal(true); }}
+              style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+              + Add
+            </button>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {[
+            { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF" },
+            { label: "Closed", value: closedDeals, color: "#10B981", bg: "#ECFDF5" },
+            { label: "This Month", value: `AED ${revenue >= 1000 ? (revenue/1000).toFixed(1)+"k" : revenue}`, color: "#F59E0B", bg: "#FFFBEB" },
+          ].map(s => (
+            <div key={s.label} style={{ flex: 1, background: s.bg, borderRadius: 14, padding: "10px 8px", textAlign: "center" }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 9, color: s.color, fontWeight: 700, opacity: 0.75, marginTop: 1 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Search bar */}
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="🔍  Search name or number..."
+          style={{ width: "100%", padding: "9px 13px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#F8FAFC", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 10 }}
+        />
+
+        {/* Contact type filter pills */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          {[
+            { key: "all",      label: "All" },
+            { key: "client",   label: "🔴 Clients" },
+            { key: "trader",   label: "🟡 Traders" },
+            { key: "supplier", label: "🔵 Suppliers" },
+            { key: "walkin",   label: "⚡ Walk-in" },
+          ].map(f => (
+            <button key={f.key} onClick={() => setContactTypeFilter(f.key)}
+              style={{ padding: "5px 14px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                       background: contactTypeFilter === f.key ? "#0F172A" : "#F1F5F9",
+                       color: contactTypeFilter === f.key ? "#fff" : "#64748B" }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Behaviour filter pills */}
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 10 }}>
+          {[
+            { key: "all",     label: "All" },
+            { key: "urgent",  label: "🔴 Urgent" },
+            { key: "overdue", label: "⏰ Overdue" },
+            { key: "vip",     label: "⭐ VIP" },
+            { key: "cold",    label: "❄️ Cold" },
+          ].map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              style={{ padding: "5px 14px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                       background: filter === f.key ? "#6366F1" : "#F1F5F9",
+                       color: filter === f.key ? "#fff" : "#64748B" }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Customer list */}
+      <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 24px 40px", display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
       {loading && <Spinner />}
       {!loading && filtered.length === 0 && (
         <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
@@ -127,6 +210,7 @@ export default function CustomersTab({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

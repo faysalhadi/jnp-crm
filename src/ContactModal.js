@@ -138,7 +138,7 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{
+    <div onKeyDown={e => e.stopPropagation()} style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
       zIndex: 500, overflowY: "auto",
     }}>
