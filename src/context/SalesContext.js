@@ -1,23 +1,11 @@
-Read src/App.js fully before making any changes.
-
-This is architecture rewrite Step 4.
-We are introducing React Context for sales state.
-Do NOT change any logic. Only move state and functions.
-The app must work exactly the same after this step.
-
-STEP 4A — Create src/context/SalesContext.js
-
-Create this file exactly:
-
-import React, { createContext, useContext, 
-  useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "../supabase";
 
 const SalesContext = createContext(null);
 
 export function SalesProvider({ children }) {
-  const [todaySales, setTodaySales] = useState({ 
-    total: 0, whatsapp: 0, walkin: 0 
+  const [todaySales, setTodaySales] = useState({
+    total: 0, whatsapp: 0, walkin: 0
   });
   const [salesHistory, setSalesHistory] = useState([]);
   const [salesHistoryLoading, setSalesHistoryLoading] = useState(false);
@@ -38,7 +26,7 @@ export function SalesProvider({ children }) {
     const deals = data || [];
     setTodaySales({
       total: deals.length,
-      whatsapp: deals.filter(d => 
+      whatsapp: deals.filter(d =>
         !d.sale_type || d.sale_type === "whatsapp"
       ).length,
       walkin: deals.filter(d => d.sale_type === "walkin").length,
@@ -51,7 +39,7 @@ export function SalesProvider({ children }) {
     let fromDate = null;
     if (salesFilter === "today") {
       fromDate = new Date();
-      fromDate.setHours(0,0,0,0);
+      fromDate.setHours(0, 0, 0, 0);
     } else if (salesFilter === "week") {
       fromDate = new Date(now - 7 * 86400000);
     } else if (salesFilter === "month") {
@@ -98,18 +86,14 @@ export function SalesProvider({ children }) {
 
     (dealSales || []).forEach(d => {
       const stock = stockMap[d.stock_item_id] || {};
-      const customerName = d.customers?.name || 
-        d.walk_in_name || "Walk-in Customer";
       combined.push({
         id: d.id,
-        type: "device",
+        type: d.sale_type === "walkin" ? "walkin" : "device",
         date: d.closed_at,
-        customerName,
+        customerName: d.customers?.name || d.walk_in_name || "Walk-in Customer",
         customerNumber: d.customers?.number || null,
-        device: [stock.brand, stock.model]
-          .filter(Boolean).join(" ") || "Device",
-        specs: [stock.ram, stock.ssd, stock.condition]
-          .filter(Boolean).join(" · "),
+        device: [stock.brand, stock.model].filter(Boolean).join(" ") || "Device",
+        specs: [stock.ram, stock.ssd, stock.condition].filter(Boolean).join(" · "),
         serialNumber: stock.serial_number || null,
         price: d.value || 0,
         paymentMethod: d.payment_method || "Cash",
@@ -124,8 +108,7 @@ export function SalesProvider({ children }) {
         items: (d.deal_items || []).map(i => ({
           label: i.item_type === "device"
             ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
-            : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}
-               ${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
+            : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
           price: Number(i.agreed_price || 0),
         })),
       });
@@ -177,10 +160,9 @@ export function SalesProvider({ children }) {
   }, [salesFilter]);
 
   function buildSaleReceiptText(sale, nameOverride) {
-    const num = `LFL-${new Date().getFullYear()}-${
-      Math.floor(1000 + Math.random() * 9000)}`;
-    const date = new Date(sale.date).toLocaleDateString("en-GB", { 
-      day: "numeric", month: "long", year: "numeric" 
+    const num = `LFL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const date = new Date(sale.date).toLocaleDateString("en-GB", {
+      day: "numeric", month: "long", year: "numeric"
     });
     const customerName = nameOverride || sale.customerName || "Customer";
     return `━━━━━━━━━━━━━━━━━━━━━━
@@ -191,30 +173,23 @@ RECEIPT #: ${num}
 Date: ${date}
 
 SOLD TO:
-Name: ${customerName}${sale.customerNumber ? 
-  `\nContact: ${sale.customerNumber}` : ""}
+Name: ${customerName}${sale.customerNumber ? `\nContact: ${sale.customerNumber}` : ""}
 
 ${sale.items && sale.items.length > 0
-  ? `ITEMS:\n${sale.items.map(i =>
-      `${i.label}${' '.repeat(Math.max(1, 30 - i.label.length))}
-       AED ${Number(i.price).toLocaleString()}`
-    ).join('\n')}`
-  : sale.type === "part"
-    ? `PART DETAILS:\nItem: ${sale.device}
-       ${sale.specs ? `\nCompatible With: ${sale.specs}` : ""}
-       \nQuantity: ${sale.quantity || 1}`
-    : `DEVICE DETAILS:\n${sale.device}
-       ${sale.specs ? `\n${sale.specs}` : ""}
-       ${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`
-}
+      ? `ITEMS:\n${sale.items.map(i =>
+        `${i.label}${' '.repeat(Math.max(1, 30 - i.label.length))}AED ${Number(i.price).toLocaleString()}`
+      ).join('\n')}`
+      : sale.type === "part"
+        ? `PART DETAILS:\nItem: ${sale.device}${sale.specs ? `\nCompatible With: ${sale.specs}` : ""}\nQuantity: ${sale.quantity || 1}`
+        : `DEVICE DETAILS:\n${sale.device}${sale.specs ? `\n${sale.specs}` : ""}${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`
+    }
 
 PAYMENT:
 ${sale.depositAmount > 0
-  ? `Total: AED ${Number(sale.price).toLocaleString()}
+      ? `Total: AED ${Number(sale.price).toLocaleString()}
 Deposit Paid: AED ${Number(sale.depositAmount).toLocaleString()}
-Balance Received: AED ${Number(
-  sale.price - sale.depositAmount).toLocaleString()}`
-  : `Amount: AED ${Number(sale.price).toLocaleString()}`}
+Balance Received: AED ${Number(sale.price - sale.depositAmount).toLocaleString()}`
+      : `Amount: AED ${Number(sale.price).toLocaleString()}`}
 Method: ${sale.paymentMethod}
 
 Thank you for your purchase! 🙏
@@ -258,126 +233,3 @@ export function useSales() {
   );
   return context;
 }
-
-STEP 4B — Wrap App with SalesProvider
-
-In src/index.js update:
-  import { CustomerProvider } from './context/CustomerContext';
-  import { StockProvider } from './context/StockContext';
-  import { UIProvider } from './context/UIContext';
-  import { SalesProvider } from './context/SalesContext';
-
-  root.render(
-    <UIProvider>
-      <SalesProvider>
-        <CustomerProvider>
-          <StockProvider>
-            <App />
-          </StockProvider>
-        </CustomerProvider>
-      </SalesProvider>
-    </UIProvider>
-  );
-
-STEP 4C — Update App.js to use SalesContext
-
-In App.js add import:
-  import { useSales } from "./context/SalesContext";
-
-At top of App() function add:
-  const {
-    todaySales, setTodaySales,
-    salesHistory,
-    salesHistoryLoading,
-    salesFilter, setSalesFilter,
-    showSaleReceipt, setShowSaleReceipt,
-    saleReceiptData, setSaleReceiptData,
-    receiptEditName, setReceiptEditName,
-    openComplaints,
-    loadTodaySales,
-    loadSalesHistory,
-    buildSaleReceiptText,
-    loadOpenComplaints,
-  } = useSales();
-
-Then DELETE these from App.js:
-- const [todaySales, setTodaySales] = useState({...});
-- const [salesHistory, setSalesHistory] = useState([]);
-- const [salesHistoryLoading, setSalesHistoryLoading] = useState(false);
-- const [salesFilter, setSalesFilter] = useState("month");
-- const [showSaleReceipt, setShowSaleReceipt] = useState(false);
-- const [saleReceiptData, setSaleReceiptData] = useState(null);
-- const [receiptEditName, setReceiptEditName] = useState("");
-- const [openComplaints, setOpenComplaints] = useState([]);
-- const loadTodaySales = useCallback(...);
-- const loadSalesHistory = useCallback(...);
-- function buildSaleReceiptText(...) {...}
-- const loadOpenComplaints = useCallback(...);
-
-STEP 4D — Update SalesTab to use SalesContext directly
-
-In src/components/tabs/SalesTab.js:
-  Add: import { useSales } from "../../context/SalesContext";
-  Add at top of component:
-    const {
-      salesHistory,
-      salesHistoryLoading,
-      salesFilter, setSalesFilter,
-      setSaleReceiptData,
-      setReceiptEditName,
-      setShowSaleReceipt,
-      openComplaints,
-    } = useSales();
-  
-  Remove ALL these from props destructuring since they
-  now come from useSales() directly.
-
-STEP 4E — Remove sales props from SalesTab in App.js
-
-Find where SalesTab is rendered in App.js.
-Remove these props:
-  salesHistory={salesHistory}
-  salesHistoryLoading={salesHistoryLoading}
-  salesFilter={salesFilter}
-  setSalesFilter={setSalesFilter}
-  setSaleReceiptData={setSaleReceiptData}
-  setReceiptEditName={setReceiptEditName}
-  setShowSaleReceipt={setShowSaleReceipt}
-  openComplaints={openComplaints}
-
-SalesTab now gets everything from useSales() directly.
-
-STEP 4F — Update HomeTab to use SalesContext
-
-In src/components/tabs/HomeTab.js:
-  Add: import { useSales } from "../../context/SalesContext";
-  Add at top of component:
-    const { todaySales, openComplaints } = useSales();
-  Remove todaySales and openComplaints from props.
-
-Remove these from HomeTab usage in App.js:
-  todaySales={todaySales}
-  openComplaints={openComplaints}
-
-IMPORTANT RULES:
-- Do not change any logic
-- The useEffect that calls loadSalesHistory when 
-  activeTab === "sales" must now use the context version
-- The useEffect that calls loadTodaySales on session
-  must still work — keep it in App.js but it will
-  call the context function
-
-After changes:
-1. Run npm run build
-2. Fix ALL errors one by one
-3. Only when build is clean:
-   git add -A && git commit -m "architecture step 4: SalesContext" 
-   && git push origin main --force
-4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app
-6. Test:
-   - Does Sales History open from side drawer?
-   - Does filter work (Today/Week/Month)?
-   - Does receipt generate correctly?
-   - Does dashboard show today sales count?
-7. Tell me new App.js line count

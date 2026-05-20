@@ -4,17 +4,20 @@ import App from './App';
 import { CustomerProvider } from './context/CustomerContext';
 import { StockProvider } from './context/StockContext';
 import { UIProvider } from './context/UIContext';
+import { SalesProvider } from './context/SalesContext';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <UIProvider>
-      <CustomerProvider>
-        <StockProvider>
-          <App />
-        </StockProvider>
-      </CustomerProvider>
+      <SalesProvider>
+        <CustomerProvider>
+          <StockProvider>
+            <App />
+          </StockProvider>
+        </CustomerProvider>
+      </SalesProvider>
     </UIProvider>
   </React.StrictMode>
 );
