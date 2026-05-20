@@ -1,15 +1,16 @@
 import React from "react";
 import { QUICK_ACTIONS } from "../../constants";
+import { useUI } from "../../context/UIContext";
 
 export default function AskClaudeTab({
   anthropicKey,
-  isMobile,
   askMessages, setAskMessages,
   askInput, setAskInput,
   askLoading, setAskLoading,
   askBottomRef,
   sendAskMessage,
 }) {
+  const { isMobile } = useUI();
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
 

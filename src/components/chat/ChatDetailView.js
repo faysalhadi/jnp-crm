@@ -9,9 +9,9 @@ import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS } from "../../constants";
 import { daysSince, timeAgo } from "../../utils/helpers";
 import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
 import { useCustomers } from "../../context/CustomerContext";
+import { useUI } from "../../context/UIContext";
 
 export default function ChatDetailView({
-  isMobile,
   messages, setMessages,
   msgLoading,
   incomingText, setIncomingText,
@@ -47,7 +47,7 @@ export default function ChatDetailView({
   showReservation, setShowReservation,
   anthropicKey, cachedStock,
   bottomRef,
-  NAV_TABS, activeTab, setActiveTab,
+  NAV_TABS, activeTab,
   stock,
   loadStock, refreshCachedStock, loadTodaySales,
   moveStage, handleConfirmSale, handleReserveDevice,
@@ -58,9 +58,9 @@ export default function ChatDetailView({
   checkTradersForDeal,
   buildReceiptText, saveReceiptNumber,
   traderListings,
-  setShowSideDrawer,
   showToast,
 }) {
+  const { isMobile, setActiveTab, setShowSideDrawer } = useUI();
   const {
     activeCustomer,
     activeDeal,

@@ -2,10 +2,10 @@ import React from "react";
 import Spinner from "../ui/Spinner";
 import Badge from "../ui/Badge";
 import { timeAgo, daysSince } from "../../utils/helpers";
+import { useUI } from "../../context/UIContext";
 
 export default function TradersTab({
   anthropicKey,
-  isMobile,
   stock,
   customers,
   traderListings,
@@ -30,6 +30,7 @@ export default function TradersTab({
   saveTraderListings,
   checkTradersForDeal,
 }) {
+  const { isMobile } = useUI();
   return (
     <>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>

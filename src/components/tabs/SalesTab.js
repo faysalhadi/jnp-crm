@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import Spinner from "../ui/Spinner";
+import { useUI } from "../../context/UIContext";
 
 export default function SalesTab({
-  isMobile,
   salesHistory, salesHistoryLoading,
   salesFilter, setSalesFilter,
   setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
 }) {
+  const { isMobile } = useUI();
   const [expandedSaleId, setExpandedSaleId] = useState(null);
 
   return (

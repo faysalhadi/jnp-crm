@@ -9,9 +9,9 @@ import SpecUpgradeModal from "../modals/SpecUpgradeModal";
 import QuickSaleModal from "../modals/QuickSaleModal";
 import PartSaleModal from "../modals/PartSaleModal";
 import { useStock } from "../../context/StockContext";
+import { useUI } from "../../context/UIContext";
 
 export default function StockTab({
-  isMobile,
   customers,
   parts, partsLoading, loadParts,
   showAddPart, setShowAddPart,
@@ -40,8 +40,8 @@ export default function StockTab({
   showEditReservation, setShowEditReservation,
   editReservationItem, setEditReservationItem,
   editReservationForm, setEditReservationForm,
-  showToast,
 }) {
+  const { isMobile, showToast } = useUI();
   const {
     stock, stockLoading, loadStock, refreshCachedStock,
     stockFilter, setStockFilter,

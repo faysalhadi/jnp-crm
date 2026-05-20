@@ -5,14 +5,14 @@ import Spinner from "../ui/Spinner";
 import { TIERS } from "../../constants";
 import { daysSince, waTsFormat } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
+import { useUI } from "../../context/UIContext";
 
 export default function CustomersTab({
-  isMobile,
   openDeals,
   closedDeals,
   revenue,
-  setShowSideDrawer,
 }) {
+  const { isMobile, setShowSideDrawer } = useUI();
   const {
     customers,
     loading,

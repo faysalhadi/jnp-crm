@@ -25,6 +25,7 @@ import {
 
 import { useCustomers } from "./context/CustomerContext";
 import { useStock } from "./context/StockContext";
+import { useUI } from "./context/UIContext";
 
 import { saveImportedMessages } from "./utils/whatsapp";
 import Badge from "./components/ui/Badge";
@@ -104,6 +105,17 @@ export default function App() {
     importStockItems,
   } = useStock();
 
+  const {
+    activeTab, setActiveTab,
+    isMobile, setIsMobile,
+    showSideDrawer, setShowSideDrawer,
+    toast, setToast,
+    showToast,
+    installPromptEvent, setInstallPromptEvent,
+    showInstallBanner, setShowInstallBanner,
+    activeMarketingTab, setActiveMarketingTab,
+  } = useUI();
+
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState("login"); // login | signup
@@ -145,10 +157,6 @@ export default function App() {
   const chatFileInputRef = useRef(null);
   const chatFilesInputRef = useRef(null);
   const [exporting, setExporting] = useState(false);
-  const [activeTab, setActiveTab] = useState("home");
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-  const [installPromptEvent, setInstallPromptEvent] = useState(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
   const [parts, setParts] = useState([]);
@@ -163,10 +171,7 @@ export default function App() {
   const [askInput, setAskInput] = useState("");
   const [askLoading, setAskLoading] = useState(false);
   const askBottomRef = useRef(null);
-  const [toast, setToast] = useState(null);
-
   // ── marketing ──
-  const [activeMarketingTab, setActiveMarketingTab] = useState("today");
   const [marketingDevices, setMarketingDevices] = useState([]);
 
   // ── traders ──
@@ -197,7 +202,6 @@ export default function App() {
   const [editReservationForm,  setEditReservationForm]  = useState({ agreedPrice: "", pickupDate: "", depositAmount: "", balanceDue: "", notes: "" });
 
   // ── side drawer / sales history ──
-  const [showSideDrawer,       setShowSideDrawer]       = useState(false);
   const [salesHistory,         setSalesHistory]         = useState([]);
   const [salesHistoryLoading,  setSalesHistoryLoading]  = useState(false);
   const [salesFilter,          setSalesFilter]          = useState("month");
@@ -394,12 +398,6 @@ export default function App() {
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
   useEffect(() => { if (session) { loadStock(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); } }, [session, loadStock, refreshCachedStock, loadTodaySales, loadPartsRevMTD]);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   useEffect(() => {
     if (localStorage.getItem('jnp_install_dismissed')) return;
@@ -850,11 +848,6 @@ Return JSON with only a "reply" field containing the message.`;
   function copyMsg(text, id) {
     navigator.clipboard.writeText(text);
     setCopied(id); setTimeout(() => setCopied(null), 2000);
-  }
-
-  function showToast(message, type = "success") {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
   }
 
   // ── tasks — used by dashboard overdue logic ──
@@ -1956,7 +1949,6 @@ For any issues contact us on WhatsApp.
   if (view === "detail" && activeCustomer) {
     return (
       <ChatDetailView
-        isMobile={isMobile}
         messages={messages}
         setMessages={setMessages}
         msgLoading={msgLoading}
@@ -2027,7 +2019,6 @@ For any issues contact us on WhatsApp.
         bottomRef={bottomRef}
         NAV_TABS={NAV_TABS}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
         stock={stock}
         loadStock={loadStock}
         refreshCachedStock={refreshCachedStock}
@@ -2049,7 +2040,6 @@ For any issues contact us on WhatsApp.
         buildReceiptText={buildReceiptText}
         saveReceiptNumber={saveReceiptNumber}
         traderListings={traderListings}
-        setShowSideDrawer={setShowSideDrawer}
         showToast={showToast}
         setStockSearch={setStockSearch}
         setStockFilter={setStockFilter}
@@ -2177,8 +2167,6 @@ For any issues contact us on WhatsApp.
           todaySales={todaySales}
           partsRevMTD={partsRevMTD}
           sourcingAlerts={sourcingAlerts}
-          isMobile={isMobile}
-          setActiveTab={setActiveTab}
           setView={setView}
           setActiveCustomerId={setActiveCustomerId}
           setActiveDealId={setActiveDealId}
@@ -2199,18 +2187,15 @@ For any issues contact us on WhatsApp.
       {/* ── CUSTOMERS TAB ── */}
       {activeTab === "customers" && (
         <CustomersTab
-          isMobile={isMobile}
           openDeals={openDeals}
           closedDeals={closedDeals}
           revenue={revenue}
-          setShowSideDrawer={setShowSideDrawer}
         />
       )}
 
       {/* ── STOCK TAB ── */}
       {activeTab === "stock" && (
         <StockTab
-          isMobile={isMobile}
           customers={customers}
           parts={parts}
           partsLoading={partsLoading}
@@ -2265,7 +2250,6 @@ For any issues contact us on WhatsApp.
           setEditReservationItem={setEditReservationItem}
           editReservationForm={editReservationForm}
           setEditReservationForm={setEditReservationForm}
-          showToast={showToast}
         />
       )}
 
@@ -2275,7 +2259,6 @@ For any issues contact us on WhatsApp.
       {activeTab === "traders" && (
         <TradersTab
           anthropicKey={anthropicKey}
-          isMobile={isMobile}
           stock={stock}
           customers={customers}
           traderListings={traderListings}
@@ -2320,7 +2303,6 @@ For any issues contact us on WhatsApp.
       {activeTab === "ask" && (
         <AskClaudeTab
           anthropicKey={anthropicKey}
-          isMobile={isMobile}
           askMessages={askMessages}
           setAskMessages={setAskMessages}
           askInput={askInput}
@@ -2335,7 +2317,6 @@ For any issues contact us on WhatsApp.
       {/* ── SALES HISTORY TAB ── */}
       {activeTab === "sales" && (
         <SalesTab
-          isMobile={isMobile}
           salesHistory={salesHistory}
           salesHistoryLoading={salesHistoryLoading}
           salesFilter={salesFilter}
@@ -2349,10 +2330,7 @@ For any issues contact us on WhatsApp.
       {/* ── MARKETING TAB ── */}
       {activeTab === "marketing" && (
         <MarketingTab
-          isMobile={isMobile}
           stock={stock}
-          activeMarketingTab={activeMarketingTab}
-          setActiveMarketingTab={setActiveMarketingTab}
         />
       )}
 

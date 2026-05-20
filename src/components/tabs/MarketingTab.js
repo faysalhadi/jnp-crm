@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useUI } from "../../context/UIContext";
 
 const WHATSAPP_NUMBER = "+971409423162";
 const BUSINESS_NAME = "Laptop for Less";
 const LOCATION = "Sharjah, UAE";
 
 export default function MarketingTab({
-  isMobile,
   stock,
-  activeMarketingTab, setActiveMarketingTab,
 }) {
+  const { isMobile, activeMarketingTab, setActiveMarketingTab } = useUI();
   const [selectedDevices, setSelectedDevices] = useState([]);
   const [generatedPost, setGeneratedPost] = useState(null);
   const [copiedVersion, setCopiedVersion] = useState(null);
