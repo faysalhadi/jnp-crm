@@ -33,6 +33,7 @@ import SpecUpgradeModal from "./components/modals/SpecUpgradeModal";
 import ReservationModal from "./components/modals/ReservationModal";
 import QuickSaleModal from "./components/modals/QuickSaleModal";
 import AskClaudeTab from "./components/tabs/AskClaudeTab";
+import MarketingTab from "./components/tabs/MarketingTab";
 import SalesTab from "./components/tabs/SalesTab";
 import HomeTab from "./components/tabs/HomeTab";
 import CustomersTab from "./components/tabs/CustomersTab";
@@ -133,6 +134,10 @@ export default function App() {
   const [askLoading, setAskLoading] = useState(false);
   const askBottomRef = useRef(null);
   const [toast, setToast] = useState(null);
+
+  // ── marketing ──
+  const [activeMarketingTab, setActiveMarketingTab] = useState("today");
+  const [marketingDevices, setMarketingDevices] = useState([]);
 
   // ── traders ──
   const [traderListings, setTraderListings] = useState([]);
@@ -2617,6 +2622,16 @@ For any issues contact us on WhatsApp.
         />
       )}
 
+      {/* ── MARKETING TAB ── */}
+      {activeTab === "marketing" && (
+        <MarketingTab
+          isMobile={isMobile}
+          stock={stock}
+          activeMarketingTab={activeMarketingTab}
+          setActiveMarketingTab={setActiveMarketingTab}
+        />
+      )}
+
       {/* ── SOURCING TAB ── */}
       {activeTab === "sourcing" && (
         <SourcingModule anthropicKey={anthropicKey} onAddToStock={() => { loadStock(); refreshCachedStock(); }} />
@@ -2835,6 +2850,10 @@ For any issues contact us on WhatsApp.
               <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>Laptop for Less</div>
             </div>
             <div style={{ flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <button onClick={() => { setShowSideDrawer(false); setActiveTab("marketing"); }}
+                style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#FFF7ED", color: "#D97706", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
+                📣 Marketing
+              </button>
               <button onClick={() => { setShowSideDrawer(false); setActiveTab("sales"); }}
                 style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
                 📊 Sales History

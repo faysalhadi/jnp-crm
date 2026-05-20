@@ -1,79 +1,41 @@
-Read src/App.js, src/components/tabs/SalesTab.js and 
-src/hooks/useSales.js fully before making any changes.
+import React, { useState, useEffect, useRef } from "react";
 
-We are building a Marketing Module. This is a new tab 
-accessible from the side drawer only.
+const WHATSAPP_NUMBER = "+971409423162";
+const BUSINESS_NAME = "Laptop for Less";
+const LOCATION = "Sharjah, UAE";
 
-CHANGE 1 — Add Marketing tab state in App.js
-
-Add this near other useState declarations:
-  const [activeMarketingTab, setActiveMarketingTab] = useState("today");
-  const [groupBatches, setGroupBatches] = useState({
-    a: [], b: [], c: []
-  });
-  const [postedDates, setPostedDates] = useState({});
-  const [marketingDevices, setMarketingDevices] = useState([]);
-
-Add "marketing" as a valid activeTab value.
-When user taps Marketing in side drawer:
-  setShowSideDrawer(false);
-  setActiveTab("marketing");
-
-CHANGE 2 — Update side drawer to include Marketing button
-
-Find the side drawer JSX in App.js.
-Find the menu items section.
-Add Marketing button BEFORE Sales History button:
-
-  <button onClick={() => { 
-    setShowSideDrawer(false); 
-    setActiveTab("marketing"); 
-  }}
-    style={{ 
-      width: "100%", padding: "12px 16px", borderRadius: 12, 
-      border: "none", background: "#FFF7ED", color: "#D97706", 
-      fontWeight: 800, fontSize: 14, cursor: "pointer", 
-      textAlign: "left", marginBottom: 8
-    }}>
-    📣 Marketing
-  </button>
-
-CHANGE 3 — Create src/components/tabs/MarketingTab.js
-
-Create a new file src/components/tabs/MarketingTab.js
-
-Add these imports at the top:
-  import React, { useState, useEffect, useRef } from "react";
-  import { supabase } from "../../supabase";
-
-The component:
-  export default function MarketingTab({
-    isMobile,
-    stock,
-    activeMarketingTab, setActiveMarketingTab,
-    groupBatches, setGroupBatches,
-    postedDates, setPostedDates,
-  }) {
-
-  const WHATSAPP_NUMBER = "+971409423162";
-  const BUSINESS_NAME = "Laptop for Less";
-  const LOCATION = "Sharjah, UAE";
-
+export default function MarketingTab({
+  isMobile,
+  stock,
+  activeMarketingTab, setActiveMarketingTab,
+}) {
   const [selectedDevices, setSelectedDevices] = useState([]);
   const [generatedPost, setGeneratedPost] = useState(null);
   const [copiedVersion, setCopiedVersion] = useState(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [addingToBatch, setAddingToBatch] = useState(null);
+  const [groupBatches, setGroupBatches] = useState({ a: [], b: [], c: [] });
+  const [postedDates, setPostedDates] = useState({});
   const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const savedBatches = localStorage.getItem("jnp_group_batches");
+    if (savedBatches) {
+      try { setGroupBatches(JSON.parse(savedBatches)); } catch {}
+    }
+    const savedDates = localStorage.getItem("jnp_posted_dates");
+    if (savedDates) {
+      try { setPostedDates(JSON.parse(savedDates)); } catch {}
+    }
+  }, []);
 
   const today = new Date();
   const todayKey = today.toISOString().split("T")[0];
   const isPostedToday = !!postedDates[todayKey];
 
-  // 7 rotating templates based on day of week
   const TEMPLATES = [
-    { 
-      day: "Monday", 
+    {
+      day: "Monday",
       name: "THE SHOWCASE",
       theme: "Fresh stock",
       deviceCount: 3,
@@ -83,10 +45,8 @@ The component:
         "Available now in Sharjah 📍",
         "Quality laptops ready 🎯",
       ],
-      body: (devices) => 
-        devices.map(d => 
-          `${d.brand} ${d.model} — ${d.condition}`
-        ).join("\n"),
+      body: (devices) =>
+        devices.map(d => `${d.brand} ${d.model} — ${d.condition}`).join("\n"),
       closing: `All Grade A · ${LOCATION}\n📱 ${WHATSAPP_NUMBER}`,
     },
     {
@@ -103,11 +63,7 @@ The component:
       body: (devices) => {
         const d = devices[0];
         if (!d) return "";
-        return `${d.brand} ${d.model}\n` +
-               `${d.processor || ""}\n` +
-               `${d.ram} RAM · ${d.ssd} Storage\n` +
-               `Condition: ${d.condition}\n` +
-               `Limited units available`;
+        return `${d.brand} ${d.model}\n${d.processor || ""}\n${d.ram} RAM · ${d.ssd} Storage\nCondition: ${d.condition}\nLimited units available`;
       },
       closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
     },
@@ -123,9 +79,8 @@ The component:
         "Dealers welcome 🤝",
       ],
       body: (devices) =>
-        devices.map(d =>
-          `${d.brand} ${d.model} · ${d.condition}`
-        ).join("\n") + "\n\nWholesale pricing on request",
+        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n") +
+        "\n\nWholesale pricing on request",
       closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
     },
     {
@@ -140,11 +95,7 @@ The component:
         "Trusted laptop supplier 💪",
       ],
       body: (devices) =>
-        `• Direct from UK/USA suppliers\n` +
-        `• Grade A condition guaranteed\n` +
-        `• Same day pickup Sharjah\n` +
-        `• Bulk orders welcome\n\n` +
-        `Currently available:\n` +
+        `• Direct from UK/USA suppliers\n• Grade A condition guaranteed\n• Same day pickup Sharjah\n• Bulk orders welcome\n\nCurrently available:\n` +
         devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n"),
       closing: `📱 ${WHATSAPP_NUMBER}`,
     },
@@ -160,9 +111,8 @@ The component:
         "Grab them before they go 🏃",
       ],
       body: (devices) =>
-        devices.map(d =>
-          `${d.brand} ${d.model} · ${d.condition}`
-        ).join("\n") + "\n\nDon't miss out",
+        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n") +
+        "\n\nDon't miss out",
       closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
     },
     {
@@ -177,8 +127,7 @@ The component:
         "Join our happy customers 😊",
       ],
       body: (devices) =>
-        `Sold this week — great feedback from our customers\n\n` +
-        `Still available:\n` +
+        `Sold this week — great feedback from our customers\n\nStill available:\n` +
         devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n"),
       closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
     },
@@ -195,40 +144,34 @@ The component:
       ],
       body: (devices) =>
         `Currently available:\n` +
-        devices.map(d =>
-          `${d.brand} ${d.model} · ${d.condition}`
-        ).join("\n") + "\n\nNew shipment coming soon 📦",
+        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n") +
+        "\n\nNew shipment coming soon 📦",
       closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
     },
   ];
 
-  const dayIndex = today.getDay(); // 0=Sun, 1=Mon...
+  const dayIndex = today.getDay();
   const templateIndex = dayIndex === 0 ? 6 : dayIndex - 1;
   const todayTemplate = TEMPLATES[templateIndex];
 
-  // Smart device selection based on template
   function selectDevicesForTemplate(template) {
     const available = stock.filter(s => s.status === "available");
     if (!available.length) return [];
-
     if (template.name === "THE URGENCY POST") {
-      // Oldest devices first
       return [...available]
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
         .slice(0, template.deviceCount);
     }
     if (template.name === "THE SPOTLIGHT") {
-      // Highest margin device
       return [...available]
         .sort((a, b) => {
-          const mA = (Number(a.max_price)||0) - (Number(a.cost_price)||0);
-          const mB = (Number(b.max_price)||0) - (Number(b.cost_price)||0);
+          const mA = (Number(a.max_price) || 0) - (Number(a.cost_price) || 0);
+          const mB = (Number(b.max_price) || 0) - (Number(b.cost_price) || 0);
           return mB - mA;
         })
         .slice(0, 1);
     }
     if (template.name === "THE B2B POST") {
-      // Devices with most quantity (deduplicated by model)
       const seen = new Set();
       return available.filter(d => {
         const key = `${d.brand}-${d.model}`;
@@ -237,7 +180,6 @@ The component:
         return true;
       }).slice(0, template.deviceCount);
     }
-    // Default: mix of brands
     const seen = new Set();
     return available.filter(d => {
       const key = `${d.brand}-${d.model}`;
@@ -251,7 +193,7 @@ The component:
     const devices = selectDevicesForTemplate(todayTemplate);
     setSelectedDevices(devices);
     generatePost(devices, todayTemplate);
-  }, [stock]);
+  }, [stock]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function generatePost(devices, template) {
     if (!devices.length) return;
@@ -268,38 +210,31 @@ The component:
     setTimeout(() => setCopiedVersion(null), 2000);
   }
 
-  // Generate image card using Canvas
   function generateImageCard() {
     const canvas = document.createElement("canvas");
     canvas.width = 1200;
     canvas.height = 628;
     const ctx = canvas.getContext("2d");
 
-    // Background
     ctx.fillStyle = "#0F172A";
     ctx.fillRect(0, 0, 1200, 628);
 
-    // Header band
     ctx.fillStyle = "#6366F1";
     ctx.fillRect(0, 0, 1200, 80);
 
-    // Business name
     ctx.fillStyle = "#FFFFFF";
     ctx.font = "bold 36px Arial";
     ctx.fillText(BUSINESS_NAME.toUpperCase(), 40, 52);
 
-    // Location on right
     ctx.font = "24px Arial";
     ctx.textAlign = "right";
     ctx.fillText("📍 " + LOCATION, 1160, 52);
     ctx.textAlign = "left";
 
-    // Template name
     ctx.fillStyle = "#94A3B8";
     ctx.font = "20px Arial";
     ctx.fillText(todayTemplate.name, 40, 110);
 
-    // Devices
     const devices = selectedDevices;
     const startY = 150;
     const spacing = devices.length > 2 ? 140 : 160;
@@ -307,14 +242,15 @@ The component:
     devices.forEach((d, i) => {
       const y = startY + i * spacing;
 
-      // Device card background
       ctx.fillStyle = "#1E293B";
-      ctx.roundRect
-        ? ctx.roundRect(40, y, 1120, spacing - 15, 12)
-        : ctx.fillRect(40, y, 1120, spacing - 15);
-      ctx.fill();
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(40, y, 1120, spacing - 15, 12);
+        ctx.fill();
+      } else {
+        ctx.fillRect(40, y, 1120, spacing - 15);
+      }
 
-      // Brand + Model
       ctx.fillStyle = "#FFFFFF";
       ctx.font = "bold 28px Arial";
       ctx.fillText(
@@ -322,26 +258,24 @@ The component:
         70, y + 38
       );
 
-      // Specs
       ctx.fillStyle = "#94A3B8";
       ctx.font = "20px Arial";
-      const specs = [d.processor, d.ram, d.ssd, d.condition]
-        .filter(Boolean).join("  ·  ");
+      const specs = [d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join("  ·  ");
       ctx.fillText(specs, 70, y + 70);
 
-      // Condition badge
       ctx.fillStyle = d.condition === "Grade A" ? "#10B981" : "#F59E0B";
       ctx.beginPath();
-      ctx.roundRect
-        ? ctx.roundRect(70, y + 85, 100, 28, 6)
-        : ctx.fillRect(70, y + 85, 100, 28);
+      if (ctx.roundRect) {
+        ctx.roundRect(70, y + 85, 100, 28, 6);
+      } else {
+        ctx.rect(70, y + 85, 100, 28);
+      }
       ctx.fill();
       ctx.fillStyle = "#FFFFFF";
       ctx.font = "bold 14px Arial";
       ctx.fillText(d.condition || "Grade A", 80, y + 104);
     });
 
-    // Footer
     ctx.fillStyle = "#6366F1";
     ctx.fillRect(0, 548, 1200, 80);
 
@@ -355,14 +289,12 @@ The component:
     ctx.fillText("Contact for pricing", 1160, 596);
     ctx.textAlign = "left";
 
-    // Download
     const link = document.createElement("a");
     link.download = `laptop-for-less-${todayKey}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   }
 
-  // Calendar data
   function getCalendarDays() {
     const days = [];
     for (let i = -3; i <= 10; i++) {
@@ -390,20 +322,14 @@ The component:
   };
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", 
-                  minHeight: 0, background: "#F8FAFC" }}>
-      
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "#F8FAFC" }}>
+
       {/* Header */}
-      <div style={{ background: "#fff", padding: "16px 16px 0", 
-                    borderBottom: "1px solid #F1F5F9" }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", 
-                      marginBottom: 14 }}>
+      <div style={{ background: "#fff", padding: "16px 16px 0", borderBottom: "1px solid #F1F5F9" }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", marginBottom: 14 }}>
           📣 Marketing
         </div>
-        
-        {/* Tab bar */}
-        <div style={{ display: "flex", gap: 0, overflowX: "auto", 
-                      scrollbarWidth: "none" }}>
+        <div style={{ display: "flex", gap: 0, overflowX: "auto", scrollbarWidth: "none" }}>
           {[
             { key: "today", label: "Today's Post" },
             { key: "calendar", label: "Calendar" },
@@ -415,8 +341,7 @@ The component:
                 padding: "10px 20px", border: "none", background: "none",
                 cursor: "pointer", fontSize: 13, fontWeight: 700,
                 color: activeMarketingTab === t.key ? "#6366F1" : "#94A3B8",
-                borderBottom: activeMarketingTab === t.key 
-                  ? "2px solid #6366F1" : "2px solid transparent",
+                borderBottom: activeMarketingTab === t.key ? "2px solid #6366F1" : "2px solid transparent",
                 whiteSpace: "nowrap",
               }}>
               {t.label}
@@ -426,29 +351,23 @@ The component:
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto", 
-                    padding: isMobile ? "12px 12px 100px" : "16px 24px 40px" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "12px 12px 100px" : "16px 24px 40px" }}>
 
         {/* ── TODAY'S POST TAB ── */}
         {activeMarketingTab === "today" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            
-            {/* Template info */}
-            <div style={{ background: "#fff", borderRadius: 16, padding: 16,
-                          border: "1px solid #F1F5F9" }}>
-              <div style={{ display: "flex", justifyContent: "space-between",
-                            alignItems: "center", marginBottom: 8 }}>
+
+            <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>
                     {todayTemplate.name}
                   </div>
                   <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-                    {new Date().toLocaleDateString("en-GB", { 
-                      weekday: "long", day: "numeric", month: "long" 
-                    })}
+                    {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
                   </div>
                 </div>
-                <div style={{ 
+                <div style={{
                   padding: "4px 12px", borderRadius: 20,
                   background: isPostedToday ? "#ECFDF5" : "#FEF9C3",
                   color: isPostedToday ? "#059669" : "#D97706",
@@ -458,76 +377,59 @@ The component:
                 </div>
               </div>
 
-              {/* Featured devices */}
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8",
-                            letterSpacing: 0.5, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>
                 FEATURED DEVICES
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {selectedDevices.map((d, i) => (
                   <div key={d.id || i} style={{
-                    padding: "8px 12px", background: "#F8FAFC", 
+                    padding: "8px 12px", background: "#F8FAFC",
                     borderRadius: 10, border: "1px solid #F1F5F9",
-                    display: "flex", justifyContent: "space-between",
-                    alignItems: "center",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
                   }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, 
-                                    color: "#0F172A" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
                         {d.brand} {d.model}
                       </div>
                       <div style={{ fontSize: 11, color: "#94A3B8" }}>
-                        {[d.processor, d.ram, d.ssd, d.condition]
-                          .filter(Boolean).join(" · ")}
+                        {[d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join(" · ")}
                       </div>
                     </div>
-                    <span style={{ 
-                      fontSize: 10, padding: "2px 8px", borderRadius: 8,
-                      background: "#ECFDF5", color: "#059669", fontWeight: 700
-                    }}>
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, background: "#ECFDF5", color: "#059669", fontWeight: 700 }}>
                       {d.condition || "Grade A"}
                     </span>
                   </div>
                 ))}
+                {selectedDevices.length === 0 && (
+                  <div style={{ fontSize: 12, color: "#94A3B8", padding: "8px 0" }}>
+                    No available stock found.
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Image card download */}
             <button onClick={generateImageCard}
               style={{
                 width: "100%", padding: "14px 16px", borderRadius: 14,
                 border: "none", background: "#0F172A", color: "#fff",
                 fontSize: 14, fontWeight: 800, cursor: "pointer",
-                display: "flex", alignItems: "center", 
-                justifyContent: "center", gap: 8,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}>
               🖼 Download Image Card (1200×628)
             </button>
 
-            {/* Caption versions */}
             {generatedPost && (
-              <div style={{ background: "#fff", borderRadius: 16, padding: 16,
-                            border: "1px solid #F1F5F9" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8",
-                              letterSpacing: 0.5, marginBottom: 12 }}>
+              <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 12 }}>
                   CAPTION VERSIONS — copy different one per batch
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {generatedPost.versions.map((version, i) => (
-                    <div key={i} style={{
-                      padding: "12px 14px", background: "#F8FAFC",
-                      borderRadius: 12, border: "1px solid #F1F5F9",
-                    }}>
-                      <div style={{ 
-                        display: "flex", justifyContent: "space-between",
-                        alignItems: "center", marginBottom: 8 
-                      }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, 
-                                       color: "#6366F1" }}>
+                    <div key={i} style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "#6366F1" }}>
                           Version {i + 1}
-                          {i === 0 ? " — Batch A" : 
-                           i === 1 ? " — Batch B" :
-                           i === 2 ? " — Batch C" : " — Extra"}
+                          {i === 0 ? " — Batch A" : i === 1 ? " — Batch B" : i === 2 ? " — Batch C" : " — Extra"}
                         </span>
                         <button
                           onClick={() => copyVersion(version, i)}
@@ -540,10 +442,7 @@ The component:
                           {copiedVersion === i ? "✓ Copied!" : "📋 Copy"}
                         </button>
                       </div>
-                      <div style={{ 
-                        fontSize: 12, color: "#475569", lineHeight: 1.7,
-                        whiteSpace: "pre-line", 
-                      }}>
+                      <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.7, whiteSpace: "pre-line" }}>
                         {version}
                       </div>
                     </div>
@@ -552,40 +451,27 @@ The component:
               </div>
             )}
 
-            {/* Posting guide */}
-            <div style={{ background: "#EEF2FF", borderRadius: 14, padding: 14,
-                          border: "1px solid #C7D2FE" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1",
-                            marginBottom: 10 }}>
+            <div style={{ background: "#EEF2FF", borderRadius: 14, padding: 14, border: "1px solid #C7D2FE" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1", marginBottom: 10 }}>
                 📋 TODAY'S POSTING GUIDE
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {[
-                  { time: "9:00 AM", action: "Version 1 → Batch A groups (20 groups)", 
-                    color: "#6366F1" },
-                  { time: "11:00 AM", action: "Version 2 → Batch B groups (25 groups)", 
-                    color: "#D97706" },
-                  { time: "2:00 PM", action: "Version 3 → Batch C groups (25 groups)", 
-                    color: "#10B981" },
-                  { time: "Any time", action: "Version 4 → WhatsApp Status + LinkedIn", 
-                    color: "#64748B" },
+                  { time: "9:00 AM", action: "Version 1 → Batch A groups (20 groups)", color: "#6366F1" },
+                  { time: "11:00 AM", action: "Version 2 → Batch B groups (25 groups)", color: "#D97706" },
+                  { time: "2:00 PM", action: "Version 3 → Batch C groups (25 groups)", color: "#10B981" },
+                  { time: "Any time", action: "Version 4 → WhatsApp Status + LinkedIn", color: "#64748B" },
                 ].map((item, i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, 
-                                        alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, 
-                                   color: item.color, flexShrink: 0,
-                                   minWidth: 75 }}>
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: item.color, flexShrink: 0, minWidth: 75 }}>
                       {item.time}
                     </span>
-                    <span style={{ fontSize: 12, color: "#475569" }}>
-                      {item.action}
-                    </span>
+                    <span style={{ fontSize: 12, color: "#475569" }}>{item.action}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Mark as posted */}
             <button
               onClick={() => {
                 const updated = { ...postedDates, [todayKey]: new Date().toISOString() };
@@ -608,8 +494,6 @@ The component:
         {/* ── CALENDAR TAB ── */}
         {activeMarketingTab === "calendar" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            
-            {/* Streak */}
             {(() => {
               let streak = 0;
               const check = new Date();
@@ -621,8 +505,7 @@ The component:
               }
               if (postedDates[todayKey]) streak++;
               return (
-                <div style={{ background: "#fff", borderRadius: 16, padding: 16,
-                              border: "1px solid #F1F5F9", textAlign: "center" }}>
+                <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9", textAlign: "center" }}>
                   <div style={{ fontSize: 36 }}>🔥</div>
                   <div style={{ fontSize: 24, fontWeight: 800, color: "#0F172A" }}>
                     {streak} day{streak !== 1 ? "s" : ""} streak
@@ -633,24 +516,18 @@ The component:
                 </div>
               );
             })()}
-
-            {/* Calendar days */}
-            {getCalendarDays().map((day, i) => (
+            {getCalendarDays().map((day) => (
               <div key={day.key} style={{
                 background: "#fff", borderRadius: 14, padding: "12px 14px",
                 border: day.isToday ? "2px solid #6366F1" : "1px solid #F1F5F9",
                 opacity: day.isPast && !day.posted ? 0.5 : 1,
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between",
-                              alignItems: "center" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, 
-                                     color: day.isToday ? "#6366F1" : "#0F172A" }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: day.isToday ? "#6366F1" : "#0F172A" }}>
                         {day.isToday ? "TODAY — " : ""}
-                        {day.date.toLocaleDateString("en-GB", { 
-                          weekday: "long", day: "numeric", month: "short" 
-                        })}
+                        {day.date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
@@ -658,15 +535,11 @@ The component:
                     </div>
                   </div>
                   <div style={{
-                    padding: "4px 10px", borderRadius: 20, fontSize: 11,
-                    fontWeight: 700,
-                    background: day.posted ? "#ECFDF5" : 
-                                day.isPast ? "#FEF2F2" : "#F8FAFC",
-                    color: day.posted ? "#059669" : 
-                           day.isPast ? "#EF4444" : "#94A3B8",
+                    padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                    background: day.posted ? "#ECFDF5" : day.isPast ? "#FEF2F2" : "#F8FAFC",
+                    color: day.posted ? "#059669" : day.isPast ? "#EF4444" : "#94A3B8",
                   }}>
-                    {day.posted ? "✅ Posted" : 
-                     day.isPast ? "❌ Missed" : "⏳ Upcoming"}
+                    {day.posted ? "✅ Posted" : day.isPast ? "❌ Missed" : "⏳ Upcoming"}
                   </div>
                 </div>
               </div>
@@ -677,11 +550,8 @@ The component:
         {/* ── GROUPS TAB ── */}
         {activeMarketingTab === "groups" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            
-            <div style={{ background: "#EEF2FF", borderRadius: 14, padding: 14,
-                          border: "1px solid #C7D2FE" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#4338CA",
-                            marginBottom: 4 }}>
+            <div style={{ background: "#EEF2FF", borderRadius: 14, padding: 14, border: "1px solid #C7D2FE" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#4338CA", marginBottom: 4 }}>
                 💡 How to use batches
               </div>
               <div style={{ fontSize: 12, color: "#6366F1", lineHeight: 1.6 }}>
@@ -696,13 +566,9 @@ The component:
               const batch = BATCH_LABELS[batchKey];
               const groups = groupBatches[batchKey] || [];
               return (
-                <div key={batchKey} style={{ 
-                  background: "#fff", borderRadius: 16, padding: 16,
-                  border: "1px solid #F1F5F9" 
-                }}>
+                <div key={batchKey} style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
                   <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, 
-                                  color: batch.color }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: batch.color }}>
                       {batch.label}
                     </div>
                     <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
@@ -710,35 +576,22 @@ The component:
                     </div>
                   </div>
 
-                  {/* Group list */}
                   {groups.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", 
-                                  gap: 6, marginBottom: 10 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
                       {groups.map((name, i) => (
                         <div key={i} style={{
-                          display: "flex", justifyContent: "space-between",
-                          alignItems: "center", padding: "7px 10px",
-                          background: batch.bg, borderRadius: 8,
+                          display: "flex", justifyContent: "space-between", alignItems: "center",
+                          padding: "7px 10px", background: batch.bg, borderRadius: 8,
                         }}>
-                          <span style={{ fontSize: 13, color: "#0F172A",
-                                         fontWeight: 600 }}>
+                          <span style={{ fontSize: 13, color: "#0F172A", fontWeight: 600 }}>
                             {name}
                           </span>
                           <button onClick={() => {
-                            const updated = { 
-                              ...groupBatches,
-                              [batchKey]: groups.filter((_, idx) => idx !== i)
-                            };
+                            const updated = { ...groupBatches, [batchKey]: groups.filter((_, idx) => idx !== i) };
                             setGroupBatches(updated);
-                            localStorage.setItem(
-                              "jnp_group_batches", 
-                              JSON.stringify(updated)
-                            );
+                            localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
                           }}
-                            style={{ width: 24, height: 24, borderRadius: 6,
-                                     border: "none", background: "#FEF2F2",
-                                     color: "#EF4444", fontSize: 12,
-                                     cursor: "pointer", fontWeight: 700 }}>
+                            style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#FEF2F2", color: "#EF4444", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
                             ✕
                           </button>
                         </div>
@@ -746,7 +599,6 @@ The component:
                     </div>
                   )}
 
-                  {/* Add group */}
                   {addingToBatch === batchKey ? (
                     <div style={{ display: "flex", gap: 8 }}>
                       <input
@@ -754,15 +606,9 @@ The component:
                         onChange={e => setNewGroupName(e.target.value)}
                         onKeyDown={e => {
                           if (e.key === "Enter" && newGroupName.trim()) {
-                            const updated = {
-                              ...groupBatches,
-                              [batchKey]: [...groups, newGroupName.trim()]
-                            };
+                            const updated = { ...groupBatches, [batchKey]: [...groups, newGroupName.trim()] };
                             setGroupBatches(updated);
-                            localStorage.setItem(
-                              "jnp_group_batches",
-                              JSON.stringify(updated)
-                            );
+                            localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
                             setNewGroupName("");
                             setAddingToBatch(null);
                           }
@@ -771,40 +617,22 @@ The component:
                         autoFocus
                         style={{
                           flex: 1, padding: "8px 12px", borderRadius: 10,
-                          border: `1.5px solid ${batch.color}`, fontSize: 13,
-                          outline: "none",
+                          border: `1.5px solid ${batch.color}`, fontSize: 13, outline: "none",
                         }}
                       />
                       <button onClick={() => {
                         if (!newGroupName.trim()) return;
-                        const updated = {
-                          ...groupBatches,
-                          [batchKey]: [...groups, newGroupName.trim()]
-                        };
+                        const updated = { ...groupBatches, [batchKey]: [...groups, newGroupName.trim()] };
                         setGroupBatches(updated);
-                        localStorage.setItem(
-                          "jnp_group_batches",
-                          JSON.stringify(updated)
-                        );
+                        localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
                         setNewGroupName("");
                         setAddingToBatch(null);
                       }}
-                        style={{
-                          padding: "8px 14px", borderRadius: 10, border: "none",
-                          background: batch.color, color: "#fff",
-                          fontSize: 13, fontWeight: 700, cursor: "pointer",
-                        }}>
+                        style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: batch.color, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                         Add
                       </button>
-                      <button onClick={() => { 
-                        setAddingToBatch(null); 
-                        setNewGroupName(""); 
-                      }}
-                        style={{
-                          padding: "8px 12px", borderRadius: 10,
-                          border: "1px solid #E2E8F0", background: "#fff",
-                          color: "#94A3B8", fontSize: 13, cursor: "pointer",
-                        }}>
+                      <button onClick={() => { setAddingToBatch(null); setNewGroupName(""); }}
+                        style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>
                         ✕
                       </button>
                     </div>
@@ -828,68 +656,3 @@ The component:
     </div>
   );
 }
-
-CHANGE 4 — Load saved data on mount
-
-Inside MarketingTab useEffect add localStorage loading:
-
-  useEffect(() => {
-    const savedBatches = localStorage.getItem("jnp_group_batches");
-    if (savedBatches) {
-      try { 
-        setGroupBatches(JSON.parse(savedBatches)); 
-      } catch {}
-    }
-    const savedDates = localStorage.getItem("jnp_posted_dates");
-    if (savedDates) {
-      try { 
-        setPostedDates(JSON.parse(savedDates)); 
-      } catch {}
-    }
-  }, []);
-
-NOTE: This useEffect should be inside the MarketingTab 
-component and use local state setters directly since 
-groupBatches and postedDates are managed locally with 
-localStorage persistence.
-
-Update the component to manage groupBatches and postedDates 
-as LOCAL state inside MarketingTab:
-  const [groupBatches, setGroupBatches] = useState({ a: [], b: [], c: [] });
-  const [postedDates, setPostedDates] = useState({});
-
-Remove groupBatches and postedDates from App.js state 
-and from the props passed to MarketingTab since they 
-are now managed locally inside the component.
-
-CHANGE 5 — Add MarketingTab to App.js
-
-Add import at top of App.js:
-  import MarketingTab from "./components/tabs/MarketingTab";
-
-Add this block in the main content area alongside 
-other tab blocks:
-
-  {activeTab === "marketing" && (
-    <MarketingTab
-      isMobile={isMobile}
-      stock={stock}
-      activeMarketingTab={activeMarketingTab}
-      setActiveMarketingTab={setActiveMarketingTab}
-    />
-  )}
-
-After ALL changes:
-1. Run npm run build
-2. Fix ALL errors
-3. git add -A && git commit -m "feat: marketing module with content calendar, post generator, group batches" 
-   && git push origin main --force
-4. Test:
-   - Open side drawer
-   - Tap Marketing
-   - Does it open?
-   - Does Today's Post show devices from your stock?
-   - Does Download Image Card work?
-   - Does Copy Caption work?
-   - Does Calendar show the 7 day schedule?
-   - Can you add groups to batches?
