@@ -1,266 +1,103 @@
-Read src/App.js fully before making any changes.
+Read src/SourcingModule.js fully before making any changes.
 
-This is architecture rewrite Step 8.
-We are extracting business logic functions into 
-dedicated service files.
-Do NOT change any logic. Only move functions.
+This is architecture rewrite Step 9.
+We are splitting SourcingModule.js into smaller files.
+Do NOT change any logic. Only split into separate files.
 
-STEP 8A — Create src/services/dealService.js
+First run this to see the structure:
+grep -n "^function \|^const.*=.*(" src/SourcingModule.js | head -30
 
-Create this file:
+STEP 9A — Identify the main sections in SourcingModule.js
 
-import { supabase } from "../supabase";
+SourcingModule.js likely has these sections:
+1. State declarations and data loading
+2. Deal list view
+3. Deal detail view  
+4. Landed cost calculator
+5. Message/timeline section
+6. Reply generator
 
-export async function moveStage(dealId, newStage, customerId) {
-  await supabase.from("deals")
-    .update({ stage: newStage })
-    .eq("id", dealId);
-  await supabase.from("customers")
-    .update({ last_active: new Date().toISOString() })
-    .eq("id", customerId);
-}
+STEP 9B — Create src/components/sourcing/SourcingDealList.js
 
-export async function closeDeal(dealId, value, paymentMethod) {
-  await supabase.from("deals").update({
-    stage: "closed",
-    closed_at: new Date().toISOString(),
-    value: value || null,
-    payment_method: paymentMethod || "Cash",
-    payment_status: "received",
-  }).eq("id", dealId);
-}
+Extract the deal list view section into its own component.
+This is the part that shows all deals grouped by stage.
 
-export async function buildReceiptText(deal, customer) {
-  const num = `LFL-${new Date().getFullYear()}-${
-    Math.floor(1000 + Math.random() * 9000)}`;
-  const date = new Date().toLocaleDateString("en-GB", {
-    day: "numeric", month: "long", year: "numeric"
-  });
-  return `━━━━━━━━━━━━━━━━━━━━━━
-    LAPTOP FOR LESS
-    UAE | laptopforless.ae
-━━━━━━━━━━━━━━━━━━━━━━
-RECEIPT #: ${num}
-Date: ${date}
+Create src/components/sourcing/SourcingDealList.js:
+  import React from "react";
+  import { supabase } from "../../supabase";
 
-SOLD TO:
-${customer?.name || "Customer"}
-${customer?.number ? `WhatsApp: ${customer.number}` : ""}
-
-DEVICE:
-${[deal?.brand, deal?.model].filter(Boolean).join(" ") || "Device"}
-${deal?.ram ? `RAM: ${deal.ram}` : ""}
-${deal?.storage ? `Storage: ${deal.storage}` : ""}
-
-PAYMENT:
-Amount: AED ${Number(deal?.value || 0).toLocaleString()}
-Method: ${deal?.payment_method || "Cash"}
-
-Thank you for your purchase! 🙏
-━━━━━━━━━━━━━━━━━━━━━━`;
-}
-
-export async function saveReceiptNumber(dealId, receiptNum) {
-  await supabase.from("deals")
-    .update({ serial_number: receiptNum })
-    .eq("id", dealId);
-}
-
-STEP 8B — Create src/services/messageService.js
-
-Create this file:
-
-import { supabase } from "../supabase";
-import { callClaude, buildSystemPromptFromCache } 
-  from "../utils/claude";
-
-export async function loadMessages(dealId) {
-  if (!dealId) return [];
-  const { data } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("deal_id", dealId)
-    .order("ts", { ascending: true });
-  return data || [];
-}
-
-export async function saveMessage(dealId, role, content, sent) {
-  const { data } = await supabase
-    .from("messages")
-    .insert({
-      deal_id: dealId,
-      role,
-      content,
-      sent: sent || null,
-      ts: new Date().toISOString(),
-    })
-    .select()
-    .single();
-  return data;
-}
-
-export async function generateReply(
-  messages, cachedStock, anthropicKey, cType
-) {
-  const history = messages.map(m => ({
-    role: m.role === "customer" ? "user" : "assistant",
-    content: m.sent && m.sent !== "NOT_SENT" 
-      ? m.sent : m.content,
-  }));
-  const system = buildSystemPromptFromCache(cachedStock);
-  const raw = await callClaude(anthropicKey, history, system);
-  const clean = raw.replace(/```json|```/g, "").trim();
-  try {
-    const parsed = JSON.parse(clean);
-    return parsed.reply || raw;
-  } catch {
-    return raw;
+  export default function SourcingDealList({
+    deals, suppliers, selectedDeal, setSelectedDeal,
+    showAddDeal, setShowAddDeal, dealForm, setDealForm,
+    saveDeal, deleteDeal, loadDeals,
+    SOURCING_STAGES, SOURCING_STAGE_COLORS,
+  }) {
+    // exact same JSX for the deal list
   }
-}
 
-STEP 8C — Create src/services/broadcastService.js
+STEP 9C — Create src/components/sourcing/SourcingCalculator.js
 
-Create this file:
+Extract the landed cost calculator into its own component.
 
-import { supabase } from "../supabase";
-import { callClaude } from "../utils/claude";
+Create src/components/sourcing/SourcingCalculator.js:
+  import React, { useState } from "react";
 
-export function getMatchingClients(item, customers) {
-  if (!item) return [];
-  return customers.filter(c => {
-    if (c.contact_type !== "client") return false;
-    const deals = c.deals || [];
-    return deals.some(d => {
-      if (d.stage === "closed" || d.stage === "lost") 
-        return false;
-      const brandMatch = !item.brand || !d.brand ||
-        d.brand.toLowerCase() === item.brand.toLowerCase();
-      const budgetMatch = !d.budget || !item.max_price ||
-        Number(d.budget) >= Number(item.max_price) * 0.8;
-      return brandMatch && budgetMatch;
-    });
-  });
-}
-
-export async function generateBroadcastMessages(
-  item, clients, anthropicKey
-) {
-  const messages = {};
-  for (const client of clients) {
-    const deal = (client.deals || []).find(d => 
-      d.stage !== "closed" && d.stage !== "lost"
-    );
-    const prompt = `Generate a short friendly WhatsApp message 
-to ${client.name} about this laptop:
-${item.brand} ${item.model} - ${item.ram} RAM, 
-${item.ssd} SSD, ${item.condition}
-Price: AED ${item.max_price}
-${deal?.budget ? `Their budget: AED ${deal.budget}` : ""}
-${deal?.brand ? `They want: ${deal.brand}` : ""}
-
-Keep it under 3 sentences. Be natural and friendly.
-Return only the message text.`;
-    
-    try {
-      const res = await fetch(
-        "https://api.anthropic.com/v1/messages",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 200,
-            messages: [{ role: "user", content: prompt }],
-          }),
-        }
-      );
-      const data = await res.json();
-      messages[client.id] = data?.content?.[0]?.text || 
-        `Hi ${client.name}! I have a ${item.brand} ${item.model} available that matches what you're looking for. Interested?`;
-    } catch {
-      messages[client.id] = 
-        `Hi ${client.name}! I have a ${item.brand} ${item.model} available. Interested?`;
-    }
+  export default function SourcingCalculator({ deal }) {
+    // exact same calculator JSX and logic
   }
-  return messages;
-}
 
-STEP 8D — Update App.js to import from services
+STEP 9D — Create src/components/sourcing/SourcingMessages.js
 
-In App.js add these imports:
-  import { moveStage, closeDeal, buildReceiptText, 
-    saveReceiptNumber } from "./services/dealService";
-  import { loadMessages, saveMessage, generateReply } 
-    from "./services/messageService";
-  import { getMatchingClients, generateBroadcastMessages } 
-    from "./services/broadcastService";
+Extract the message timeline section into its own component.
 
-Then find and DELETE these functions from App.js 
-since they are now in service files:
-- moveStage function
-- closeDeal function (if it exists separately)
-- buildReceiptText function
-- saveReceiptNumber function
-- getMatchingClients function
-- generateBroadcastMessages function
+Create src/components/sourcing/SourcingMessages.js:
+  import React, { useState } from "react";
+  import { supabase } from "../../supabase";
+  import { callClaude } from "../../utils/claude";
 
-NOTE: Some of these functions may be defined inline
-inside other functions in App.js. Find all occurrences
-and replace with the imported version.
+  export default function SourcingMessages({
+    deal, supplier, anthropicKey,
+    messages, setMessages, loadMessages,
+    showReplyGen, setShowReplyGen,
+    replyGmail, setReplyGmail,
+    replyWA, setReplyWA,
+    replyLoading, setReplyLoading,
+  }) {
+    // exact same messages/timeline JSX and logic
+  }
 
-Also find loadMessages, saveMessage calls in App.js
-and make sure they use the imported versions.
+STEP 9E — Update SourcingModule.js to use sub-components
 
-STEP 8E — Update ChatDetailView to import from services
+In SourcingModule.js replace the extracted sections
+with the new components:
 
-In ChatDetailView.js add:
-  import { buildReceiptText, saveReceiptNumber } 
-    from "../../services/dealService";
-  import { generateReply } 
-    from "../../services/messageService";
+  import SourcingDealList from "./components/sourcing/SourcingDealList";
+  import SourcingCalculator from "./components/sourcing/SourcingCalculator";
+  import SourcingMessages from "./components/sourcing/SourcingMessages";
 
-Remove these from props destructuring if they exist:
-  buildReceiptText,
-  saveReceiptNumber,
-
-Remove from ChatDetailView usage in App.js:
-  buildReceiptText={buildReceiptText}
-  saveReceiptNumber={saveReceiptNumber}
-
-STEP 8F — Update StockTab to import from services
-
-In StockTab.js add:
-  import { getMatchingClients } 
-    from "../../services/broadcastService";
-
-Remove getMatchingClients from props destructuring.
-Remove getMatchingClients={getMatchingClients} 
-from StockTab usage in App.js.
+Replace each section in the JSX with the component.
 
 IMPORTANT RULES:
+- Every new file must have import React from "react" at top
 - Do not change any logic
-- Make sure all function signatures match exactly
-- If a function uses state that is in a context,
-  pass that state as a parameter to the function
-- Test every feature that uses these functions
+- Pass all required state as props
+- Test Gmail sync still works
+- Test WhatsApp paste still works
+- Test calculator still works
+- Test stage changes still work
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean:
-   git add -A && git commit -m "architecture step 8: extract service files" 
+   git add -A && git commit -m "architecture step 9: split SourcingModule" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test:
-   - Send a message in client chat
-   - Change deal stage
-   - Generate AI reply
-   - Confirm sale
-   - Check broadcast from stock item
-7. Tell me new App.js line count
+6. Test Sourcing tab thoroughly:
+   - Does deal list show?
+   - Does deal detail open?
+   - Does calculator work?
+   - Does stage change work?
+   - Does WhatsApp paste work?
+7. Tell me new SourcingModule.js line count

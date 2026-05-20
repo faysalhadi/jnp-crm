@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase";
+import SourcingDealList from "./components/sourcing/SourcingDealList";
+import SourcingCalculator from "./components/sourcing/SourcingCalculator";
+import SourcingMessages from "./components/sourcing/SourcingMessages";
 
 // ── Pipeline stages ───────────────────────────────────────────────────────────
 const STAGES = [
@@ -456,139 +459,19 @@ Write TWO reply versions. Return JSON only:
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            TIMELINE
-        ══════════════════════════════════════════════════════════════════ */}
-        <div style={{ background: "#fff", borderRadius: 16, marginTop: 10,
-                      boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-
-          {/* Timeline header */}
-          <div style={{ padding: "13px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>
-              TIMELINE
-            </div>
-            {/* channel counts */}
-            <div style={{ display: "flex", gap: 6 }}>
-              {gmailMsgs.length > 0 && (
-                <span style={{ fontSize: 10, fontWeight: 700, color: "#DC2626", background: "#FEF2F2", padding: "2px 7px", borderRadius: 8 }}>
-                  📧 {gmailMsgs.length}
-                </span>
-              )}
-              {waMsgs.length > 0 && (
-                <span style={{ fontSize: 10, fontWeight: 700, color: "#16A34A", background: "#F0FDF4", padding: "2px 7px", borderRadius: 8 }}>
-                  💬 {waMsgs.length}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Messages list */}
-          <div ref={timelineRef} style={{ maxHeight: 380, overflowY: "auto", padding: "10px 12px" }}>
-            {!msgsLoaded ? (
-              <div style={{ textAlign: "center", padding: 24, color: "#94A3B8", fontSize: 12 }}>Loading…</div>
-            ) : messages.length === 0 ? (
-              <div style={{ textAlign: "center", padding: 28, color: "#CBD5E1", fontSize: 13 }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>💬</div>
-                No messages yet.<br />
-                <span style={{ fontSize: 12 }}>Paste a WhatsApp message or add a Gmail note below.</span>
-              </div>
-            ) : (
-              messages.map((msg, idx) => {
-                const isGmail  = msg.channel === "gmail";
-                const isOut    = msg.direction === "outbound";
-                const prevMsg  = messages[idx - 1];
-                const showDate = !prevMsg || new Date(msg.ts).toDateString() !== new Date(prevMsg.ts).toDateString();
-
-                return (
-                  <div key={msg.id}>
-                    {/* Date separator */}
-                    {showDate && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0 8px" }}>
-                        <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
-                        <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", flexShrink: 0 }}>
-                          {new Date(msg.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                        </span>
-                        <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
-                      </div>
-                    )}
-
-                    {/* Message bubble */}
-                    <div style={{
-                      display: "flex", gap: 9, marginBottom: 12,
-                      flexDirection: isOut ? "row-reverse" : "row",
-                    }}>
-                      {/* Channel icon */}
-                      <div style={{
-                        width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
-                        background: isGmail ? "#FEF2F2" : "#F0FDF4",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 14, alignSelf: "flex-start",
-                        border: `2px solid ${isGmail ? "#FECACA" : "#BBF7D0"}`,
-                      }}>
-                        {isGmail ? "📧" : "💬"}
-                      </div>
-
-                      {/* Bubble content */}
-                      <div style={{ maxWidth: "82%", minWidth: 0 }}>
-                        {/* sender + time */}
-                        <div style={{
-                          display: "flex", gap: 6, alignItems: "baseline", marginBottom: 4,
-                          flexDirection: isOut ? "row-reverse" : "row",
-                        }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 700,
-                            color: isGmail ? "#DC2626" : "#16A34A",
-                          }}>
-                            {isOut ? "You" : (msg.sender || "Supplier")}
-                          </span>
-                          <span style={{ fontSize: 10, color: "#94A3B8" }}>{timeAgo(msg.ts)}</span>
-                        </div>
-
-                        {/* bubble */}
-                        <div style={{
-                          padding: "9px 12px", borderRadius: isOut ? "14px 4px 14px 14px" : "4px 14px 14px 14px",
-                          background: isGmail
-                            ? (isOut ? "#FEF2F2" : "#fff")
-                            : (isOut ? "#F0FDF4" : "#fff"),
-                          border: `1.5px solid ${isGmail ? "#FECACA" : "#BBF7D0"}`,
-                          fontSize: 13, color: "#1E293B", lineHeight: 1.55,
-                          wordBreak: "break-word",
-                        }}>
-                          {msg.content}
-                        </div>
-
-                        {/* Milestone badge */}
-                        {msg.milestone && MILESTONES[msg.milestone] && (
-                          <MilestoneBadge milestone={msg.milestone} />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Add message actions */}
-          <div style={{ display: "flex", gap: 0, borderTop: "1px solid #F1F5F9" }}>
-            <button onClick={() => { setPasteText(""); setPasteStep("input"); setDetected(null); setShowPaste(true); }}
-              style={{
-                flex: 1, padding: "12px 8px", border: "none", borderRight: "1px solid #F1F5F9",
-                background: "#F0FDF4", color: "#16A34A", fontWeight: 700, fontSize: 12, cursor: "pointer",
-                borderRadius: "0 0 0 16px",
-              }}>
-              💬 Paste WhatsApp
-            </button>
-            <button onClick={addGmailNote}
-              style={{
-                flex: 1, padding: "12px 8px", border: "none",
-                background: "#FEF2F2", color: "#DC2626", fontWeight: 700, fontSize: 12, cursor: "pointer",
-                borderRadius: "0 0 16px 0",
-              }}>
-              📧 Add Gmail Note
-            </button>
-          </div>
-        </div>
+        <SourcingMessages
+          deal={d}
+          messages={messages}
+          msgsLoaded={msgsLoaded}
+          timelineRef={timelineRef}
+          gmailMsgs={gmailMsgs}
+          waMsgs={waMsgs}
+          setPasteText={setPasteText}
+          setPasteStep={setPasteStep}
+          setDetected={setDetected}
+          setShowPaste={setShowPaste}
+          addGmailNote={addGmailNote}
+        />
 
         {/* ══════════════════════════════════════════════════════════════════
             DEAL INFO (collapsible edit)
@@ -669,237 +552,11 @@ Write TWO reply versions. Return JSON only:
           )}
         </div>
 
-        {/* ══════════════════════════════════════════════════════════════════
-            LANDED COST CALCULATOR
-        ══════════════════════════════════════════════════════════════════ */}
-        <div style={{ background: "#fff", borderRadius: 16, marginTop: 12,
-                      boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-
-          {/* Header */}
-          <button onClick={() => setShowFin(v => !v)} style={{
-            width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "14px 16px", background: "none", border: "none", cursor: "pointer",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 16 }}>💰</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>Landed Cost Calculator</span>
-            </div>
-            <span style={{ fontSize: 18, color: "#94A3B8" }}>{showFin ? "▲" : "▼"}</span>
-          </button>
-
-          {showFin && (
-            <div style={{ padding: "0 16px 18px", borderTop: "1px solid #F1F5F9" }}>
-
-              {/* Exchange rate pill */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0",
-                            padding: "8px 14px", background: "#EEF2FF", borderRadius: 10 }}>
-                <span style={{ fontSize: 12, color: "#4338CA", fontWeight: 700 }}>Exchange rate:</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: "#4338CA" }}>1 USD =</span>
-                {editRate ? (
-                  <input value={rateInput}
-                    onChange={e => setRateInput(e.target.value)}
-                    autoFocus
-                    onBlur={() => {
-                      const v = parseFloat(rateInput);
-                      if (!isNaN(v) && v > 0) setLocalRate(v);
-                      setEditRate(false);
-                    }}
-                    style={{ width: 60, padding: "3px 8px", borderRadius: 6,
-                             border: "1.5px solid #6366F1", fontSize: 13,
-                             fontWeight: 800, outline: "none", color: "#4338CA" }} />
-                ) : (
-                  <span style={{ fontSize: 13, fontWeight: 800, color: "#4338CA" }}>{localRate} AED</span>
-                )}
-                <button onClick={() => { setRateInput(String(localRate)); setEditRate(true); }}
-                  style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: 8, border: "none",
-                           background: "#C7D2FE", color: "#4338CA", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                  Edit rate
-                </button>
-              </div>
-
-              {/* ── PURCHASE block ── */}
-              <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>PURCHASE</div>
-                {purchaseUSD > 0 ? (
-                  <>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>
-                      {fmtUSD(purchaseUSD)} <span style={{ color: "#94A3B8", fontSize: 13, fontWeight: 400 }}>×</span> {localRate} <span style={{ color: "#94A3B8", fontSize: 13, fontWeight: 400 }}>=</span> <span style={{ color: "#6366F1" }}>{fmtAED(purchaseAED)}</span>
-                    </div>
-                    {d.units_bid && d.our_bid_usd && (
-                      <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>
-                        {Number(d.units_bid).toLocaleString()} units × ${Number(d.our_bid_usd).toLocaleString()}/unit
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div style={{ fontSize: 13, color: "#CBD5E1" }}>Set bid amount to calculate</div>
-                )}
-              </div>
-
-              {/* ── Additions ── */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 0,
-                            border: "1.5px solid #E2E8F0", borderRadius: 12, overflow: "hidden",
-                            marginBottom: 10 }}>
-
-                {/* Shipping row — editable */}
-                <div style={{ display: "flex", alignItems: "center", padding: "10px 14px",
-                              borderBottom: "1px solid #F1F5F9" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: "#374151" }}>+ Shipping cost</div>
-                    <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>Enter actual amount paid</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ fontSize: 11, color: "#94A3B8" }}>AED</span>
-                    <input
-                      value={shipInput}
-                      onChange={e => {
-                        setShipInput(e.target.value);
-                        const v = parseFloat(e.target.value);
-                        setLocalShipping(isNaN(v) ? 0 : v);
-                      }}
-                      onBlur={() => {
-                        const v = parseFloat(shipInput);
-                        const val = isNaN(v) ? 0 : v;
-                        setLocalShipping(val);
-                        setShipInput(String(val));
-                        patchDeal({ shipping_cost_aed: val });
-                      }}
-                      placeholder="0"
-                      style={{ width: 80, padding: "5px 8px", borderRadius: 8,
-                               border: "1.5px solid #6366F1", fontSize: 13, fontWeight: 700,
-                               textAlign: "right", outline: "none", color: "#0F172A" }}
-                    />
-                  </div>
-                </div>
-
-                {/* Import duty row — auto */}
-                <div style={{ display: "flex", alignItems: "center", padding: "10px 14px",
-                              background: "#FAFAFA" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: "#374151" }}>+ Import duty <span style={{ fontSize: 11, color: "#94A3B8" }}>(5% of purchase)</span></div>
-                    <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>Auto-calculated</div>
-                  </div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>
-                    AED {duty > 0 ? Math.round(duty).toLocaleString() : "0"}
-                  </span>
-                </div>
-              </div>
-
-              {/* ── TOTAL LANDED ── */}
-              <div style={{ background: landed > 0 ? "#EEF2FF" : "#F8FAFC", borderRadius: 12,
-                            padding: "12px 14px", marginBottom: 14,
-                            border: landed > 0 ? "1.5px solid #C7D2FE" : "1.5px solid #E2E8F0" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: "#4338CA" }}>= Total landed</span>
-                  <span style={{ fontSize: 17, fontWeight: 800, color: "#4338CA" }}>
-                    {landed > 0 ? fmtAED(landed) : "—"}
-                  </span>
-                </div>
-                {costPerUnit > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                                marginTop: 6, paddingTop: 6, borderTop: "1px solid #C7D2FE" }}>
-                    <span style={{ fontSize: 12, color: "#6366F1" }}>
-                      Cost per unit <span style={{ color: "#94A3B8", fontSize: 11 }}>({Number(d.units_bid).toLocaleString()} units)</span>
-                    </span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>
-                      {fmtAED(costPerUnit)}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* ── EXPECTED REVENUE ── */}
-              <div style={{ border: "1.5px solid #E2E8F0", borderRadius: 12, overflow: "hidden", marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", padding: "10px 14px" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>Expected revenue</div>
-                    <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>Total selling price of all units</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ fontSize: 11, color: "#94A3B8" }}>AED</span>
-                    <input
-                      value={revInput}
-                      onChange={e => {
-                        setRevInput(e.target.value);
-                        const v = parseFloat(e.target.value);
-                        setLocalRevenue(isNaN(v) ? 0 : v);
-                      }}
-                      onBlur={() => {
-                        const v = parseFloat(revInput);
-                        const val = isNaN(v) ? 0 : v;
-                        setLocalRevenue(val);
-                        setRevInput(String(val));
-                        patchDeal({ expected_revenue_aed: val });
-                      }}
-                      placeholder="0"
-                      style={{ width: 80, padding: "5px 8px", borderRadius: 8,
-                               border: "1.5px solid #10B981", fontSize: 13, fontWeight: 700,
-                               textAlign: "right", outline: "none", color: "#0F172A" }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* ── PROFIT / MARGIN ── */}
-              {profit !== null && (
-                <div style={{
-                  borderRadius: 12, padding: "12px 14px",
-                  background: profit >= 0 ? "#ECFDF5" : "#FEF2F2",
-                  border: `1.5px solid ${profit >= 0 ? "#6EE7B7" : "#FECACA"}`,
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                                marginBottom: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 800,
-                                   color: profit >= 0 ? "#059669" : "#DC2626" }}>
-                      {profit >= 0 ? "✅ Gross profit" : "❌ Loss"}
-                    </span>
-                    <span style={{ fontSize: 18, fontWeight: 800,
-                                   color: profit >= 0 ? "#059669" : "#DC2626" }}>
-                      {profit >= 0 ? "+" : ""}{fmtAED(profit)}
-                    </span>
-                  </div>
-
-                  {/* Margin bar */}
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between",
-                                  alignItems: "center", marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: profit >= 0 ? "#059669" : "#DC2626", fontWeight: 600 }}>
-                        Margin
-                      </span>
-                      <span style={{ fontSize: 15, fontWeight: 800,
-                                     color: margin >= 20 ? "#059669" : margin >= 10 ? "#D97706" : "#DC2626" }}>
-                        {margin.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div style={{ height: 6, background: profit >= 0 ? "#D1FAE5" : "#FEE2E2",
-                                  borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{
-                        height: "100%", borderRadius: 3, transition: "width 0.3s",
-                        width: `${Math.min(Math.max(margin, 0), 40) / 40 * 100}%`,
-                        background: margin >= 20 ? "#059669" : margin >= 10 ? "#D97706" : "#DC2626",
-                      }} />
-                    </div>
-                  </div>
-
-                  {/* Per-unit breakdown */}
-                  {costPerUnit > 0 && localRevenue > 0 && d.units_bid > 0 && (
-                    <div style={{ fontSize: 11, color: profit >= 0 ? "#059669" : "#DC2626",
-                                  paddingTop: 8, borderTop: `1px solid ${profit >= 0 ? "#6EE7B7" : "#FECACA"}` }}>
-                      {fmtAED(localRevenue / d.units_bid)} revenue − {fmtAED(costPerUnit)} cost = <strong>{fmtAED((localRevenue - landed) / d.units_bid)}/unit</strong>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* prompt to fill in revenue if not set */}
-              {profit === null && landed > 0 && (
-                <div style={{ textAlign: "center", fontSize: 12, color: "#94A3B8", padding: "4px 0" }}>
-                  ↑ Enter expected revenue to see profit
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <SourcingCalculator
+          deal={d}
+          rate={localRate}
+          patchDeal={patchDeal}
+        />
 
         {/* ── Reply Generator (inline) ── */}
         <div style={{ background: "#fff", borderRadius: 16, marginTop: 12,
@@ -2012,95 +1669,25 @@ export default function SourcingModule({ anthropicKey, onAddToStock }) {
   }
 
   // ── deals pipeline ─────────────────────────────────────────────────────────
-  const grouped      = Object.fromEntries(STAGES.map(s => [s.id, deals.filter(d => d.status === s.id)]));
-  const inStockCount = grouped["in_stock"]?.length || 0;
-
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 100px", display: "flex", flexDirection: "column", gap: 14 }}>
-
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => setShowGmail(true)} style={{
-          flex: 1, padding: "10px 8px", borderRadius: 12,
-          border: "1.5px solid #FECACA", background: "#FEF2F2",
-          color: "#DC2626", fontWeight: 700, fontSize: 12, cursor: "pointer",
-        }}>📧 Check Gmail</button>
-        <button onClick={() => { setPrefillForm(null); setShowNew(true); }} style={{
-          flex: 1, padding: "10px 8px", borderRadius: 12,
-          border: "none", background: "#6366F1",
-          color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer",
-        }}>+ New Deal</button>
-      </div>
-
-      {loading && <div style={{ textAlign: "center", padding: 40, color: "#94A3B8", fontSize: 13 }}>Loading…</div>}
-
-      {!loading && deals.length === 0 && (
-        <div style={{ background: "#fff", borderRadius: 16, padding: 36, textAlign: "center",
-                      color: "#94A3B8", fontSize: 13, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>🌍</div>
-          No deals yet.<br />
-          <span style={{ fontSize: 12 }}>Tap <strong>+ New Deal</strong> or <strong>Check Gmail</strong> to start.</span>
-        </div>
-      )}
-
-      {!loading && STAGES.filter(s => s.id !== "in_stock" && grouped[s.id]?.length > 0).map(st => (
-        <div key={st.id}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 14 }}>{st.emoji}</span>
-            <span style={{ fontSize: 12, fontWeight: 800, color: st.color, letterSpacing: 0.3 }}>
-              {st.label.toUpperCase()}
-            </span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: st.color,
-                           background: st.bg, padding: "1px 8px", borderRadius: 10 }}>
-              {grouped[st.id].length}
-            </span>
-            {st.id === "arrived" && (
-              <span style={{ fontSize: 10, color: "#0891B2", fontWeight: 700, marginLeft: "auto" }}>
-                Tap to move to stock →
-              </span>
-            )}
-          </div>
-          {grouped[st.id].map(deal => (
-            <DealCard key={deal.id} deal={deal} rate={rate} onClick={() => setSelected(deal.id)} />
-          ))}
-        </div>
-      ))}
-
-      {!loading && inStockCount > 0 && (
-        <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "12px 16px",
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      border: "1px solid #E2E8F0" }}>
-          <span style={{ fontSize: 12, color: "#64748B" }}>➡️ In Stock (archived)</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#64748B",
-                         background: "#F1F5F9", padding: "2px 10px", borderRadius: 10 }}>
-            {inStockCount} lot{inStockCount !== 1 ? "s" : ""}
-          </span>
-        </div>
-      )}
-
-      {showNew && (
-        <NewDealModal
-          suppliers={suppliers}
-          rate={rate}
-          onClose={() => { setShowNew(false); setPrefillForm(null); }}
-          onCreate={newDeal => {
-            setDeals(ds => [newDeal, ...ds]);
-            setShowNew(false); setPrefillForm(null);
-            setSelected(newDeal.id);
-          }}
-        />
-      )}
-
-      {showGmail && (
-        <GmailSheet
-          anthropicKey={anthropicKey}
-          onClose={() => setShowGmail(false)}
-          onCreateDeal={extracted => {
-            setPrefillForm(extracted);
-            setShowGmail(false);
-            setShowNew(true);
-          }}
-        />
-      )}
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Section toggle header */}
+      <SectionToggle section={section} setSection={setSection} deals={deals} suppliers={suppliers} />
+      <SourcingDealList
+        deals={deals}
+        loading={loading}
+        rate={rate}
+        setSelected={setSelected}
+        showNew={showNew}
+        setShowNew={setShowNew}
+        showGmail={showGmail}
+        setShowGmail={setShowGmail}
+        setPrefillForm={setPrefillForm}
+        prefillForm={prefillForm}
+        anthropicKey={anthropicKey}
+        suppliers={suppliers}
+        setDeals={setDeals}
+      />
     </div>
   );
 }
