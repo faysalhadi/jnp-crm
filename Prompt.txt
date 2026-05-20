@@ -1,96 +1,77 @@
-Read src/context/TradersContext.js fully before making changes.
+Read src/App.js and src/components/chat/ChatDetailView.js 
+fully before making any changes.
 
-CHANGE 1 — Get activeDeal from CustomerContext 
-instead of props
+CHANGE 1 — Remove Check Traders button from ChatDetailView
 
-In TradersContext.js add this import at the top:
-  import { useCustomers } from "./CustomerContext";
+In ChatDetailView.js find and remove:
+1. The Check Traders button — it looks like:
+   <button onClick={checkTradersForDeal}
+   Remove the entire button.
 
-Find the TradersProvider function signature:
+2. The Check Traders results modal/panel — it looks like:
+   {showCheckTraders && (
+     <div ...>
+       ...checkTradersResults...
+     </div>
+   )}
+   Remove the entire block.
+
+3. Remove these from ChatDetailView props destructuring:
+   checkTradersForDeal,
+   showCheckTraders, setShowCheckTraders,
+   checkTradersResults, setCheckTradersResults,
+   checkTradersLoading, setCheckTradersLoading,
+
+CHANGE 2 — Remove Check Traders props from App.js
+
+Find where ChatDetailView is rendered in App.js.
+Remove these props:
+  checkTradersForDeal={checkTradersForDeal}
+  showCheckTraders={showCheckTraders}
+  setShowCheckTraders={setShowCheckTraders}
+  checkTradersResults={checkTradersResults}
+  setCheckTradersResults={setCheckTradersResults}
+  checkTradersLoading={checkTradersLoading}
+  setCheckTradersLoading={setCheckTradersLoading}
+
+CHANGE 3 — Remove checkTradersForDeal from TradersContext
+
+In TradersContext.js:
+1. Remove the checkTradersForDeal function entirely
+2. Remove showCheckTraders state
+3. Remove setShowCheckTraders from context value
+4. Remove checkTradersResults state
+5. Remove setCheckTradersResults from context value
+6. Remove checkTradersLoading state
+7. Remove setCheckTradersLoading from context value
+8. Remove all of the above from the Provider value object
+9. Remove useCustomers import since it was only 
+   needed for checkTradersForDeal
+
+Also update TradersProvider signature back to:
   export function TradersProvider({ children, anthropicKey, activeDeal }) {
 
-Replace with:
-  export function TradersProvider({ children, anthropicKey }) {
+And in index.js restore TradersProvider to NOT 
+use CustomerContext — remove the useCustomers dependency.
 
-Add this line at the very top of TradersProvider function body:
-  const { activeDeal } = useCustomers();
+CHANGE 4 — Remove Check Traders from TradersTab
 
-Now activeDeal is always the current active deal
-from CustomerContext, not a stale prop value.
+In TradersTab.js find and remove:
+1. The Check Traders button in the UI
+2. The Check Traders results display
+3. These from props/hook destructuring:
+   showCheckTraders, setShowCheckTraders,
+   checkTradersResults, setCheckTradersResults,
+   checkTradersLoading, setCheckTradersLoading,
+   checkTradersForDeal,
 
-CHANGE 2 — Update TradersProvider in App.js
-
-Find where TradersProvider wraps the return in App.js:
-  <TradersProvider 
-    anthropicKey={anthropicKey} 
-    activeDeal={activeDeal}
-  >
-
-Replace with:
-  <TradersProvider anthropicKey={anthropicKey}>
-
-Remove activeDeal prop since TradersContext 
-now gets it directly from CustomerContext.
-
-CHANGE 3 — Move TradersProvider to index.js
-
-Since TradersProvider now uses useCustomers hook,
-it must be wrapped INSIDE CustomerProvider.
-
-In src/index.js update:
-  import { CustomerProvider } from './context/CustomerContext';
-  import { StockProvider } from './context/StockContext';
-  import { UIProvider } from './context/UIContext';
-  import { SalesProvider } from './context/SalesContext';
-  import { PartsProvider } from './context/PartsContext';
-  import { TradersProvider } from './context/TradersContext';
-
-  root.render(
-    <UIProvider>
-      <SalesProvider>
-        <PartsProvider>
-          <CustomerProvider>
-            <TradersProvider anthropicKey={
-              localStorage.getItem("jnp_anthropic_key") || ""
-            }>
-              <StockProvider>
-                <App />
-              </StockProvider>
-            </TradersProvider>
-          </CustomerProvider>
-        </PartsProvider>
-      </SalesProvider>
-    </UIProvider>
-  );
-
-CHANGE 4 — Remove TradersProvider wrapper from App.js
-
-Find in App.js main return:
-  return (
-    <TradersProvider anthropicKey={anthropicKey}>
-      ... content ...
-    </TradersProvider>
-  );
-
-Remove the TradersProvider wrapper and keep just:
-  return (
-    ... content ...
-  );
-
-Also remove the TradersProvider import from App.js.
-
-NOTE: The anthropicKey in index.js is read from 
-localStorage directly since App state is not 
-available there. The key is already saved to 
-localStorage when user enters it.
-
-After changes:
+After ALL changes:
 1. Run npm run build
 2. Fix ALL errors
-3. git add -A && git commit -m "fix: TradersContext gets activeDeal from CustomerContext" 
+3. git add -A && git commit -m "remove: check traders feature from chat and traders tab" 
    && git push origin main --force
 4. Test:
-   - Open a client chat with an open deal
-   - Tap Check Traders button
-   - Does it show matching trader listings?
-5. Tell me if it works and new App.js line count
+   - Client chat opens without errors
+   - Traders tab works normally
+   - No check traders button visible anywhere
+5. Tell me new App.js line count

@@ -26,12 +26,8 @@ export default function TradersTab({
     savingTraderListings, setSavingTraderListings,
     traderImportResult, setTraderImportResult,
     showTraderMatches, setShowTraderMatches,
-    showCheckTraders, setShowCheckTraders,
-    checkTradersResults, setCheckTradersResults,
-    checkTradersLoading, setCheckTradersLoading,
     extractTraderListings,
     saveTraderListings,
-    checkTradersForDeal,
   } = useTraders();
 
   useEffect(() => { loadTraderListings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -267,33 +263,6 @@ export default function TradersTab({
         </div>
       )}
 
-      {/* Check Traders modal */}
-      {showCheckTraders && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, overflowY: "auto" }}>
-          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🏪 Trader Listings</span>
-                <button onClick={() => setShowCheckTraders(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
-              </div>
-              {checkTradersLoading ? <Spinner /> : checkTradersResults.length === 0
-                ? <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}>No matching selling listings found in trader inventory.</div>
-                : checkTradersResults.map((t, i) => {
-                  const device = [t.brand, t.model, t.processor, t.ram, t.storage, t.condition].filter(Boolean).join(" · ");
-                  return (
-                    <div key={i} style={{ background: "#F8FAFC", borderRadius: 14, padding: 14, marginBottom: 8, border: "1px solid #E2E8F0" }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", marginBottom: 4 }}>{device || "Unknown device"}</div>
-                      {t.price && <div style={{ fontSize: 14, fontWeight: 800, color: "#6366F1", marginBottom: 4 }}>AED {Number(t.price).toLocaleString()}</div>}
-                      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 8 }}>👤 {t.trader_name} {t.source_group ? `· ${t.source_group}` : ""} · {timeAgo(t.created_at)}</div>
-                      {t.trader_number && <a href={`https://wa.me/${t.trader_number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{ display: "inline-block", padding: "5px 14px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>📱 WhatsApp Trader</a>}
-                    </div>
-                  );
-                })
-              }
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

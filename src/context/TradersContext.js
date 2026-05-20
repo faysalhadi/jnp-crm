@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "../supabase";
-import { useCustomers } from "./CustomerContext";
 
 const TradersContext = createContext(null);
 
@@ -17,7 +16,6 @@ function cleanText(text) {
 }
 
 export function TradersProvider({ children, anthropicKey }) {
-  const { activeDeal } = useCustomers();
   const [traderListings, setTraderListings] = useState([]);
   const [traderListingsLoading, setTraderListingsLoading] = useState(false);
   const [traderSection, setTraderSection] = useState("inventory");
@@ -31,9 +29,6 @@ export function TradersProvider({ children, anthropicKey }) {
   const [savingTraderListings, setSavingTraderListings] = useState(false);
   const [traderImportResult, setTraderImportResult] = useState(null);
   const [showTraderMatches, setShowTraderMatches] = useState(false);
-  const [showCheckTraders, setShowCheckTraders] = useState(false);
-  const [checkTradersResults, setCheckTradersResults] = useState([]);
-  const [checkTradersLoading, setCheckTradersLoading] = useState(false);
 
   const loadTraderListings = useCallback(async () => {
     setTraderListingsLoading(true);
@@ -231,37 +226,6 @@ ${chunkText}`;
     setSavingTraderListings(false);
   }
 
-  async function checkTradersForDeal() {
-    setCheckTradersLoading(true);
-    if (!traderListings.length) {
-      const { data } = await supabase
-        .from("trader_inventory")
-        .select("*")
-        .eq("type", "selling")
-        .eq("status", "active")
-        .order("created_at", { ascending: false });
-      const brand = activeDeal?.brand || "";
-      const results = (data || []).filter(t =>
-        !brand || !t.brand ||
-        t.brand.toLowerCase().includes(brand.toLowerCase()) ||
-        brand.toLowerCase().includes((t.brand || "").toLowerCase())
-      );
-      setCheckTradersResults(results);
-    } else {
-      const brand = activeDeal?.brand || "";
-      setCheckTradersResults(
-        traderListings.filter(t =>
-          t.type === "selling" && (
-            !brand || !t.brand ||
-            t.brand.toLowerCase().includes(brand.toLowerCase())
-          )
-        )
-      );
-    }
-    setCheckTradersLoading(false);
-    setShowCheckTraders(true);
-  }
-
   return (
     <TradersContext.Provider value={{
       traderListings, setTraderListings,
@@ -277,13 +241,9 @@ ${chunkText}`;
       savingTraderListings, setSavingTraderListings,
       traderImportResult, setTraderImportResult,
       showTraderMatches, setShowTraderMatches,
-      showCheckTraders, setShowCheckTraders,
-      checkTradersResults, setCheckTradersResults,
-      checkTradersLoading, setCheckTradersLoading,
       loadTraderListings,
       extractTraderListings,
       saveTraderListings,
-      checkTradersForDeal,
     }}>
       {children}
     </TradersContext.Provider>

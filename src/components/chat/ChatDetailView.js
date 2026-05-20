@@ -59,10 +59,6 @@ export default function ChatDetailView({
   const { isMobile, setActiveTab, setShowSideDrawer } = useUI();
   const {
     traderListings,
-    showCheckTraders, setShowCheckTraders,
-    checkTradersResults, setCheckTradersResults,
-    checkTradersLoading, setCheckTradersLoading,
-    checkTradersForDeal,
     setTraderSearch,
   } = useTraders();
   const {
@@ -346,16 +342,6 @@ export default function ChatDetailView({
                     Ignore
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* check traders */}
-            {activeDeal && activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
-              <div style={{ marginTop: 8 }}>
-                <button onClick={checkTradersForDeal}
-                  style={{ width: "100%", padding: "7px", borderRadius: 10, border: "1.5px solid #10B981", background: "#ECFDF5", color: "#059669", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  🏪 Check Traders for This Device
-                </button>
               </div>
             )}
 
