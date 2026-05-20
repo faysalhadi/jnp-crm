@@ -11,6 +11,7 @@ import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
 import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
+import { useReservations } from "../../context/ReservationsContext";
 
 export default function ChatDetailView({
   messages, setMessages,
@@ -40,9 +41,6 @@ export default function ChatDetailView({
   supplierReplyLoading, setSupplierReplyLoading,
   copiedSupGmail, setCopiedSupGmail,
   copiedSupWA, setCopiedSupWA,
-  showLinkStock, setShowLinkStock,
-  linkStockDeal, setLinkStockDeal,
-  showReservation, setShowReservation,
   anthropicKey, cachedStock,
   bottomRef,
   NAV_TABS, activeTab,
@@ -61,6 +59,11 @@ export default function ChatDetailView({
     traderListings,
     setTraderSearch,
   } = useTraders();
+  const {
+    showLinkStock, setShowLinkStock,
+    linkStockDeal, setLinkStockDeal,
+    showReservation, setShowReservation,
+  } = useReservations();
   const {
     activeCustomer,
     activeDeal,

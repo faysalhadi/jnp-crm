@@ -28,6 +28,7 @@ import { useStock } from "./context/StockContext";
 import { useUI } from "./context/UIContext";
 import { useSales } from "./context/SalesContext";
 import { useParts } from "./context/PartsContext";
+import { useReservations } from "./context/ReservationsContext";
 
 import { saveImportedMessages } from "./utils/whatsapp";
 import Badge from "./components/ui/Badge";
@@ -150,6 +151,22 @@ export default function App() {
     loadPartsRevMTD,
   } = useParts();
 
+  const {
+    reservedDeals, setReservedDeals,
+    reservedDealsLoading,
+    expandedReservedDeal, setExpandedReservedDeal,
+    showCompleteReservation, setShowCompleteReservation,
+    completingDeal, setCompletingDeal,
+    completionPaymentMethod, setCompletionPaymentMethod,
+    showEditReservation, setShowEditReservation,
+    editReservationItem, setEditReservationItem,
+    editReservationForm, setEditReservationForm,
+    showLinkStock, setShowLinkStock,
+    linkStockDeal, setLinkStockDeal,
+    showReservation, setShowReservation,
+    loadReservedDeals,
+  } = useReservations();
+
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState("login"); // login | signup
@@ -207,10 +224,6 @@ export default function App() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptPaymentMethod, setReceiptPaymentMethod] = useState("Cash");
 
-  // ── edit reservation ──
-  const [showEditReservation,  setShowEditReservation]  = useState(false);
-  const [editReservationItem,  setEditReservationItem]  = useState(null);
-  const [editReservationForm,  setEditReservationForm]  = useState({ agreedPrice: "", pickupDate: "", depositAmount: "", balanceDue: "", notes: "" });
 
   // ── side drawer / sales history ──
   const [expandedSaleId,       setExpandedSaleId]       = useState(null);
@@ -229,22 +242,11 @@ export default function App() {
   const [showQuickSale,    setShowQuickSale]    = useState(false);
   const [quickSalePrefill, setQuickSalePrefill] = useState(null);
 
-  // ── reservation ──
-  const [showReservation, setShowReservation] = useState(false);
-  const [reservedDeals, setReservedDeals] = useState([]);
-  const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
-  const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
-  const [showCompleteReservation, setShowCompleteReservation] = useState(false);
-  const [completingDeal, setCompletingDeal] = useState(null);
-  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
 
   // ── spec upgrade ──
   const [showUpgrade,   setShowUpgrade]   = useState(false);
   const [upgradeTarget, setUpgradeTarget] = useState(null);
 
-  // ── link stock (close deal) ──
-  const [showLinkStock, setShowLinkStock] = useState(false);
-  const [linkStockDeal, setLinkStockDeal] = useState(null);
 
 
   // ── sourcing alerts for dashboard ──
@@ -281,16 +283,6 @@ export default function App() {
     setAuthLoading(false);
   }, []);
 
-  const loadReservedDeals = useCallback(async () => {
-    setReservedDealsLoading(true);
-    const { data: deals } = await supabase
-      .from("deals")
-      .select("*, customers(id, name, number), deal_items(*)")
-      .eq("stage", "confirmed_pending_pickup")
-      .order("created_at", { ascending: false });
-    setReservedDeals(deals || []);
-    setReservedDealsLoading(false);
-  }, []);
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
   useEffect(() => { if (session) { loadStock(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); } }, [session, loadStock, refreshCachedStock, loadTodaySales, loadPartsRevMTD]);
@@ -1651,12 +1643,6 @@ For any issues please contact us on WhatsApp.
         setCopiedSupGmail={setCopiedSupGmail}
         copiedSupWA={copiedSupWA}
         setCopiedSupWA={setCopiedSupWA}
-        showLinkStock={showLinkStock}
-        setShowLinkStock={setShowLinkStock}
-        linkStockDeal={linkStockDeal}
-        setLinkStockDeal={setLinkStockDeal}
-        showReservation={showReservation}
-        setShowReservation={setShowReservation}
         anthropicKey={anthropicKey}
         cachedStock={cachedStock}
         bottomRef={bottomRef}
@@ -1852,23 +1838,6 @@ For any issues please contact us on WhatsApp.
           setReceiptEditName={setReceiptEditName}
           setShowSaleReceipt={setShowSaleReceipt}
           filteredStock={filteredStock}
-          reservedDeals={reservedDeals}
-          reservedDealsLoading={reservedDealsLoading}
-          loadReservedDeals={loadReservedDeals}
-          expandedReservedDeal={expandedReservedDeal}
-          setExpandedReservedDeal={setExpandedReservedDeal}
-          showCompleteReservation={showCompleteReservation}
-          setShowCompleteReservation={setShowCompleteReservation}
-          completingDeal={completingDeal}
-          setCompletingDeal={setCompletingDeal}
-          completionPaymentMethod={completionPaymentMethod}
-          setCompletionPaymentMethod={setCompletionPaymentMethod}
-          showEditReservation={showEditReservation}
-          setShowEditReservation={setShowEditReservation}
-          editReservationItem={editReservationItem}
-          setEditReservationItem={setEditReservationItem}
-          editReservationForm={editReservationForm}
-          setEditReservationForm={setEditReservationForm}
         />
       )}
 

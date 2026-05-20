@@ -11,6 +11,7 @@ import PartSaleModal from "../modals/PartSaleModal";
 import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
 import { useParts } from "../../context/PartsContext";
+import { useReservations } from "../../context/ReservationsContext";
 
 export default function StockTab({
   customers,
@@ -24,16 +25,18 @@ export default function StockTab({
   loadCustomers, loadTodaySales,
   setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
   filteredStock,
-  reservedDeals, reservedDealsLoading, loadReservedDeals,
-  expandedReservedDeal, setExpandedReservedDeal,
-  showCompleteReservation, setShowCompleteReservation,
-  completingDeal, setCompletingDeal,
-  completionPaymentMethod, setCompletionPaymentMethod,
-  showEditReservation, setShowEditReservation,
-  editReservationItem, setEditReservationItem,
-  editReservationForm, setEditReservationForm,
 }) {
   const { isMobile, showToast } = useUI();
+  const {
+    reservedDeals, reservedDealsLoading, loadReservedDeals,
+    expandedReservedDeal, setExpandedReservedDeal,
+    showCompleteReservation, setShowCompleteReservation,
+    completingDeal, setCompletingDeal,
+    completionPaymentMethod, setCompletionPaymentMethod,
+    showEditReservation, setShowEditReservation,
+    editReservationItem, setEditReservationItem,
+    editReservationForm, setEditReservationForm,
+  } = useReservations();
   const {
     parts, partsLoading, loadParts,
     showAddPart, setShowAddPart,
