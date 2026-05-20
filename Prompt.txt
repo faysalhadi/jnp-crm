@@ -1,146 +1,260 @@
-Read src/components/tabs/CustomersTab.js fully before making changes.
+Read src/App.js fully before making any changes.
 
-CHANGE 1 — Add search bar and header to CustomersTab
+We are improving the Ask Claude tab to use smart context 
+loading — only send relevant data per question.
+This reduces API token usage by 60-75% and makes 
+answers more accurate.
 
-Find the very beginning of the return statement in CustomersTab.js.
-It currently starts with the customer list directly.
+CHANGE 1 — Add query type detection function
 
-Add this header section at the very top of the return,
-BEFORE the customer list:
+Add this function in App.js near the buildOwnerContext function:
 
-  <div style={{ background: "#fff", padding: "16px 14px 0", 
-                borderBottom: "1px solid #F1F5F9", 
-                position: "sticky", top: 0, zIndex: 10 }}>
+  function detectQueryType(question) {
+    const q = question.toLowerCase();
+    if (q.match(/contact|trader|supplier|who deals|find.*person|
+                 find.*contact|deals in|sells|buying|who has|
+                 who sell|who buy|customer|client/))
+      return "contacts";
+    if (q.match(/stock|inventory|available|how many|
+                 do you have|in stock|devices|laptops/))
+      return "stock";
+    if (q.match(/margin|profit|cost|markup|best deal|
+                 most profitable|earning/))
+      return "margins";
+    if (q.match(/follow up|cold|silent|overdue|
+                 not replied|inactive|who to contact/))
+      return "followups";
+    if (q.match(/revenue|sales|earned|this month|
+                 total sales|how much|income/))
+      return "revenue";
+    if (q.match(/sourcing|shipment|supplier|order|
+                 lot|arriving|transit|customs/))
+      return "sourcing";
+    if (q.match(/part|ram|ssd|hdd|screen|battery|
+                 charger|keyboard|spare/))
+      return "parts";
+    return "general";
+  }
+
+CHANGE 2 — Add smart context builders
+
+Add these functions near buildOwnerContext in App.js:
+
+  async function buildContactsContext() {
+    const { data: contacts } = await supabase
+      .from("customers")
+      .select("name, number, contact_type, notes, location, last_active")
+      .order("last_active", { ascending: false });
     
-    {/* Title row */}
-    <div style={{ display: "flex", justifyContent: "space-between", 
-                  alignItems: "flex-start", marginBottom: 14 }}>
-      <div>
-        <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, 
-                      letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", 
-                      letterSpacing: -0.5 }}>Contacts</div>
-      </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button onClick={() => setShowSideDrawer(true)}
-          style={{ width: 36, height: 36, borderRadius: 10, border: "none", 
-                   background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>
-          📊
-        </button>
-        <button onClick={() => { setContactModalPreType("client"); setShowContactModal(true); }}
-          style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", 
-                   background: "#6366F1", color: "#fff", fontWeight: 800, 
-                   fontSize: 13, cursor: "pointer" }}>
-          + Add
-        </button>
-      </div>
-    </div>
+    const lines = (contacts || []).map(c => {
+      const type = c.contact_type || "client";
+      const parts = [
+        `[${type.toUpperCase()}]`,
+        c.name,
+        c.number ? `📱 ${c.number}` : null,
+        c.location ? `📍 ${c.location}` : null,
+        c.notes ? `Notes: ${c.notes}` : null,
+        `Last active: ${c.last_active ? 
+          Math.floor((Date.now() - new Date(c.last_active)) / 86400000) + "d ago" 
+          : "never"}`,
+      ].filter(Boolean);
+      return parts.join(" · ");
+    }).join("\n");
 
-    {/* Stats row */}
-    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-      {[
-        { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF" },
-        { label: "Closed", value: closedDeals, color: "#10B981", bg: "#ECFDF5" },
-        { label: "This Month", value: `AED ${revenue >= 1000 ? (revenue/1000).toFixed(1)+"k" : revenue}`, 
-          color: "#F59E0B", bg: "#FFFBEB" },
-      ].map(s => (
-        <div key={s.label} style={{ flex: 1, background: s.bg, borderRadius: 14, 
-                                     padding: "10px 8px", textAlign: "center" }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: s.color }}>{s.value}</div>
-          <div style={{ fontSize: 9, color: s.color, fontWeight: 700, 
-                        opacity: 0.75, marginTop: 1 }}>{s.label}</div>
-        </div>
-      ))}
-    </div>
+    return `CONTACTS (${(contacts || []).length} total):\n${lines || "(none)"}`;
+  }
 
-    {/* Search bar */}
-    <input 
-      value={search} 
-      onChange={e => setSearch(e.target.value)} 
-      placeholder="🔍  Search name or number..."
-      style={{ width: "100%", padding: "9px 13px", borderRadius: 12, 
-               border: "1.5px solid #F1F5F9", background: "#F8FAFC", 
-               fontSize: 13, outline: "none", boxSizing: "border-box", 
-               marginBottom: 10 }} 
-    />
+  async function buildStockContext() {
+    const { data: stock } = await supabase
+      .from("stock")
+      .select("brand, model, processor, ram, ssd, condition, status, max_price, created_at")
+      .eq("status", "available")
+      .order("brand");
+    
+    const lines = (stock || []).map((s, i) => {
+      const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
+      return `${i+1}. ${s.brand||""} ${s.model||""} ${s.processor||""} ` +
+             `${s.ram||""}/${s.ssd||""} ${s.condition||""} ` +
+             `AED${s.max_price||0} (${age}d)`;
+    }).join("\n");
 
-    {/* Contact type filter pills */}
-    <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-      {[
-        { key: "all",      label: "All" },
-        { key: "client",   label: "🔴 Clients" },
-        { key: "trader",   label: "🟡 Traders" },
-        { key: "supplier", label: "🔵 Suppliers" },
-        { key: "walkin",   label: "⚡ Walk-in" },
-      ].map(f => (
-        <button key={f.key} onClick={() => setContactTypeFilter(f.key)}
-          style={{ padding: "5px 14px", borderRadius: 20, border: "none", 
-                   flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                   background: contactTypeFilter === f.key ? "#0F172A" : "#F1F5F9",
-                   color: contactTypeFilter === f.key ? "#fff" : "#64748B" }}>
-          {f.label}
-        </button>
-      ))}
-    </div>
+    return `AVAILABLE STOCK (${(stock||[]).length} items):\n${lines||"(none)"}`;
+  }
 
-    {/* Behaviour filter pills */}
-    <div style={{ display: "flex", gap: 6, overflowX: "auto", 
-                  scrollbarWidth: "none", paddingBottom: 10 }}>
-      {[
-        { key: "all",     label: "All" },
-        { key: "urgent",  label: "🔴 Urgent" },
-        { key: "overdue", label: "⏰ Overdue" },
-        { key: "vip",     label: "⭐ VIP" },
-        { key: "cold",    label: "❄️ Cold" },
-      ].map(f => (
-        <button key={f.key} onClick={() => setFilter(f.key)}
-          style={{ padding: "5px 14px", borderRadius: 20, border: "none", 
-                   flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                   background: filter === f.key ? "#6366F1" : "#F1F5F9",
-                   color: filter === f.key ? "#fff" : "#64748B" }}>
-          {f.label}
-        </button>
-      ))}
-    </div>
-  </div>
+  async function buildMarginsContext() {
+    const { data: stock } = await supabase
+      .from("stock")
+      .select("brand, model, condition, cost_price, min_price, max_price, created_at")
+      .eq("status", "available")
+      .order("brand");
 
-CHANGE 2 — Add missing props to CustomersTab
+    const lines = (stock || []).map((s, i) => {
+      const cost = Number(s.cost_price) || 0;
+      const sell = Number(s.max_price) || 0;
+      const profit = sell - cost;
+      const margin = sell > 0 ? Math.round((profit/sell)*100) : 0;
+      const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
+      return `${i+1}. ${s.brand||""} ${s.model||""} ${s.condition||""} ` +
+             `Cost:AED${cost} Sell:AED${sell} ` +
+             `Profit:AED${profit}(${margin}%) ${age}d`;
+    }).join("\n");
 
-Add these to the CustomersTab props destructuring:
-  openDeals,
-  closedDeals, 
-  revenue,
-  setShowSideDrawer,
-  setShowContactModal,
-  setContactModalPreType,
+    return `STOCK WITH MARGINS:\n${lines||"(none)"}`;
+  }
 
-CHANGE 3 — Pass missing props from App.js to CustomersTab
+  async function buildFollowupsContext() {
+    const { data: custs } = await supabase
+      .from("customers")
+      .select("name, last_active, contact_type, deals(stage, brand, model, budget)")
+      .order("last_active", { ascending: true })
+      .limit(50);
 
-Find where CustomersTab is rendered in App.js.
-Add these props if missing:
-  openDeals={openDeals}
-  closedDeals={closedDeals}
-  revenue={revenue}
-  setShowSideDrawer={setShowSideDrawer}
-  setShowContactModal={setShowContactModal}
-  setContactModalPreType={setContactModalPreType}
+    const overdue = (custs || []).filter(c => {
+      const days = Math.floor((Date.now() - new Date(c.last_active||0)) / 86400000);
+      return days >= 1 && (c.deals||[]).some(d => 
+        d.stage !== "closed" && d.stage !== "lost"
+      );
+    });
 
-CHANGE 4 — Fix Ctrl+V paste in ContactModal
+    const lines = overdue.map(c => {
+      const days = Math.floor((Date.now() - new Date(c.last_active||0)) / 86400000);
+      const deal = (c.deals||[]).find(d => 
+        d.stage !== "closed" && d.stage !== "lost"
+      );
+      return `${c.name} · ${days}d silent · ` +
+             `${[deal?.brand, deal?.model].filter(Boolean).join(" ")||"open deal"} · ` +
+             `${deal?.stage||""} · ` +
+             `${deal?.budget ? "AED "+deal.budget : "no budget"}`;
+    }).join("\n");
 
-In src/ContactModal.js find the modal overlay div.
-It is the outermost div with position fixed.
-Add this prop to it:
-  onKeyDown={e => e.stopPropagation()}
+    return `OVERDUE FOLLOW UPS (${overdue.length}):\n${lines||"(none — all clients active)"}`;
+  }
 
-This prevents the app from intercepting keyboard shortcuts
-inside the modal.
+  async function buildRevenueContext() {
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    
+    const { data: deals } = await supabase
+      .from("deals")
+      .select("value, sale_type, closed_at, brand, model, walk_in_name")
+      .eq("stage", "closed")
+      .gte("closed_at", monthStart.toISOString())
+      .order("closed_at", { ascending: false });
+
+    const total = (deals||[]).reduce((s,d) => s + (Number(d.value)||0), 0);
+    const walkin = (deals||[]).filter(d => d.sale_type === "walkin");
+    const whatsapp = (deals||[]).filter(d => !d.sale_type || d.sale_type === "whatsapp");
+
+    const lines = (deals||[]).slice(0,20).map(d => {
+      const date = new Date(d.closed_at).toLocaleDateString("en-GB");
+      const device = [d.brand, d.model].filter(Boolean).join(" ") || "Device";
+      return `${date} · ${device} · AED${d.value||0} · ${d.sale_type||"whatsapp"}`;
+    }).join("\n");
+
+    return `REVENUE THIS MONTH:
+Total: AED ${total.toLocaleString()}
+Deals: ${(deals||[]).length} (${whatsapp.length} WhatsApp · ${walkin.length} Walk-in)
+
+RECENT SALES:
+${lines||"(none)"}`;
+  }
+
+  async function buildPartsContext() {
+    const { data: parts } = await supabase
+      .from("stock_parts")
+      .select("category, specs, compatible_with, quantity, cost_price, sell_price")
+      .gt("quantity", 0)
+      .order("category");
+
+    const lines = (parts||[]).map((p,i) => 
+      `${i+1}. ${p.category} ${p.specs||""} ${p.compatible_with||""} ` +
+      `×${p.quantity} AED${p.sell_price||0}`
+    ).join("\n");
+
+    return `SPARE PARTS (${(parts||[]).length} types):\n${lines||"(none)"}`;
+  }
+
+  async function buildSmartContext(question) {
+    const type = detectQueryType(question);
+    const date = new Date().toLocaleDateString("en-GB", { 
+      weekday: "long", day: "numeric", month: "long", year: "numeric" 
+    });
+    
+    let context = `Date: ${date}\nBusiness: Laptop for Less, Sharjah UAE\n\n`;
+
+    switch(type) {
+      case "contacts":
+        context += await buildContactsContext();
+        break;
+      case "stock":
+        context += await buildStockContext();
+        break;
+      case "margins":
+        context += await buildMarginsContext();
+        break;
+      case "followups":
+        context += await buildFollowupsContext();
+        break;
+      case "revenue":
+        context += await buildRevenueContext();
+        break;
+      case "parts":
+        context += await buildPartsContext();
+        break;
+      case "sourcing":
+        context += "Sourcing data: Check the Sourcing tab for active deals.";
+        break;
+      default:
+        // general — send summary of everything
+        const [stock, followups, revenue] = await Promise.all([
+          buildStockContext(),
+          buildFollowupsContext(),
+          buildRevenueContext(),
+        ]);
+        context += [stock, followups, revenue].join("\n\n");
+    }
+
+    return context;
+  }
+
+CHANGE 3 — Update sendAskMessage to use smart context
+
+Find the sendAskMessage function in App.js.
+It currently calls buildOwnerContext().
+
+Replace:
+  const context = await buildOwnerContext();
+  const system = `You are a business analyst assistant...
+    \n\n${context}`;
+
+With:
+  const context = await buildSmartContext(trimmed);
+  const system = `You are a business analyst assistant for 
+"Laptop for Less", a UAE laptop reselling business. 
+The owner is asking about their business. 
+Answer accurately using only the data provided. 
+Be concise and direct. Format numbers with AED currency. 
+Use emojis for readability. When recommending actions be specific.
+
+${context}`;
+
+CHANGE 4 — Keep buildOwnerContext for backward compatibility
+Do NOT delete buildOwnerContext. Keep it in the file.
+It may be used elsewhere. Just stop calling it in 
+sendAskMessage.
 
 After ALL changes:
 1. Run npm run build
 2. Fix ALL errors
-3. git add -A && git commit -m "fix: add search bar to contacts tab, fix paste in modal" 
+3. git add -A && git commit -m "feat: smart context loading for Ask Claude - reduce tokens 60%" 
    && git push origin main --force
-4. Test:
-   - Contacts tab shows search bar
-   - Type in search — does it filter clients?
-   - Open Add Contact modal — does Ctrl+V paste work?
+4. Test these questions in Ask Claude:
+   - "find contact who deals in cpu" 
+     → should find your trader with cpu in notes
+   - "what stock do I have"
+     → should show available devices
+   - "who needs follow up"
+     → should show overdue clients
+   - "what is my revenue this month"
+     → should show monthly sales
+5. Tell me if each question gives correct answer

@@ -1404,6 +1404,166 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
     setExporting(false);
   }
 
+  // ── ask claude: smart context ──
+  function detectQueryType(question) {
+    const q = question.toLowerCase();
+    if (q.match(/contact|trader|supplier|who deals|find.*person|find.*contact|deals in|sells|buying|who has|who sell|who buy|customer|client/))
+      return "contacts";
+    if (q.match(/stock|inventory|available|how many|do you have|in stock|devices|laptops/))
+      return "stock";
+    if (q.match(/margin|profit|cost|markup|best deal|most profitable|earning/))
+      return "margins";
+    if (q.match(/follow up|cold|silent|overdue|not replied|inactive|who to contact/))
+      return "followups";
+    if (q.match(/revenue|sales|earned|this month|total sales|how much|income/))
+      return "revenue";
+    if (q.match(/sourcing|shipment|supplier|order|lot|arriving|transit|customs/))
+      return "sourcing";
+    if (q.match(/part|ram|ssd|hdd|screen|battery|charger|keyboard|spare/))
+      return "parts";
+    return "general";
+  }
+
+  async function buildContactsContext() {
+    const { data: contacts } = await supabase
+      .from("customers")
+      .select("name, number, contact_type, notes, location, last_active")
+      .order("last_active", { ascending: false });
+    const lines = (contacts || []).map(c => {
+      const type = c.contact_type || "client";
+      const parts = [
+        `[${type.toUpperCase()}]`,
+        c.name,
+        c.number ? `📱 ${c.number}` : null,
+        c.location ? `📍 ${c.location}` : null,
+        c.notes ? `Notes: ${c.notes}` : null,
+        `Last active: ${c.last_active ? Math.floor((Date.now() - new Date(c.last_active)) / 86400000) + "d ago" : "never"}`,
+      ].filter(Boolean);
+      return parts.join(" · ");
+    }).join("\n");
+    return `CONTACTS (${(contacts || []).length} total):\n${lines || "(none)"}`;
+  }
+
+  async function buildStockContext() {
+    const { data: stock } = await supabase
+      .from("stock")
+      .select("brand, model, processor, ram, ssd, condition, status, max_price, created_at")
+      .eq("status", "available")
+      .order("brand");
+    const lines = (stock || []).map((s, i) => {
+      const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
+      return `${i + 1}. ${s.brand || ""} ${s.model || ""} ${s.processor || ""} ${s.ram || ""}/${s.ssd || ""} ${s.condition || ""} AED${s.max_price || 0} (${age}d)`;
+    }).join("\n");
+    return `AVAILABLE STOCK (${(stock || []).length} items):\n${lines || "(none)"}`;
+  }
+
+  async function buildMarginsContext() {
+    const { data: stock } = await supabase
+      .from("stock")
+      .select("brand, model, condition, cost_price, min_price, max_price, created_at")
+      .eq("status", "available")
+      .order("brand");
+    const lines = (stock || []).map((s, i) => {
+      const cost = Number(s.cost_price) || 0;
+      const sell = Number(s.max_price) || 0;
+      const profit = sell - cost;
+      const margin = sell > 0 ? Math.round((profit / sell) * 100) : 0;
+      const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
+      return `${i + 1}. ${s.brand || ""} ${s.model || ""} ${s.condition || ""} Cost:AED${cost} Sell:AED${sell} Profit:AED${profit}(${margin}%) ${age}d`;
+    }).join("\n");
+    return `STOCK WITH MARGINS:\n${lines || "(none)"}`;
+  }
+
+  async function buildFollowupsContext() {
+    const { data: custs } = await supabase
+      .from("customers")
+      .select("name, last_active, contact_type, deals(stage, brand, model, budget)")
+      .order("last_active", { ascending: true })
+      .limit(50);
+    const overdue = (custs || []).filter(c => {
+      const days = Math.floor((Date.now() - new Date(c.last_active || 0)) / 86400000);
+      return days >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+    });
+    const lines = overdue.map(c => {
+      const days = Math.floor((Date.now() - new Date(c.last_active || 0)) / 86400000);
+      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+      return `${c.name} · ${days}d silent · ${[deal?.brand, deal?.model].filter(Boolean).join(" ") || "open deal"} · ${deal?.stage || ""} · ${deal?.budget ? "AED " + deal.budget : "no budget"}`;
+    }).join("\n");
+    return `OVERDUE FOLLOW UPS (${overdue.length}):\n${lines || "(none — all clients active)"}`;
+  }
+
+  async function buildRevenueContext() {
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const { data: deals } = await supabase
+      .from("deals")
+      .select("value, sale_type, closed_at, brand, model, walk_in_name")
+      .eq("stage", "closed")
+      .gte("closed_at", monthStart.toISOString())
+      .order("closed_at", { ascending: false });
+    const total = (deals || []).reduce((s, d) => s + (Number(d.value) || 0), 0);
+    const walkin = (deals || []).filter(d => d.sale_type === "walkin");
+    const whatsapp = (deals || []).filter(d => !d.sale_type || d.sale_type === "whatsapp");
+    const lines = (deals || []).slice(0, 20).map(d => {
+      const date = new Date(d.closed_at).toLocaleDateString("en-GB");
+      const device = [d.brand, d.model].filter(Boolean).join(" ") || "Device";
+      return `${date} · ${device} · AED${d.value || 0} · ${d.sale_type || "whatsapp"}`;
+    }).join("\n");
+    return `REVENUE THIS MONTH:\nTotal: AED ${total.toLocaleString()}\nDeals: ${(deals || []).length} (${whatsapp.length} WhatsApp · ${walkin.length} Walk-in)\n\nRECENT SALES:\n${lines || "(none)"}`;
+  }
+
+  async function buildPartsContext() {
+    const { data: parts } = await supabase
+      .from("stock_parts")
+      .select("category, specs, compatible_with, quantity, cost_price, sell_price")
+      .gt("quantity", 0)
+      .order("category");
+    const lines = (parts || []).map((p, i) =>
+      `${i + 1}. ${p.category} ${p.specs || ""} ${p.compatible_with || ""} ×${p.quantity} AED${p.sell_price || 0}`
+    ).join("\n");
+    return `SPARE PARTS (${(parts || []).length} types):\n${lines || "(none)"}`;
+  }
+
+  async function buildSmartContext(question) {
+    const type = detectQueryType(question);
+    const date = new Date().toLocaleDateString("en-GB", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+    });
+    let context = `Date: ${date}\nBusiness: Laptop for Less, Sharjah UAE\n\n`;
+    switch (type) {
+      case "contacts":
+        context += await buildContactsContext();
+        break;
+      case "stock":
+        context += await buildStockContext();
+        break;
+      case "margins":
+        context += await buildMarginsContext();
+        break;
+      case "followups":
+        context += await buildFollowupsContext();
+        break;
+      case "revenue":
+        context += await buildRevenueContext();
+        break;
+      case "parts":
+        context += await buildPartsContext();
+        break;
+      case "sourcing":
+        context += "Sourcing data: Check the Sourcing tab for active deals.";
+        break;
+      default: {
+        const [stockCtx, followupsCtx, revenueCtx] = await Promise.all([
+          buildStockContext(),
+          buildFollowupsContext(),
+          buildRevenueContext(),
+        ]);
+        context += [stockCtx, followupsCtx, revenueCtx].join("\n\n");
+      }
+    }
+    return context;
+  }
+
   // ── ask claude ──
   async function sendAskMessage(msg) {
     const trimmed = (msg || "").trim();
@@ -1413,8 +1573,8 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
     setAskMessages(prev => [...prev, { role: "owner", content: trimmed }]);
     setAskLoading(true);
     try {
-      const context = await buildOwnerContext();
-      const system = `You are a business analyst assistant for "Laptop for Less", a UAE laptop reselling business. The owner is asking you questions about their business. Answer accurately using only the data provided in the context above. Be concise and direct. Format numbers with AED currency. Use emojis for readability. When recommending actions, be specific.\n\n${context}`;
+      const context = await buildSmartContext(trimmed);
+      const system = `You are a business analyst assistant for "Laptop for Less", a UAE laptop reselling business. The owner is asking about their business. Answer accurately using only the data provided. Be concise and direct. Format numbers with AED currency. Use emojis for readability. When recommending actions be specific.\n\n${context}`;
       const history = askMessages
         .map(m => ({ role: m.role === "owner" ? "user" : "assistant", content: m.content }))
         .concat([{ role: "user", content: trimmed }]);
