@@ -3,9 +3,10 @@ import { STAGES, EMPTY_STOCK } from "../../constants";
 import { daysSince, timeAgo, getGreeting } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
 import { useSales } from "../../context/SalesContext";
+import { useParts } from "../../context/PartsContext";
 
 export default function HomeTab({
-  customers, stock, tasks, partsRevMTD,
+  customers, stock, tasks,
   sourcingAlerts, setView,
   setActiveCustomerId, setActiveDealId, setPendingSuggestion,
   setShowQuickSale, setStockFilter, setFilter,
@@ -15,6 +16,7 @@ export default function HomeTab({
 }) {
   const { activeTab, setActiveTab, isMobile } = useUI();
   const { todaySales, openComplaints } = useSales();
+  const { partsRevMTD } = useParts();
   const followUpsDue = tasks.filter(t => t.days >= 1).length;
   const urgentClients = customers.filter(c => c.urgent).length;
   const overdueFollowUps = tasks.filter(t => t.days >= 1).length;

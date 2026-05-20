@@ -2008,7 +2008,6 @@ For any issues please contact us on WhatsApp.
           customers={customers}
           stock={stock}
           tasks={tasks}
-          partsRevMTD={partsRevMTD}
           sourcingAlerts={sourcingAlerts}
           setView={setView}
           setActiveCustomerId={setActiveCustomerId}

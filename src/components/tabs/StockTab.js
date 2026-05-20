@@ -3,7 +3,7 @@ import { supabase } from "../../supabase";
 import * as XLSX from "xlsx";
 import Spinner from "../ui/Spinner";
 import Badge from "../ui/Badge";
-import { BRANDS, EMPTY_STOCK, PART_ICONS, PART_CATEGORIES } from "../../constants";
+import { BRANDS, EMPTY_STOCK, PART_ICONS, PART_CATEGORIES, EMPTY_PART } from "../../constants";
 import { daysSince, timeAgo, parseGB, labelGB } from "../../utils/helpers";
 import SpecUpgradeModal from "../modals/SpecUpgradeModal";
 import QuickSaleModal from "../modals/QuickSaleModal";
