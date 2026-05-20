@@ -60,13 +60,11 @@ export function PartsProvider({ children }) {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
     const { data } = await supabase
-      .from("deals")
-      .select("value")
-      .eq("sale_type", "parts")
-      .eq("stage", "closed")
-      .gte("closed_at", monthStart.toISOString());
+      .from("parts_sales")
+      .select("total_revenue")
+      .gte("sold_at", monthStart.toISOString());
     setPartsRevMTD(
-      (data || []).reduce((s, d) => s + (Number(d.value) || 0), 0)
+      (data || []).reduce((s, d) => s + (Number(d.total_revenue) || 0), 0)
     );
   }, []);
 

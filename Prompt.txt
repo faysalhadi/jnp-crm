@@ -1,48 +1,31 @@
-Read src/components/tabs/StockTab.js fully before making changes.
+Read src/context/PartsContext.js fully before making changes.
 
-CHANGE 1 — Add EMPTY_PART to imports in StockTab.js
+Find the loadPartsRevMTD function.
+It currently queries the deals table:
+  supabase.from("deals").select("value")
+    .eq("sale_type", "parts")
 
-Find this import line:
-  import { BRANDS, EMPTY_STOCK, PART_ICONS, PART_CATEGORIES } 
-    from "../../constants";
+Replace the entire loadPartsRevMTD function with:
 
-Replace with:
-  import { BRANDS, EMPTY_STOCK, PART_ICONS, 
-    PART_CATEGORIES, EMPTY_PART } from "../../constants";
-
-CHANGE 2 — Fix partsRevMTD not showing in dashboard
-
-The partsRevMTD is loaded in PartsContext but the 
-dashboard HomeTab reads it from props passed by App.js.
-
-In App.js find where HomeTab is rendered.
-Make sure partsRevMTD is passed as a prop:
-  partsRevMTD={partsRevMTD}
-
-In src/components/tabs/HomeTab.js find the revenue 
-stat calculation. It currently does:
-  const total = revenue + partsRevMTD;
-
-Make sure partsRevMTD is either:
-  - Coming from props (partsRevMTD prop)
-  - OR imported from PartsContext directly
-
-Add to HomeTab.js:
-  import { useParts } from "../../context/PartsContext";
-  Add at top of component:
-    const { partsRevMTD } = useParts();
-  Remove partsRevMTD from props destructuring.
-
-Also remove partsRevMTD={partsRevMTD} from HomeTab 
-usage in App.js since HomeTab now gets it directly.
+  const loadPartsRevMTD = useCallback(async () => {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from("parts_sales")
+      .select("total_revenue")
+      .gte("sold_at", monthStart.toISOString());
+    setPartsRevMTD(
+      (data || []).reduce((s, d) => s + (Number(d.total_revenue) || 0), 0)
+    );
+  }, []);
 
 After changes:
 1. Run npm run build
 2. Fix any errors
-3. git add -A && git commit -m "fix: EMPTY_PART import in StockTab, partsRevMTD in HomeTab" 
+3. git add -A && git commit -m "fix: partsRevMTD queries parts_sales table not deals" 
    && git push origin main --force
 4. Test:
-   - Tap + Add Part — does modal open?
-   - Fill form and save — does part appear?
-   - Does parts revenue show in dashboard total?
-5. Tell me if all three work and new App.js line count
+   - Sell a part
+   - Check dashboard Revenue MTD — does it include parts revenue?
+5. Tell me if it works
