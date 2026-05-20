@@ -8,22 +8,11 @@ import { daysSince, timeAgo, parseGB, labelGB } from "../../utils/helpers";
 import SpecUpgradeModal from "../modals/SpecUpgradeModal";
 import QuickSaleModal from "../modals/QuickSaleModal";
 import PartSaleModal from "../modals/PartSaleModal";
+import { useStock } from "../../context/StockContext";
 
 export default function StockTab({
   isMobile,
-  stock, stockLoading, loadStock, refreshCachedStock,
-  stockFilter, setStockFilter,
-  stockSearch, setStockSearch,
-  stockView, setStockView,
-  showAddStock, setShowAddStock,
-  editingStock, setEditingStock,
-  stockForm, setStockForm,
-  expandedStockId, setExpandedStockId,
-  stockPhotoUploading, setStockPhotoUploading,
-  showImportStock, setShowImportStock,
-  importPreview, setImportPreview,
-  importingStock, setImportingStock,
-  importStockResult, setImportStockResult,
+  customers,
   parts, partsLoading, loadParts,
   showAddPart, setShowAddPart,
   editingPart, setEditingPart,
@@ -36,17 +25,11 @@ export default function StockTab({
   upgradeTarget, setUpgradeTarget,
   showQuickSale, setShowQuickSale,
   quickSalePrefill, setQuickSalePrefill,
-  soldDealMap, setSoldDealMap,
-  customers,
-  saveStock, deleteStockItem, toggleStockStatus,
-  uploadStockPhoto, downloadStockTemplate,
-  handleStockFileSelect, importStockItems,
   savePart, deletePart,
   getMatchingClients,
   openBroadcast,
   handleUpgradeApply,
   loadCustomers, loadTodaySales,
-  stockFileInputRef, importStockFileRef,
   setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
   filteredStock,
   reservedDeals, reservedDealsLoading, loadReservedDeals,
@@ -59,6 +42,27 @@ export default function StockTab({
   editReservationForm, setEditReservationForm,
   showToast,
 }) {
+  const {
+    stock, stockLoading, loadStock, refreshCachedStock,
+    stockFilter, setStockFilter,
+    stockSearch, setStockSearch,
+    stockView, setStockView,
+    showAddStock, setShowAddStock,
+    editingStock, setEditingStock,
+    stockForm, setStockForm,
+    expandedStockId, setExpandedStockId,
+    stockPhotoUploading,
+    showImportStock, setShowImportStock,
+    importPreview, setImportPreview,
+    importingStock,
+    importStockResult, setImportStockResult,
+    soldDealMap, setSoldDealMap,
+    stockFileInputRef, importStockFileRef,
+    saveStock, deleteStockItem, toggleStockStatus,
+    uploadStockPhoto, downloadStockTemplate,
+    handleStockFileSelect, importStockItems,
+  } = useStock();
+
   return (
         <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 32px 40px", display: "flex", flexDirection: "column", gap: 10 }}>
 

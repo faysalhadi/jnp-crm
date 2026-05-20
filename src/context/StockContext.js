@@ -1,16 +1,4 @@
-Read src/App.js fully before making any changes.
-
-This is architecture rewrite Step 2.
-We are introducing React Context for stock state.
-Do NOT change any logic. Only move state and functions.
-The app must work exactly the same after this step.
-
-STEP 2A — Create src/context/StockContext.js
-
-Create this file exactly:
-
-import React, { createContext, useContext, useState, 
-  useCallback, useRef } from "react";
+import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 import { supabase } from "../supabase";
 import * as XLSX from "xlsx";
 import { EMPTY_STOCK } from "../constants";
@@ -79,7 +67,7 @@ export function StockProvider({ children }) {
     };
     if (editingStock) {
       await supabase.from("stock").update(payload).eq("id", editingStock.id);
-      setStock(prev => prev.map(s => 
+      setStock(prev => prev.map(s =>
         s.id === editingStock.id ? { ...s, ...payload } : s
       ));
     } else {
@@ -107,7 +95,7 @@ export function StockProvider({ children }) {
   async function toggleStockStatus(item) {
     const newStatus = item.status === "available" ? "sold" : "available";
     await supabase.from("stock").update({ status: newStatus }).eq("id", item.id);
-    setStock(prev => prev.map(s => 
+    setStock(prev => prev.map(s =>
       s.id === item.id ? { ...s, status: newStatus } : s
     ));
     refreshCachedStock();
@@ -194,9 +182,9 @@ export function StockProvider({ children }) {
         setImportStockResult(null);
       }, 1800);
     } else {
-      setImportStockResult({ 
-        success: false, 
-        message: error?.message || "Import failed" 
+      setImportStockResult({
+        success: false,
+        message: error?.message || "Import failed"
       });
     }
     setImportingStock(false);
@@ -245,153 +233,3 @@ export function useStock() {
   );
   return context;
 }
-
-STEP 2B — Wrap App with StockProvider
-
-In src/index.js update to add StockProvider:
-  import { CustomerProvider } from './context/CustomerContext';
-  import { StockProvider } from './context/StockContext';
-
-  root.render(
-    <CustomerProvider>
-      <StockProvider>
-        <App />
-      </StockProvider>
-    </CustomerProvider>
-  );
-
-STEP 2C — Update App.js to use StockContext
-
-In App.js add import:
-  import { useStock } from "./context/StockContext";
-
-At top of App() function add:
-  const {
-    stock, setStock,
-    stockLoading,
-    cachedStock, setCachedStock,
-    stockFilter, setStockFilter,
-    stockSearch, setStockSearch,
-    stockView, setStockView,
-    showAddStock, setShowAddStock,
-    editingStock, setEditingStock,
-    stockForm, setStockForm,
-    expandedStockId, setExpandedStockId,
-    stockPhotoUploading,
-    showImportStock, setShowImportStock,
-    importPreview, setImportPreview,
-    importingStock,
-    importStockResult, setImportStockResult,
-    soldDealMap, setSoldDealMap,
-    stockFileInputRef,
-    importStockFileRef,
-    loadStock,
-    refreshCachedStock,
-    saveStock,
-    deleteStockItem,
-    toggleStockStatus,
-    uploadStockPhoto,
-    downloadStockTemplate,
-    handleStockFileSelect,
-    importStockItems,
-  } = useStock();
-
-Then DELETE all these from App.js:
-- const [stock, setStock] = useState([]);
-- const [stockLoading, setStockLoading] = useState(false);
-- const [cachedStock, setCachedStock] = useState([]);
-- const [stockFilter, setStockFilter] = useState("available");
-- const [stockSearch, setStockSearch] = useState("");
-- const [stockView, setStockView] = useState("devices");
-- const [showAddStock, setShowAddStock] = useState(false);
-- const [editingStock, setEditingStock] = useState(null);
-- const [stockForm, setStockForm] = useState(EMPTY_STOCK);
-- const [expandedStockId, setExpandedStockId] = useState(null);
-- const [stockPhotoUploading, setStockPhotoUploading] = useState(false);
-- const [showImportStock, setShowImportStock] = useState(false);
-- const [importPreview, setImportPreview] = useState(null);
-- const [importingStock, setImportingStock] = useState(false);
-- const [importStockResult, setImportStockResult] = useState(null);
-- const [soldDealMap, setSoldDealMap] = useState({});
-- const stockFileInputRef = useRef(null);
-- const importStockFileRef = useRef(null);
-- const loadStock = useCallback(...);
-- const refreshCachedStock = useCallback(...);
-- async function saveStock() {...}
-- async function deleteStockItem(id) {...}
-- async function toggleStockStatus(item) {...}
-- async function uploadStockPhoto(file) {...}
-- function downloadStockTemplate() {...}
-- function handleStockFileSelect(file) {...}
-- async function importStockItems() {...}
-
-STEP 2D — Update StockTab to use StockContext directly
-
-In src/components/tabs/StockTab.js:
-  Add: import { useStock } from "../../context/StockContext";
-  Add at top of component: 
-    const { stock, stockLoading, loadStock, ... } = useStock();
-  
-  Remove ALL stock-related props from the destructuring.
-  Get them from useStock() hook instead.
-
-  Keep only these props that come from App.js:
-    isMobile,
-    customers,
-    parts, partsLoading, loadParts,
-    showAddPart, setShowAddPart,
-    editingPart, setEditingPart,
-    partForm, setPartForm,
-    showPartSale, setShowPartSale,
-    partSaleTarget, setPartSaleTarget,
-    partsSold, partsSoldLoading,
-    partsRevMTD, loadPartsRevMTD,
-    showUpgrade, setShowUpgrade,
-    upgradeTarget, setUpgradeTarget,
-    showQuickSale, setShowQuickSale,
-    quickSalePrefill, setQuickSalePrefill,
-    reservedDeals, reservedDealsLoading,
-    loadReservedDeals,
-    expandedReservedDeal, setExpandedReservedDeal,
-    showCompleteReservation, setShowCompleteReservation,
-    completingDeal, setCompletingDeal,
-    completionPaymentMethod, setCompletionPaymentMethod,
-    showEditReservation, setShowEditReservation,
-    editReservationItem, setEditReservationItem,
-    editReservationForm, setEditReservationForm,
-    setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
-    openBroadcast,
-    handleUpgradeApply,
-    loadCustomers, loadTodaySales,
-    showToast,
-    filteredStock,
-
-STEP 2E — Remove stock props from StockTab usage in App.js
-
-Find where StockTab is rendered in App.js.
-Remove all stock-related props since StockTab now 
-gets them from useStock() directly.
-
-Keep only the non-stock props listed in Step 2D.
-
-IMPORTANT RULES:
-- Do not change any logic anywhere
-- Do not rename any functions
-- Keep ALL existing functionality working
-- Test EVERY stock operation after deployment
-
-After changes:
-1. Run npm run build
-2. Fix ALL errors one by one
-3. Only when build is clean:
-   git add -A && git commit -m "architecture step 2: StockContext" 
-   && git push origin main --force
-4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app
-6. Test Stock tab thoroughly:
-   - Do devices show?
-   - Can you add a device?
-   - Can you delete a device?
-   - Does Reserved filter work?
-   - Does Parts toggle work?
-7. Tell me new App.js line count
