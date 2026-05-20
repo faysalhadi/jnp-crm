@@ -10,6 +10,7 @@ import { daysSince, timeAgo } from "../../utils/helpers";
 import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
 import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
+import { useTraders } from "../../context/TradersContext";
 
 export default function ChatDetailView({
   messages, setMessages,
@@ -39,9 +40,6 @@ export default function ChatDetailView({
   supplierReplyLoading, setSupplierReplyLoading,
   copiedSupGmail, setCopiedSupGmail,
   copiedSupWA, setCopiedSupWA,
-  showCheckTraders, setShowCheckTraders,
-  checkTradersResults, setCheckTradersResults,
-  checkTradersLoading, setCheckTradersLoading,
   showLinkStock, setShowLinkStock,
   linkStockDeal, setLinkStockDeal,
   showReservation, setShowReservation,
@@ -55,12 +53,18 @@ export default function ChatDetailView({
   sendDirectReply, generateOpeningMessage,
   confirmSent, markNotSent, copyMsg,
   generateOutreach, generateSupplierReply,
-  checkTradersForDeal,
   buildReceiptText, saveReceiptNumber,
-  traderListings,
   showToast,
 }) {
   const { isMobile, setActiveTab, setShowSideDrawer } = useUI();
+  const {
+    traderListings,
+    showCheckTraders, setShowCheckTraders,
+    checkTradersResults, setCheckTradersResults,
+    checkTradersLoading, setCheckTradersLoading,
+    checkTradersForDeal,
+    setTraderSearch,
+  } = useTraders();
   const {
     activeCustomer,
     activeDeal,

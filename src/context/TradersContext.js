@@ -1,16 +1,4 @@
-Read src/App.js fully before making any changes.
-
-This is architecture rewrite Step 6.
-We are introducing React Context for traders state.
-Do NOT change any logic. Only move state and functions.
-The app must work exactly the same after this step.
-
-STEP 6A — Create src/context/TradersContext.js
-
-Create this file exactly:
-
-import React, { createContext, useContext, 
-  useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "../supabase";
 
 const TradersContext = createContext(null);
@@ -79,19 +67,19 @@ export function TradersProvider({ children, anthropicKey, activeDeal }) {
     }
 
     const skipSenders = ['JNP', 'JNP Laptop Market'];
-    const skipContent = ['end-to-end encrypted', 'added you', 
+    const skipContent = ['end-to-end encrypted', 'added you',
       'created this group', 'omitted', 'sticker', 'document omitted'];
-    const sellSignals = ['wts', 'want to sale', 'want to sell', 
+    const sellSignals = ['wts', 'want to sale', 'want to sell',
       'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
-    const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad', 
-      'elitebook', 'latitude', 'surface', 'macbook', '840', '850', 
+    const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad',
+      'elitebook', 'latitude', 'surface', 'macbook', '840', '850',
       '5420', '7420', '640', '830', '845', '835'];
 
     const relevantLines = mergedLines.filter(line => {
       const lower = line.toLowerCase();
       if (skipContent.some(s => lower.includes(s))) return false;
-      if (skipSenders.some(s => 
-        line.includes('] ' + s + ':') || 
+      if (skipSenders.some(s =>
+        line.includes('] ' + s + ':') ||
         line.includes('] ~' + s + ':'))) return false;
       const hasSellSignal = sellSignals.some(s => lower.includes(s));
       const hasLaptop = laptopBrands.some(b => lower.includes(b));
@@ -99,9 +87,9 @@ export function TradersProvider({ children, anthropicKey, activeDeal }) {
     });
 
     if (relevantLines.length === 0) {
-      setTraderImportResult({ 
-        success: false, 
-        message: 'No laptop listings found.' 
+      setTraderImportResult({
+        success: false,
+        message: 'No laptop listings found.'
       });
       setTraderImportLoading(false);
       return;
@@ -111,8 +99,8 @@ export function TradersProvider({ children, anthropicKey, activeDeal }) {
     const allListings = [];
     const totalChunks = Math.ceil(relevantLines.length / chunkSize);
 
-    const extractionPrompt = (chunkText) => 
-      `Extract laptop listings from this WhatsApp group chat. 
+    const extractionPrompt = (chunkText) =>
+      `Extract laptop listings from this WhatsApp group chat.
 Return ONLY a JSON array, no markdown.
 
 SELLING signals: WTS, Want to Sell, Available, New Shipment
@@ -136,9 +124,9 @@ ${chunkText}`;
         const chunk = relevantLines.slice(
           i * chunkSize, (i + 1) * chunkSize
         );
-        setTraderImportResult({ 
-          success: false, 
-          message: `⏳ Processing chunk ${i + 1} of ${totalChunks}...` 
+        setTraderImportResult({
+          success: false,
+          message: `⏳ Processing chunk ${i + 1} of ${totalChunks}...`
         });
 
         const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -153,9 +141,9 @@ ${chunkText}`;
             model: "claude-sonnet-4-20250514",
             max_tokens: 8000,
             system: "You extract laptop inventory listings from WhatsApp group chats. Return only valid JSON arrays.",
-            messages: [{ 
-              role: "user", 
-              content: extractionPrompt(chunk.join('\n')) 
+            messages: [{
+              role: "user",
+              content: extractionPrompt(chunk.join('\n'))
             }],
           }),
         });
@@ -164,8 +152,8 @@ ${chunkText}`;
         if (data.error) continue;
         const raw = data?.content?.[0]?.text || "[]";
         const jsonMatch = raw.match(/\[[\s\S]*\]/);
-        const clean = jsonMatch 
-          ? jsonMatch[0] 
+        const clean = jsonMatch
+          ? jsonMatch[0]
           : raw.replace(/```json|```/g, "").trim();
         let chunkListings = [];
         try { chunkListings = JSON.parse(clean); } catch {}
@@ -184,20 +172,20 @@ ${chunkText}`;
 
       setTraderImportPreview(deduped);
       if (deduped.length === 0) {
-        setTraderImportResult({ 
-          success: false, 
-          message: "No laptop listings found." 
+        setTraderImportResult({
+          success: false,
+          message: "No laptop listings found."
         });
       } else {
-        setTraderImportResult({ 
-          success: false, 
-          message: `✅ Found ${deduped.length} listings. Confirm to save.` 
+        setTraderImportResult({
+          success: false,
+          message: `✅ Found ${deduped.length} listings. Confirm to save.`
         });
       }
     } catch {
-      setTraderImportResult({ 
-        success: false, 
-        message: "Extraction failed. Check API key." 
+      setTraderImportResult({
+        success: false,
+        message: "Extraction failed. Check API key."
       });
     }
     setTraderImportLoading(false);
@@ -214,16 +202,16 @@ ${chunkText}`;
       .delete()
       .eq("source_group", group)
       .lt("created_at", oneHourAgo);
-    const rows = traderImportPreview.map(l => ({ 
-      ...l, source_group: group, status: "active" 
+    const rows = traderImportPreview.map(l => ({
+      ...l, source_group: group, status: "active"
     }));
     const { error } = await supabase
       .from("trader_inventory").insert(rows);
     if (!error) {
       await loadTraderListings();
-      setTraderImportResult({ 
-        success: true, 
-        count: rows.length 
+      setTraderImportResult({
+        success: true,
+        count: rows.length
       });
       setTimeout(() => {
         setShowImportTrader(false);
@@ -233,9 +221,9 @@ ${chunkText}`;
         setTraderImportResult(null);
       }, 1800);
     } else {
-      setTraderImportResult({ 
-        success: false, 
-        message: error.message 
+      setTraderImportResult({
+        success: false,
+        message: error.message
       });
     }
     setSavingTraderListings(false);
@@ -252,17 +240,17 @@ ${chunkText}`;
         .order("created_at", { ascending: false });
       const brand = activeDeal?.brand || "";
       const results = (data || []).filter(t =>
-        !brand || !t.brand || 
-        t.brand.toLowerCase().includes(brand.toLowerCase()) || 
+        !brand || !t.brand ||
+        t.brand.toLowerCase().includes(brand.toLowerCase()) ||
         brand.toLowerCase().includes((t.brand || "").toLowerCase())
       );
       setCheckTradersResults(results);
     } else {
       const brand = activeDeal?.brand || "";
       setCheckTradersResults(
-        traderListings.filter(t => 
+        traderListings.filter(t =>
           t.type === "selling" && (
-            !brand || !t.brand || 
+            !brand || !t.brand ||
             t.brand.toLowerCase().includes(brand.toLowerCase())
           )
         )
@@ -307,119 +295,3 @@ export function useTraders() {
   );
   return context;
 }
-
-STEP 6B — Wrap App with TradersProvider
-
-TradersProvider needs anthropicKey and activeDeal.
-These must be passed as props to the provider.
-
-In src/index.js we cannot pass these directly since
-they come from App state.
-
-Instead wrap TradersProvider INSIDE App.js 
-not in index.js.
-
-In App.js find the main return statement.
-Wrap the entire return content with TradersProvider:
-
-  import { TradersProvider } from "./context/TradersContext";
-
-  // Inside App() main return, wrap everything:
-  return (
-    <TradersProvider 
-      anthropicKey={anthropicKey} 
-      activeDeal={activeDeal}
-    >
-      ... existing return content ...
-    </TradersProvider>
-  );
-
-STEP 6C — Update App.js to use TradersContext
-
-In App.js add import:
-  import { useTraders } from "./context/TradersContext";
-
-At top of App() function add:
-  const {
-    traderListings, setTraderListings,
-    traderListingsLoading,
-    traderSection, setTraderSection,
-    traderSearch, setTraderSearch,
-    traderFilter, setTraderFilter,
-    showImportTrader, setShowImportTrader,
-    traderGroup, setTraderGroup,
-    traderChatText, setTraderChatText,
-    traderImportLoading, setTraderImportLoading,
-    traderImportPreview, setTraderImportPreview,
-    savingTraderListings, setSavingTraderListings,
-    traderImportResult, setTraderImportResult,
-    showTraderMatches, setShowTraderMatches,
-    showCheckTraders, setShowCheckTraders,
-    checkTradersResults, setCheckTradersResults,
-    checkTradersLoading, setCheckTradersLoading,
-    loadTraderListings,
-    extractTraderListings,
-    saveTraderListings,
-    checkTradersForDeal,
-  } = useTraders();
-
-Then DELETE all these from App.js:
-- All trader related useState declarations
-- loadTraderListings useCallback
-- extractTraderListings function
-- saveTraderListings function  
-- checkTradersForDeal function
-
-STEP 6D — Update TradersTab to use TradersContext directly
-
-In src/components/tabs/TradersTab.js:
-  Add: import { useTraders } from "../../context/TradersContext";
-  Add at top of component:
-    const {
-      traderListings, traderListingsLoading,
-      loadTraderListings,
-      traderSection, setTraderSection,
-      traderSearch, setTraderSearch,
-      traderFilter, setTraderFilter,
-      showImportTrader, setShowImportTrader,
-      traderGroup, setTraderGroup,
-      traderChatText, setTraderChatText,
-      traderImportLoading, setTraderImportLoading,
-      traderImportPreview, setTraderImportPreview,
-      savingTraderListings, setSavingTraderListings,
-      traderImportResult, setTraderImportResult,
-      showTraderMatches, setShowTraderMatches,
-      showCheckTraders, setShowCheckTraders,
-      checkTradersResults, setCheckTradersResults,
-      checkTradersLoading, setCheckTradersLoading,
-      extractTraderListings,
-      saveTraderListings,
-      checkTradersForDeal,
-    } = useTraders();
-
-  Remove ALL trader props from destructuring.
-  Keep only: anthropicKey, stock, customers, activeDeal
-
-STEP 6E — Remove trader props from TradersTab in App.js
-
-Find where TradersTab is rendered in App.js.
-Remove all trader-related props.
-Keep only:
-  anthropicKey={anthropicKey}
-  stock={stock}
-  customers={customers}
-  activeDeal={activeDeal}
-
-After changes:
-1. Run npm run build
-2. Fix ALL errors one by one
-3. Only when build is clean:
-   git add -A && git commit -m "architecture step 6: TradersContext" 
-   && git push origin main --force
-4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app
-6. Test:
-   - Does Traders tab open?
-   - Does import work?
-   - Does Check Traders for Deal work from client chat?
-7. Tell me new App.js line count

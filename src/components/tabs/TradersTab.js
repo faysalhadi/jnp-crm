@@ -1,36 +1,40 @@
-import React from "react";
+import React, { useEffect } from "react";
 import Spinner from "../ui/Spinner";
 import Badge from "../ui/Badge";
 import { timeAgo, daysSince } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
+import { useTraders } from "../../context/TradersContext";
 
 export default function TradersTab({
   anthropicKey,
   stock,
   customers,
-  traderListings,
-  traderListingsLoading,
-  loadTraderListings,
-  traderSection, setTraderSection,
-  traderSearch, setTraderSearch,
-  traderFilter, setTraderFilter,
-  showImportTrader, setShowImportTrader,
-  traderGroup, setTraderGroup,
-  traderChatText, setTraderChatText,
-  traderImportLoading, setTraderImportLoading,
-  traderImportPreview, setTraderImportPreview,
-  savingTraderListings, setSavingTraderListings,
-  traderImportResult, setTraderImportResult,
-  showTraderMatches, setShowTraderMatches,
-  showCheckTraders, setShowCheckTraders,
-  checkTradersResults, setCheckTradersResults,
-  checkTradersLoading, setCheckTradersLoading,
   activeDeal,
-  extractTraderListings,
-  saveTraderListings,
-  checkTradersForDeal,
 }) {
   const { isMobile } = useUI();
+  const {
+    traderListings, traderListingsLoading,
+    loadTraderListings,
+    traderSection, setTraderSection,
+    traderSearch, setTraderSearch,
+    traderFilter, setTraderFilter,
+    showImportTrader, setShowImportTrader,
+    traderGroup, setTraderGroup,
+    traderChatText, setTraderChatText,
+    traderImportLoading, setTraderImportLoading,
+    traderImportPreview, setTraderImportPreview,
+    savingTraderListings, setSavingTraderListings,
+    traderImportResult, setTraderImportResult,
+    showTraderMatches, setShowTraderMatches,
+    showCheckTraders, setShowCheckTraders,
+    checkTradersResults, setCheckTradersResults,
+    checkTradersLoading, setCheckTradersLoading,
+    extractTraderListings,
+    saveTraderListings,
+    checkTradersForDeal,
+  } = useTraders();
+
+  useEffect(() => { loadTraderListings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
