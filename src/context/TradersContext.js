@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "../supabase";
+import { useCustomers } from "./CustomerContext";
 
 const TradersContext = createContext(null);
 
@@ -15,7 +16,8 @@ function cleanText(text) {
   return out;
 }
 
-export function TradersProvider({ children, anthropicKey, activeDeal }) {
+export function TradersProvider({ children, anthropicKey }) {
+  const { activeDeal } = useCustomers();
   const [traderListings, setTraderListings] = useState([]);
   const [traderListingsLoading, setTraderListingsLoading] = useState(false);
   const [traderSection, setTraderSection] = useState("inventory");

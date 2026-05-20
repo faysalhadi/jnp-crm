@@ -28,7 +28,6 @@ import { useStock } from "./context/StockContext";
 import { useUI } from "./context/UIContext";
 import { useSales } from "./context/SalesContext";
 import { useParts } from "./context/PartsContext";
-import { TradersProvider } from "./context/TradersContext";
 
 import { saveImportedMessages } from "./utils/whatsapp";
 import Badge from "./components/ui/Badge";
@@ -1598,7 +1597,6 @@ For any issues please contact us on WhatsApp.
   // detail view
   if (view === "detail" && activeCustomer) {
     return (
-      <TradersProvider anthropicKey={anthropicKey} activeDeal={activeDeal}>
       <ChatDetailView
         messages={messages}
         setMessages={setMessages}
@@ -1687,13 +1685,11 @@ For any issues please contact us on WhatsApp.
         setStockSearch={setStockSearch}
         setStockFilter={setStockFilter}
       />
-      </TradersProvider>
     );
   }
 
   // list view
   return (
-    <TradersProvider anthropicKey={anthropicKey} activeDeal={activeDeal}>
     <div style={isMobile
       ? { minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }
       : { minHeight: "100vh", background: "#F8FAFC", display: "flex" }}>
@@ -2541,6 +2537,5 @@ For any issues please contact us on WhatsApp.
       )}
       </div>{/* end content area */}
     </div>
-    </TradersProvider>
   );
 }
