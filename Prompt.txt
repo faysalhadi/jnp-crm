@@ -1,235 +1,266 @@
 Read src/App.js fully before making any changes.
 
-This is architecture rewrite Step 7.
-We are introducing React Context for reservations state.
-Do NOT change any logic. Only move state and functions.
-The app must work exactly the same after this step.
+This is architecture rewrite Step 8.
+We are extracting business logic functions into 
+dedicated service files.
+Do NOT change any logic. Only move functions.
 
-STEP 7A — Create src/context/ReservationsContext.js
+STEP 8A — Create src/services/dealService.js
 
-Create this file exactly:
+Create this file:
 
-import React, { createContext, useContext, 
-  useState, useCallback } from "react";
 import { supabase } from "../supabase";
 
-const ReservationsContext = createContext(null);
+export async function moveStage(dealId, newStage, customerId) {
+  await supabase.from("deals")
+    .update({ stage: newStage })
+    .eq("id", dealId);
+  await supabase.from("customers")
+    .update({ last_active: new Date().toISOString() })
+    .eq("id", customerId);
+}
 
-export function ReservationsProvider({ children }) {
-  const [reservedDeals, setReservedDeals] = useState([]);
-  const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
-  const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
-  const [showCompleteReservation, setShowCompleteReservation] = useState(false);
-  const [completingDeal, setCompletingDeal] = useState(null);
-  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
-  const [showEditReservation, setShowEditReservation] = useState(false);
-  const [editReservationItem, setEditReservationItem] = useState(null);
-  const [editReservationForm, setEditReservationForm] = useState({
-    agreedPrice: "", 
-    pickupDate: "", 
-    depositAmount: "", 
-    balanceDue: "", 
-    notes: "",
+export async function closeDeal(dealId, value, paymentMethod) {
+  await supabase.from("deals").update({
+    stage: "closed",
+    closed_at: new Date().toISOString(),
+    value: value || null,
+    payment_method: paymentMethod || "Cash",
+    payment_status: "received",
+  }).eq("id", dealId);
+}
+
+export async function buildReceiptText(deal, customer) {
+  const num = `LFL-${new Date().getFullYear()}-${
+    Math.floor(1000 + Math.random() * 9000)}`;
+  const date = new Date().toLocaleDateString("en-GB", {
+    day: "numeric", month: "long", year: "numeric"
   });
-  const [showLinkStock, setShowLinkStock] = useState(false);
-  const [linkStockDeal, setLinkStockDeal] = useState(null);
-  const [showReservation, setShowReservation] = useState(false);
+  return `━━━━━━━━━━━━━━━━━━━━━━
+    LAPTOP FOR LESS
+    UAE | laptopforless.ae
+━━━━━━━━━━━━━━━━━━━━━━
+RECEIPT #: ${num}
+Date: ${date}
 
-  const loadReservedDeals = useCallback(async () => {
-    setReservedDealsLoading(true);
-    const { data } = await supabase
-      .from("deals")
-      .select("*, customers(id, name, number), deal_items(*)")
-      .eq("stage", "confirmed_pending_pickup")
-      .order("created_at", { ascending: false });
-    setReservedDeals(data || []);
-    setReservedDealsLoading(false);
-  }, []);
+SOLD TO:
+${customer?.name || "Customer"}
+${customer?.number ? `WhatsApp: ${customer.number}` : ""}
 
-  return (
-    <ReservationsContext.Provider value={{
-      reservedDeals, setReservedDeals,
-      reservedDealsLoading,
-      expandedReservedDeal, setExpandedReservedDeal,
-      showCompleteReservation, setShowCompleteReservation,
-      completingDeal, setCompletingDeal,
-      completionPaymentMethod, setCompletionPaymentMethod,
-      showEditReservation, setShowEditReservation,
-      editReservationItem, setEditReservationItem,
-      editReservationForm, setEditReservationForm,
-      showLinkStock, setShowLinkStock,
-      linkStockDeal, setLinkStockDeal,
-      showReservation, setShowReservation,
-      loadReservedDeals,
-    }}>
-      {children}
-    </ReservationsContext.Provider>
-  );
+DEVICE:
+${[deal?.brand, deal?.model].filter(Boolean).join(" ") || "Device"}
+${deal?.ram ? `RAM: ${deal.ram}` : ""}
+${deal?.storage ? `Storage: ${deal.storage}` : ""}
+
+PAYMENT:
+Amount: AED ${Number(deal?.value || 0).toLocaleString()}
+Method: ${deal?.payment_method || "Cash"}
+
+Thank you for your purchase! 🙏
+━━━━━━━━━━━━━━━━━━━━━━`;
 }
 
-export function useReservations() {
-  const context = useContext(ReservationsContext);
-  if (!context) throw new Error(
-    "useReservations must be used within ReservationsProvider"
-  );
-  return context;
+export async function saveReceiptNumber(dealId, receiptNum) {
+  await supabase.from("deals")
+    .update({ serial_number: receiptNum })
+    .eq("id", dealId);
 }
 
-STEP 7B — Add ReservationsProvider to index.js
+STEP 8B — Create src/services/messageService.js
 
-In src/index.js update:
-  import { ReservationsProvider } from './context/ReservationsContext';
+Create this file:
 
-  root.render(
-    <UIProvider>
-      <SalesProvider>
-        <PartsProvider>
-          <CustomerProvider>
-            <TradersProvider anthropicKey={
-              localStorage.getItem("jnp_anthropic_key") || ""
-            }>
-              <ReservationsProvider>
-                <StockProvider>
-                  <App />
-                </StockProvider>
-              </ReservationsProvider>
-            </TradersProvider>
-          </CustomerProvider>
-        </PartsProvider>
-      </SalesProvider>
-    </UIProvider>
-  );
+import { supabase } from "../supabase";
+import { callClaude, buildSystemPromptFromCache } 
+  from "../utils/claude";
 
-STEP 7C — Update App.js to use ReservationsContext
+export async function loadMessages(dealId) {
+  if (!dealId) return [];
+  const { data } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("deal_id", dealId)
+    .order("ts", { ascending: true });
+  return data || [];
+}
 
-In App.js add import:
-  import { useReservations } from "./context/ReservationsContext";
+export async function saveMessage(dealId, role, content, sent) {
+  const { data } = await supabase
+    .from("messages")
+    .insert({
+      deal_id: dealId,
+      role,
+      content,
+      sent: sent || null,
+      ts: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  return data;
+}
 
-At top of App() function add:
-  const {
-    reservedDeals, setReservedDeals,
-    reservedDealsLoading,
-    expandedReservedDeal, setExpandedReservedDeal,
-    showCompleteReservation, setShowCompleteReservation,
-    completingDeal, setCompletingDeal,
-    completionPaymentMethod, setCompletionPaymentMethod,
-    showEditReservation, setShowEditReservation,
-    editReservationItem, setEditReservationItem,
-    editReservationForm, setEditReservationForm,
-    showLinkStock, setShowLinkStock,
-    linkStockDeal, setLinkStockDeal,
-    showReservation, setShowReservation,
-    loadReservedDeals,
-  } = useReservations();
+export async function generateReply(
+  messages, cachedStock, anthropicKey, cType
+) {
+  const history = messages.map(m => ({
+    role: m.role === "customer" ? "user" : "assistant",
+    content: m.sent && m.sent !== "NOT_SENT" 
+      ? m.sent : m.content,
+  }));
+  const system = buildSystemPromptFromCache(cachedStock);
+  const raw = await callClaude(anthropicKey, history, system);
+  const clean = raw.replace(/```json|```/g, "").trim();
+  try {
+    const parsed = JSON.parse(clean);
+    return parsed.reply || raw;
+  } catch {
+    return raw;
+  }
+}
 
-Then DELETE these from App.js:
-- const [reservedDeals, setReservedDeals] = useState([]);
-- const [reservedDealsLoading, setReservedDealsLoading] = useState(false);
-- const [expandedReservedDeal, setExpandedReservedDeal] = useState(null);
-- const [showCompleteReservation, setShowCompleteReservation] = useState(false);
-- const [completingDeal, setCompletingDeal] = useState(null);
-- const [completionPaymentMethod, setCompletionPaymentMethod] = useState("Cash");
-- const [showEditReservation, setShowEditReservation] = useState(false);
-- const [editReservationItem, setEditReservationItem] = useState(null);
-- const [editReservationForm, setEditReservationForm] = useState({...});
-- const [showLinkStock, setShowLinkStock] = useState(false);
-- const [linkStockDeal, setLinkStockDeal] = useState(null);
-- const [showReservation, setShowReservation] = useState(false);
-- const loadReservedDeals = useCallback(...);
+STEP 8C — Create src/services/broadcastService.js
 
-STEP 7D — Update StockTab to use ReservationsContext
+Create this file:
 
-In StockTab.js:
-  Add: import { useReservations } from 
-    "../../context/ReservationsContext";
-  Add at top of component:
-    const {
-      reservedDeals, reservedDealsLoading,
-      loadReservedDeals,
-      expandedReservedDeal, setExpandedReservedDeal,
-      showCompleteReservation, setShowCompleteReservation,
-      completingDeal, setCompletingDeal,
-      completionPaymentMethod, setCompletionPaymentMethod,
-      showEditReservation, setShowEditReservation,
-      editReservationItem, setEditReservationItem,
-      editReservationForm, setEditReservationForm,
-    } = useReservations();
+import { supabase } from "../supabase";
+import { callClaude } from "../utils/claude";
 
-  Remove ALL reservation props from destructuring.
+export function getMatchingClients(item, customers) {
+  if (!item) return [];
+  return customers.filter(c => {
+    if (c.contact_type !== "client") return false;
+    const deals = c.deals || [];
+    return deals.some(d => {
+      if (d.stage === "closed" || d.stage === "lost") 
+        return false;
+      const brandMatch = !item.brand || !d.brand ||
+        d.brand.toLowerCase() === item.brand.toLowerCase();
+      const budgetMatch = !d.budget || !item.max_price ||
+        Number(d.budget) >= Number(item.max_price) * 0.8;
+      return brandMatch && budgetMatch;
+    });
+  });
+}
 
-STEP 7E — Update ChatDetailView to use ReservationsContext
+export async function generateBroadcastMessages(
+  item, clients, anthropicKey
+) {
+  const messages = {};
+  for (const client of clients) {
+    const deal = (client.deals || []).find(d => 
+      d.stage !== "closed" && d.stage !== "lost"
+    );
+    const prompt = `Generate a short friendly WhatsApp message 
+to ${client.name} about this laptop:
+${item.brand} ${item.model} - ${item.ram} RAM, 
+${item.ssd} SSD, ${item.condition}
+Price: AED ${item.max_price}
+${deal?.budget ? `Their budget: AED ${deal.budget}` : ""}
+${deal?.brand ? `They want: ${deal.brand}` : ""}
 
-In ChatDetailView.js:
-  Add: import { useReservations } from 
-    "../../context/ReservationsContext";
-  Add at top of component:
-    const {
-      showLinkStock, setShowLinkStock,
-      linkStockDeal, setLinkStockDeal,
-      showReservation, setShowReservation,
-    } = useReservations();
+Keep it under 3 sentences. Be natural and friendly.
+Return only the message text.`;
+    
+    try {
+      const res = await fetch(
+        "https://api.anthropic.com/v1/messages",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 200,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        }
+      );
+      const data = await res.json();
+      messages[client.id] = data?.content?.[0]?.text || 
+        `Hi ${client.name}! I have a ${item.brand} ${item.model} available that matches what you're looking for. Interested?`;
+    } catch {
+      messages[client.id] = 
+        `Hi ${client.name}! I have a ${item.brand} ${item.model} available. Interested?`;
+    }
+  }
+  return messages;
+}
 
-  Remove these from props destructuring:
-    showLinkStock, setShowLinkStock,
-    linkStockDeal, setLinkStockDeal,
-    showReservation, setShowReservation,
+STEP 8D — Update App.js to import from services
 
-STEP 7F — Remove reservation props from App.js
+In App.js add these imports:
+  import { moveStage, closeDeal, buildReceiptText, 
+    saveReceiptNumber } from "./services/dealService";
+  import { loadMessages, saveMessage, generateReply } 
+    from "./services/messageService";
+  import { getMatchingClients, generateBroadcastMessages } 
+    from "./services/broadcastService";
 
-Find where StockTab is rendered in App.js.
-Remove these props:
-  reservedDeals={reservedDeals}
-  reservedDealsLoading={reservedDealsLoading}
-  loadReservedDeals={loadReservedDeals}
-  expandedReservedDeal={expandedReservedDeal}
-  setExpandedReservedDeal={setExpandedReservedDeal}
-  showCompleteReservation={showCompleteReservation}
-  setShowCompleteReservation={setShowCompleteReservation}
-  completingDeal={completingDeal}
-  setCompletingDeal={setCompletingDeal}
-  completionPaymentMethod={completionPaymentMethod}
-  setCompletionPaymentMethod={setCompletionPaymentMethod}
-  showEditReservation={showEditReservation}
-  setShowEditReservation={setShowEditReservation}
-  editReservationItem={editReservationItem}
-  setEditReservationItem={setEditReservationItem}
-  editReservationForm={editReservationForm}
-  setEditReservationForm={setEditReservationForm}
+Then find and DELETE these functions from App.js 
+since they are now in service files:
+- moveStage function
+- closeDeal function (if it exists separately)
+- buildReceiptText function
+- saveReceiptNumber function
+- getMatchingClients function
+- generateBroadcastMessages function
 
-Find where ChatDetailView is rendered in App.js.
-Remove these props:
-  showLinkStock={showLinkStock}
-  setShowLinkStock={setShowLinkStock}
-  linkStockDeal={linkStockDeal}
-  setLinkStockDeal={setLinkStockDeal}
-  showReservation={showReservation}
-  setShowReservation={setShowReservation}
+NOTE: Some of these functions may be defined inline
+inside other functions in App.js. Find all occurrences
+and replace with the imported version.
 
-Also find handleConfirmSale and handleReserveDevice 
-functions in App.js. They use setShowLinkStock, 
-setLinkStockDeal, setShowReservation, setLinkStockDeal.
-These now come from useReservations() so they should
-work correctly since App.js imports them from context.
+Also find loadMessages, saveMessage calls in App.js
+and make sure they use the imported versions.
+
+STEP 8E — Update ChatDetailView to import from services
+
+In ChatDetailView.js add:
+  import { buildReceiptText, saveReceiptNumber } 
+    from "../../services/dealService";
+  import { generateReply } 
+    from "../../services/messageService";
+
+Remove these from props destructuring if they exist:
+  buildReceiptText,
+  saveReceiptNumber,
+
+Remove from ChatDetailView usage in App.js:
+  buildReceiptText={buildReceiptText}
+  saveReceiptNumber={saveReceiptNumber}
+
+STEP 8F — Update StockTab to import from services
+
+In StockTab.js add:
+  import { getMatchingClients } 
+    from "../../services/broadcastService";
+
+Remove getMatchingClients from props destructuring.
+Remove getMatchingClients={getMatchingClients} 
+from StockTab usage in App.js.
 
 IMPORTANT RULES:
 - Do not change any logic
-- Make sure handleConfirmSale and handleReserveDevice
-  still work correctly after this change
-- The setSaleReceiptData and setReceiptEditName calls
-  in StockTab complete reservation flow should still work
+- Make sure all function signatures match exactly
+- If a function uses state that is in a context,
+  pass that state as a parameter to the function
+- Test every feature that uses these functions
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean:
-   git add -A && git commit -m "architecture step 7: ReservationsContext" 
+   git add -A && git commit -m "architecture step 8: extract service files" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
 6. Test:
-   - Reserve a device from client chat
-   - Does it show in Stock Reserved tab?
-   - Does Edit reservation work?
-   - Does Release reservation work?
-   - Does Confirm Sale button work?
+   - Send a message in client chat
+   - Change deal stage
+   - Generate AI reply
+   - Confirm sale
+   - Check broadcast from stock item
 7. Tell me new App.js line count

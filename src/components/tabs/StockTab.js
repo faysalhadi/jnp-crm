@@ -12,6 +12,7 @@ import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
 import { useParts } from "../../context/PartsContext";
 import { useReservations } from "../../context/ReservationsContext";
+import { getMatchingClients } from "../../services/broadcastService";
 
 export default function StockTab({
   customers,
@@ -19,7 +20,6 @@ export default function StockTab({
   upgradeTarget, setUpgradeTarget,
   showQuickSale, setShowQuickSale,
   quickSalePrefill, setQuickSalePrefill,
-  getMatchingClients,
   openBroadcast,
   handleUpgradeApply,
   loadCustomers, loadTodaySales,
@@ -567,7 +567,7 @@ export default function StockTab({
           {/* Stock cards — hidden when parts_sold filter is active */}
           {stockFilter !== "parts_sold" && stockFilter !== "reserved" && filteredStock.map(item => {
             const isExpanded = expandedStockId === item.id;
-            const matches    = getMatchingClients(item);
+            const matches    = getMatchingClients(item, customers);
             const isAvail    = item.status === "available";
             const isReserved = item.status === "reserved";
             const reservedFor = isReserved && item.reserved_for_customer_id

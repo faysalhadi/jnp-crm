@@ -29,6 +29,9 @@ import { useUI } from "./context/UIContext";
 import { useSales } from "./context/SalesContext";
 import { useParts } from "./context/PartsContext";
 import { useReservations } from "./context/ReservationsContext";
+import { moveStage as moveStageService, buildReceiptText as buildReceiptTextService, saveReceiptNumber as saveReceiptNumberService } from "./services/dealService";
+import { loadMessages as loadMessagesService, saveMessage as saveMessageService, generateReply as generateReplyService } from "./services/messageService";
+import { getMatchingClients as getMatchingClientsService } from "./services/broadcastService";
 
 import { saveImportedMessages } from "./utils/whatsapp";
 import Badge from "./components/ui/Badge";
@@ -787,16 +790,7 @@ Return JSON with only a "reply" field containing the message.`;
   }, [stockFilter, stock]);
 
 
-  function getMatchingClients(item) {
-    return customers.filter(c =>
-      (c.deals || []).some(d => {
-        if (d.stage === "closed" || d.stage === "lost") return false;
-        const brandMatch = !item.brand || !d.brand || d.brand.toLowerCase() === item.brand.toLowerCase();
-        const budgetOk = !item.min_price || !d.budget || Number(d.budget) >= Number(item.min_price);
-        return brandMatch && budgetOk;
-      })
-    );
-  }
+  const getMatchingClients = (item) => getMatchingClientsService(item, customers);
 
 
 
@@ -1665,8 +1659,6 @@ For any issues please contact us on WhatsApp.
         copyMsg={copyMsg}
         generateOutreach={generateOutreach}
         generateSupplierReply={generateSupplierReply}
-        buildReceiptText={buildReceiptText}
-        saveReceiptNumber={saveReceiptNumber}
         showToast={showToast}
         setStockSearch={setStockSearch}
         setStockFilter={setStockFilter}
@@ -1829,7 +1821,6 @@ For any issues please contact us on WhatsApp.
           setShowQuickSale={setShowQuickSale}
           quickSalePrefill={quickSalePrefill}
           setQuickSalePrefill={setQuickSalePrefill}
-          getMatchingClients={getMatchingClients}
           openBroadcast={openBroadcast}
           handleUpgradeApply={handleUpgradeApply}
           loadCustomers={loadCustomers}

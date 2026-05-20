@@ -12,6 +12,8 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
 import { useReservations } from "../../context/ReservationsContext";
+import { buildReceiptText, saveReceiptNumber } from "../../services/dealService";
+import { generateReply } from "../../services/messageService";
 
 export default function ChatDetailView({
   messages, setMessages,
@@ -51,7 +53,6 @@ export default function ChatDetailView({
   sendDirectReply, generateOpeningMessage,
   confirmSent, markNotSent, copyMsg,
   generateOutreach, generateSupplierReply,
-  buildReceiptText, saveReceiptNumber,
   showToast,
 }) {
   const { isMobile, setActiveTab, setShowSideDrawer } = useUI();
