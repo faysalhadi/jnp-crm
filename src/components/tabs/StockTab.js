@@ -10,22 +10,14 @@ import QuickSaleModal from "../modals/QuickSaleModal";
 import PartSaleModal from "../modals/PartSaleModal";
 import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
+import { useParts } from "../../context/PartsContext";
 
 export default function StockTab({
   customers,
-  parts, partsLoading, loadParts,
-  showAddPart, setShowAddPart,
-  editingPart, setEditingPart,
-  partForm, setPartForm,
-  showPartSale, setShowPartSale,
-  partSaleTarget, setPartSaleTarget,
-  partsSold, partsSoldLoading,
-  partsRevMTD, loadPartsRevMTD,
   showUpgrade, setShowUpgrade,
   upgradeTarget, setUpgradeTarget,
   showQuickSale, setShowQuickSale,
   quickSalePrefill, setQuickSalePrefill,
-  savePart, deletePart,
   getMatchingClients,
   openBroadcast,
   handleUpgradeApply,
@@ -42,6 +34,17 @@ export default function StockTab({
   editReservationForm, setEditReservationForm,
 }) {
   const { isMobile, showToast } = useUI();
+  const {
+    parts, partsLoading, loadParts,
+    showAddPart, setShowAddPart,
+    editingPart, setEditingPart,
+    partForm, setPartForm,
+    showPartSale, setShowPartSale,
+    partSaleTarget, setPartSaleTarget,
+    partsSold, partsSoldLoading,
+    partsRevMTD, loadPartsRevMTD,
+    savePart, deletePart,
+  } = useParts();
   const {
     stock, stockLoading, loadStock, refreshCachedStock,
     stockFilter, setStockFilter,

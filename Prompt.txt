@@ -1,383 +1,253 @@
 Read src/App.js fully before making any changes.
 
-This is architecture rewrite Step 4.
-We are introducing React Context for sales state.
+This is architecture rewrite Step 5.
+We are introducing React Context for parts state.
 Do NOT change any logic. Only move state and functions.
 The app must work exactly the same after this step.
 
-STEP 4A — Create src/context/SalesContext.js
+STEP 5A — Create src/context/PartsContext.js
 
 Create this file exactly:
 
 import React, { createContext, useContext, 
   useState, useCallback } from "react";
 import { supabase } from "../supabase";
+import { EMPTY_PART } from "../constants";
 
-const SalesContext = createContext(null);
+const PartsContext = createContext(null);
 
-export function SalesProvider({ children }) {
-  const [todaySales, setTodaySales] = useState({ 
-    total: 0, whatsapp: 0, walkin: 0 
-  });
-  const [salesHistory, setSalesHistory] = useState([]);
-  const [salesHistoryLoading, setSalesHistoryLoading] = useState(false);
-  const [salesFilter, setSalesFilter] = useState("month");
-  const [showSaleReceipt, setShowSaleReceipt] = useState(false);
-  const [saleReceiptData, setSaleReceiptData] = useState(null);
-  const [receiptEditName, setReceiptEditName] = useState("");
-  const [openComplaints, setOpenComplaints] = useState([]);
+export function PartsProvider({ children }) {
+  const [parts, setParts] = useState([]);
+  const [partsLoading, setPartsLoading] = useState(false);
+  const [showAddPart, setShowAddPart] = useState(false);
+  const [editingPart, setEditingPart] = useState(null);
+  const [partForm, setPartForm] = useState(EMPTY_PART);
+  const [showPartSale, setShowPartSale] = useState(false);
+  const [partSaleTarget, setPartSaleTarget] = useState(null);
+  const [partsSold, setPartsSold] = useState([]);
+  const [partsSoldLoading, setPartsSoldLoading] = useState(false);
+  const [partsRevMTD, setPartsRevMTD] = useState(0);
 
-  const loadTodaySales = useCallback(async () => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+  async function loadParts() {
+    setPartsLoading(true);
     const { data } = await supabase
-      .from("deals")
-      .select("sale_type, closed_at")
-      .eq("stage", "closed")
-      .gte("closed_at", todayStart.toISOString());
-    const deals = data || [];
-    setTodaySales({
-      total: deals.length,
-      whatsapp: deals.filter(d => 
-        !d.sale_type || d.sale_type === "whatsapp"
-      ).length,
-      walkin: deals.filter(d => d.sale_type === "walkin").length,
-    });
-  }, []);
-
-  const loadSalesHistory = useCallback(async () => {
-    setSalesHistoryLoading(true);
-    const now = new Date();
-    let fromDate = null;
-    if (salesFilter === "today") {
-      fromDate = new Date();
-      fromDate.setHours(0,0,0,0);
-    } else if (salesFilter === "week") {
-      fromDate = new Date(now - 7 * 86400000);
-    } else if (salesFilter === "month") {
-      fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    }
-
-    const dealQuery = supabase
-      .from("deals")
-      .select("*, customers(name, number), deal_items(*)")
-      .eq("stage", "closed")
-      .order("closed_at", { ascending: false });
-    if (fromDate) dealQuery.gte("closed_at", fromDate.toISOString());
-    const { data: dealSales } = await dealQuery;
-
-    const walkinQuery = supabase
-      .from("deals")
+      .from("stock_parts")
       .select("*")
-      .eq("stage", "closed")
-      .eq("sale_type", "walkin")
-      .order("closed_at", { ascending: false });
-    if (fromDate) walkinQuery.gte("closed_at", fromDate.toISOString());
-    const { data: walkinSales } = await walkinQuery;
-
-    const partsQuery = supabase
-      .from("parts_sales")
-      .select("*")
-      .order("sold_at", { ascending: false });
-    if (fromDate) partsQuery.gte("sold_at", fromDate.toISOString());
-    const { data: partsSalesData } = await partsQuery;
-
-    const stockIds = (dealSales || [])
-      .map(d => d.stock_item_id)
-      .filter(Boolean);
-    let stockMap = {};
-    if (stockIds.length) {
-      const { data: stockItems } = await supabase
-        .from("stock")
-        .select("id, brand, model, processor, ram, ssd, condition, serial_number")
-        .in("id", stockIds);
-      (stockItems || []).forEach(s => { stockMap[s.id] = s; });
-    }
-
-    const combined = [];
-
-    (dealSales || []).forEach(d => {
-      const stock = stockMap[d.stock_item_id] || {};
-      const customerName = d.customers?.name || 
-        d.walk_in_name || "Walk-in Customer";
-      combined.push({
-        id: d.id,
-        type: "device",
-        date: d.closed_at,
-        customerName,
-        customerNumber: d.customers?.number || null,
-        device: [stock.brand, stock.model]
-          .filter(Boolean).join(" ") || "Device",
-        specs: [stock.ram, stock.ssd, stock.condition]
-          .filter(Boolean).join(" · "),
-        serialNumber: stock.serial_number || null,
-        price: d.value || 0,
-        paymentMethod: d.payment_method || "Cash",
-        depositAmount: d.deposit_amount || 0,
-        balanceDue: d.balance_due || 0,
-        brand: stock.brand,
-        model: stock.model,
-        processor: stock.processor,
-        ram: stock.ram,
-        ssd: stock.ssd,
-        condition: stock.condition,
-        items: (d.deal_items || []).map(i => ({
-          label: i.item_type === "device"
-            ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
-            : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}
-               ${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
-          price: Number(i.agreed_price || 0),
-        })),
-      });
-    });
-
-    (walkinSales || []).forEach(d => {
-      if (d.stock_item_id) return;
-      combined.push({
-        id: d.id,
-        type: "walkin",
-        date: d.closed_at,
-        customerName: d.walk_in_name || "Walk-in Customer",
-        customerNumber: d.walk_in_number || null,
-        device: [d.brand, d.model].filter(Boolean).join(" ") || "Device",
-        specs: [d.ram, d.storage, d.condition].filter(Boolean).join(" · "),
-        serialNumber: null,
-        price: d.value || 0,
-        paymentMethod: d.payment_method || "Cash",
-        depositAmount: 0,
-        balanceDue: 0,
-        brand: d.brand,
-        model: d.model,
-        items: [],
-      });
-    });
-
-    (partsSalesData || []).forEach(p => {
-      combined.push({
-        id: p.id,
-        type: "part",
-        date: p.sold_at,
-        customerName: p.customer_name || "Walk-in Customer",
-        customerNumber: null,
-        device: [p.category, p.specs].filter(Boolean).join(" — "),
-        specs: p.compatible_with || "",
-        serialNumber: null,
-        price: p.total_revenue || 0,
-        paymentMethod: p.payment_method || "Cash",
-        depositAmount: 0,
-        balanceDue: 0,
-        quantity: p.quantity_sold || 1,
-        items: [],
-      });
-    });
-
-    combined.sort((a, b) => new Date(b.date) - new Date(a.date));
-    setSalesHistory(combined);
-    setSalesHistoryLoading(false);
-  }, [salesFilter]);
-
-  function buildSaleReceiptText(sale, nameOverride) {
-    const num = `LFL-${new Date().getFullYear()}-${
-      Math.floor(1000 + Math.random() * 9000)}`;
-    const date = new Date(sale.date).toLocaleDateString("en-GB", { 
-      day: "numeric", month: "long", year: "numeric" 
-    });
-    const customerName = nameOverride || sale.customerName || "Customer";
-    return `━━━━━━━━━━━━━━━━━━━━━━
-      LAPTOP FOR LESS
-      UAE | laptopforless.ae
-━━━━━━━━━━━━━━━━━━━━━━
-RECEIPT #: ${num}
-Date: ${date}
-
-SOLD TO:
-Name: ${customerName}${sale.customerNumber ? 
-  `\nContact: ${sale.customerNumber}` : ""}
-
-${sale.items && sale.items.length > 0
-  ? `ITEMS:\n${sale.items.map(i =>
-      `${i.label}${' '.repeat(Math.max(1, 30 - i.label.length))}
-       AED ${Number(i.price).toLocaleString()}`
-    ).join('\n')}`
-  : sale.type === "part"
-    ? `PART DETAILS:\nItem: ${sale.device}
-       ${sale.specs ? `\nCompatible With: ${sale.specs}` : ""}
-       \nQuantity: ${sale.quantity || 1}`
-    : `DEVICE DETAILS:\n${sale.device}
-       ${sale.specs ? `\n${sale.specs}` : ""}
-       ${sale.serialNumber ? `\nSerial #: ${sale.serialNumber}` : ""}`
-}
-
-PAYMENT:
-${sale.depositAmount > 0
-  ? `Total: AED ${Number(sale.price).toLocaleString()}
-Deposit Paid: AED ${Number(sale.depositAmount).toLocaleString()}
-Balance Received: AED ${Number(
-  sale.price - sale.depositAmount).toLocaleString()}`
-  : `Amount: AED ${Number(sale.price).toLocaleString()}`}
-Method: ${sale.paymentMethod}
-
-Thank you for your purchase! 🙏
-For any issues contact us on WhatsApp.
-━━━━━━━━━━━━━━━━━━━━━━`;
+      .order("created_at", { ascending: false });
+    setParts(data || []);
+    setPartsLoading(false);
   }
 
-  const loadOpenComplaints = useCallback(async () => {
+  async function savePart() {
+    const payload = {
+      category: partForm.category,
+      compatible_with: partForm.compatible_with.trim() || null,
+      specs: partForm.specs.trim() || null,
+      condition: partForm.condition,
+      quantity: parseInt(partForm.quantity) || 1,
+      cost_price: partForm.cost_price 
+        ? parseFloat(partForm.cost_price) : null,
+      sell_price: partForm.sell_price 
+        ? parseFloat(partForm.sell_price) : null,
+      source: partForm.source.trim() || null,
+      notes: partForm.notes.trim() || null,
+      status: "available",
+    };
+    if (editingPart) {
+      await supabase.from("stock_parts")
+        .update(payload).eq("id", editingPart.id);
+    } else {
+      await supabase.from("stock_parts").insert(payload);
+    }
+    await loadParts();
+    setShowAddPart(false);
+    setEditingPart(null);
+    setPartForm(EMPTY_PART);
+  }
+
+  async function deletePart(id) {
+    await supabase.from("stock_parts").delete().eq("id", id);
+    setParts(prev => prev.filter(p => p.id !== id));
+  }
+
+  const loadPartsRevMTD = useCallback(async () => {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0,0,0,0);
     const { data } = await supabase
-      .from("complaints")
-      .select("*, customers(name, number)")
-      .neq("status", "resolved")
-      .order("created_at", { ascending: false });
-    setOpenComplaints(data || []);
+      .from("deals")
+      .select("value")
+      .eq("sale_type", "parts")
+      .eq("stage", "closed")
+      .gte("closed_at", monthStart.toISOString());
+    setPartsRevMTD(
+      (data || []).reduce((s, d) => s + (Number(d.value) || 0), 0)
+    );
   }, []);
 
   return (
-    <SalesContext.Provider value={{
-      todaySales, setTodaySales,
-      salesHistory,
-      salesHistoryLoading,
-      salesFilter, setSalesFilter,
-      showSaleReceipt, setShowSaleReceipt,
-      saleReceiptData, setSaleReceiptData,
-      receiptEditName, setReceiptEditName,
-      openComplaints, setOpenComplaints,
-      loadTodaySales,
-      loadSalesHistory,
-      buildSaleReceiptText,
-      loadOpenComplaints,
+    <PartsContext.Provider value={{
+      parts, setParts,
+      partsLoading,
+      showAddPart, setShowAddPart,
+      editingPart, setEditingPart,
+      partForm, setPartForm,
+      showPartSale, setShowPartSale,
+      partSaleTarget, setPartSaleTarget,
+      partsSold, setPartsSold,
+      partsSoldLoading, setPartsSoldLoading,
+      partsRevMTD,
+      loadParts,
+      savePart,
+      deletePart,
+      loadPartsRevMTD,
     }}>
       {children}
-    </SalesContext.Provider>
+    </PartsContext.Provider>
   );
 }
 
-export function useSales() {
-  const context = useContext(SalesContext);
+export function useParts() {
+  const context = useContext(PartsContext);
   if (!context) throw new Error(
-    "useSales must be used within SalesProvider"
+    "useParts must be used within PartsProvider"
   );
   return context;
 }
 
-STEP 4B — Wrap App with SalesProvider
+NOTE: EMPTY_PART is currently defined inside App() function.
+Move it to src/constants/index.js and export it:
+  export const EMPTY_PART = { 
+    category: "RAM", compatible_with: "", specs: "", 
+    condition: "Used", quantity: 1, cost_price: "", 
+    sell_price: "", source: "", notes: "" 
+  };
+
+STEP 5B — Wrap App with PartsProvider
 
 In src/index.js update:
   import { CustomerProvider } from './context/CustomerContext';
   import { StockProvider } from './context/StockContext';
   import { UIProvider } from './context/UIContext';
   import { SalesProvider } from './context/SalesContext';
+  import { PartsProvider } from './context/PartsContext';
 
   root.render(
     <UIProvider>
       <SalesProvider>
-        <CustomerProvider>
-          <StockProvider>
-            <App />
-          </StockProvider>
-        </CustomerProvider>
+        <PartsProvider>
+          <CustomerProvider>
+            <StockProvider>
+              <App />
+            </StockProvider>
+          </CustomerProvider>
+        </PartsProvider>
       </SalesProvider>
     </UIProvider>
   );
 
-STEP 4C — Update App.js to use SalesContext
+STEP 5C — Update App.js to use PartsContext
 
 In App.js add import:
-  import { useSales } from "./context/SalesContext";
+  import { useParts } from "./context/PartsContext";
 
 At top of App() function add:
   const {
-    todaySales, setTodaySales,
-    salesHistory,
-    salesHistoryLoading,
-    salesFilter, setSalesFilter,
-    showSaleReceipt, setShowSaleReceipt,
-    saleReceiptData, setSaleReceiptData,
-    receiptEditName, setReceiptEditName,
-    openComplaints,
-    loadTodaySales,
-    loadSalesHistory,
-    buildSaleReceiptText,
-    loadOpenComplaints,
-  } = useSales();
+    parts, setParts,
+    partsLoading,
+    showAddPart, setShowAddPart,
+    editingPart, setEditingPart,
+    partForm, setPartForm,
+    showPartSale, setShowPartSale,
+    partSaleTarget, setPartSaleTarget,
+    partsSold, setPartsSold,
+    partsSoldLoading,
+    partsRevMTD,
+    loadParts,
+    savePart,
+    deletePart,
+    loadPartsRevMTD,
+  } = useParts();
 
 Then DELETE these from App.js:
-- const [todaySales, setTodaySales] = useState({...});
-- const [salesHistory, setSalesHistory] = useState([]);
-- const [salesHistoryLoading, setSalesHistoryLoading] = useState(false);
-- const [salesFilter, setSalesFilter] = useState("month");
-- const [showSaleReceipt, setShowSaleReceipt] = useState(false);
-- const [saleReceiptData, setSaleReceiptData] = useState(null);
-- const [receiptEditName, setReceiptEditName] = useState("");
-- const [openComplaints, setOpenComplaints] = useState([]);
-- const loadTodaySales = useCallback(...);
-- const loadSalesHistory = useCallback(...);
-- function buildSaleReceiptText(...) {...}
-- const loadOpenComplaints = useCallback(...);
+- const [parts, setParts] = useState([]);
+- const [partsLoading, setPartsLoading] = useState(false);
+- const [showAddPart, setShowAddPart] = useState(false);
+- const [editingPart, setEditingPart] = useState(null);
+- const [partForm, setPartForm] = useState(EMPTY_PART);
+- const [showPartSale, setShowPartSale] = useState(false);
+- const [partSaleTarget, setPartSaleTarget] = useState(null);
+- const [partsSold, setPartsSold] = useState([]);
+- const [partsSoldLoading, setPartsSoldLoading] = useState(false);
+- const [partsRevMTD, setPartsRevMTD] = useState(0);
+- async function loadParts() {...}
+- async function savePart() {...}
+- async function deletePart(id) {...}
+- const loadPartsRevMTD = useCallback(...);
+- const EMPTY_PART = {...} (move to constants)
 
-STEP 4D — Update SalesTab to use SalesContext directly
+STEP 5D — Update StockTab to use PartsContext directly
 
-In src/components/tabs/SalesTab.js:
-  Add: import { useSales } from "../../context/SalesContext";
+In src/components/tabs/StockTab.js:
+  Add: import { useParts } from "../../context/PartsContext";
   Add at top of component:
     const {
-      salesHistory,
-      salesHistoryLoading,
-      salesFilter, setSalesFilter,
-      setSaleReceiptData,
-      setReceiptEditName,
-      setShowSaleReceipt,
-      openComplaints,
-    } = useSales();
-  
-  Remove ALL these from props destructuring since they
-  now come from useSales() directly.
+      parts, partsLoading, loadParts,
+      showAddPart, setShowAddPart,
+      editingPart, setEditingPart,
+      partForm, setPartForm,
+      showPartSale, setShowPartSale,
+      partSaleTarget, setPartSaleTarget,
+      partsSold, partsSoldLoading,
+      partsRevMTD, loadPartsRevMTD,
+      savePart, deletePart,
+    } = useParts();
 
-STEP 4E — Remove sales props from SalesTab in App.js
+  Remove ALL these from props destructuring.
 
-Find where SalesTab is rendered in App.js.
+STEP 5E — Remove parts props from StockTab in App.js
+
+Find where StockTab is rendered in App.js.
 Remove these props:
-  salesHistory={salesHistory}
-  salesHistoryLoading={salesHistoryLoading}
-  salesFilter={salesFilter}
-  setSalesFilter={setSalesFilter}
-  setSaleReceiptData={setSaleReceiptData}
-  setReceiptEditName={setReceiptEditName}
-  setShowSaleReceipt={setShowSaleReceipt}
-  openComplaints={openComplaints}
+  parts={parts}
+  partsLoading={partsLoading}
+  loadParts={loadParts}
+  showAddPart={showAddPart}
+  setShowAddPart={setShowAddPart}
+  editingPart={editingPart}
+  setEditingPart={setEditingPart}
+  partForm={partForm}
+  setPartForm={setPartForm}
+  showPartSale={showPartSale}
+  setShowPartSale={setShowPartSale}
+  partSaleTarget={partSaleTarget}
+  setPartSaleTarget={setPartSaleTarget}
+  partsSold={partsSold}
+  partsSoldLoading={partsSoldLoading}
+  partsRevMTD={partsRevMTD}
+  loadPartsRevMTD={loadPartsRevMTD}
+  savePart={savePart}
+  deletePart={deletePart}
 
-SalesTab now gets everything from useSales() directly.
-
-STEP 4F — Update HomeTab to use SalesContext
-
-In src/components/tabs/HomeTab.js:
-  Add: import { useSales } from "../../context/SalesContext";
-  Add at top of component:
-    const { todaySales, openComplaints } = useSales();
-  Remove todaySales and openComplaints from props.
-
-Remove these from HomeTab usage in App.js:
-  todaySales={todaySales}
-  openComplaints={openComplaints}
+StockTab now gets everything from useParts() directly.
 
 IMPORTANT RULES:
 - Do not change any logic
-- The useEffect that calls loadSalesHistory when 
-  activeTab === "sales" must now use the context version
-- The useEffect that calls loadTodaySales on session
-  must still work — keep it in App.js but it will
-  call the context function
+- Make sure EMPTY_PART is exported from constants/index.js
+- Make sure PartsContext imports EMPTY_PART from constants
+- Keep all existing part functionality working
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean:
-   git add -A && git commit -m "architecture step 4: SalesContext" 
+   git add -A && git commit -m "architecture step 5: PartsContext" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
 6. Test:
-   - Does Sales History open from side drawer?
-   - Does filter work (Today/Week/Month)?
-   - Does receipt generate correctly?
-   - Does dashboard show today sales count?
+   - Stock tab → Parts toggle works?
+   - Can you add a part?
+   - Can you sell a part?
+   - Parts revenue shows on dashboard?
 7. Tell me new App.js line count

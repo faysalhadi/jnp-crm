@@ -27,6 +27,7 @@ import { useCustomers } from "./context/CustomerContext";
 import { useStock } from "./context/StockContext";
 import { useUI } from "./context/UIContext";
 import { useSales } from "./context/SalesContext";
+import { useParts } from "./context/PartsContext";
 
 import { saveImportedMessages } from "./utils/whatsapp";
 import Badge from "./components/ui/Badge";
@@ -132,6 +133,23 @@ export default function App() {
     loadOpenComplaints,
   } = useSales();
 
+  const {
+    parts, setParts,
+    partsLoading,
+    showAddPart, setShowAddPart,
+    editingPart, setEditingPart,
+    partForm, setPartForm,
+    showPartSale, setShowPartSale,
+    partSaleTarget, setPartSaleTarget,
+    partsSold, setPartsSold,
+    partsSoldLoading,
+    partsRevMTD,
+    loadParts,
+    savePart,
+    deletePart,
+    loadPartsRevMTD,
+  } = useParts();
+
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState("login"); // login | signup
@@ -175,12 +193,6 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
-  const [parts, setParts] = useState([]);
-  const [partsLoading, setPartsLoading] = useState(false);
-  const [showAddPart, setShowAddPart] = useState(false);
-  const [editingPart, setEditingPart] = useState(null);
-  const EMPTY_PART = { category: "RAM", compatible_with: "", specs: "", condition: "Used", quantity: 1, cost_price: "", sell_price: "", source: "", notes: "" };
-  const [partForm, setPartForm] = useState(EMPTY_PART);
   const PART_CATEGORIES = ["RAM", "SSD", "HDD", "Screen", "Battery", "Charger", "Keyboard", "Trackpad", "Other"];
   const PART_ICONS = { RAM: "🧠", SSD: "💾", HDD: "💿", Screen: "🖥️", Battery: "🔋", Charger: "🔌", Keyboard: "⌨️", Trackpad: "🖱️", Other: "🔧" };
   const [askMessages, setAskMessages] = useState([]);
@@ -252,13 +264,6 @@ export default function App() {
   const [linkStockDeal, setLinkStockDeal] = useState(null);
 
 
-  // ── part sale ──
-  const [showPartSale,     setShowPartSale]     = useState(false);
-  const [partSaleTarget,   setPartSaleTarget]   = useState(null);
-  const [partsSold,        setPartsSold]        = useState([]);
-  const [partsSoldLoading, setPartsSoldLoading] = useState(false);
-  const [partsRevMTD,      setPartsRevMTD]      = useState(0);
-
   // ── sourcing alerts for dashboard ──
   const sourcingAlerts = useSourcingAlerts();
 
@@ -291,14 +296,6 @@ export default function App() {
     }
     setSession(null);
     setAuthLoading(false);
-  }, []);
-
-  const loadPartsRevMTD = useCallback(async () => {
-    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-    const { data } = await supabase.from("deals")
-      .select("value").eq("sale_type", "parts").eq("stage", "closed")
-      .gte("closed_at", monthStart.toISOString());
-    setPartsRevMTD((data || []).reduce((s, d) => s + (Number(d.value) || 0), 0));
   }, []);
 
   const loadReservedDeals = useCallback(async () => {
@@ -814,39 +811,6 @@ Return JSON with only a "reply" field containing the message.`;
       });
   }, [stockFilter, stock]);
 
-  async function loadParts() {
-    setPartsLoading(true);
-    const { data } = await supabase.from("stock_parts").select("*").order("created_at", { ascending: false });
-    setParts(data || []);
-    setPartsLoading(false);
-  }
-
-  async function savePart() {
-    const payload = {
-      category:       partForm.category,
-      compatible_with:partForm.compatible_with.trim() || null,
-      specs:          partForm.specs.trim()           || null,
-      condition:      partForm.condition,
-      quantity:       parseInt(partForm.quantity) || 1,
-      cost_price:     partForm.cost_price ? parseFloat(partForm.cost_price) : null,
-      sell_price:     partForm.sell_price ? parseFloat(partForm.sell_price) : null,
-      source:         partForm.source.trim()  || null,
-      notes:          partForm.notes.trim()   || null,
-      status:         "available",
-    };
-    if (editingPart) {
-      await supabase.from("stock_parts").update(payload).eq("id", editingPart.id);
-    } else {
-      await supabase.from("stock_parts").insert(payload);
-    }
-    await loadParts();
-    setShowAddPart(false); setEditingPart(null); setPartForm(EMPTY_PART);
-  }
-
-  async function deletePart(id) {
-    await supabase.from("stock_parts").delete().eq("id", id);
-    setParts(prev => prev.filter(p => p.id !== id));
-  }
 
   function getMatchingClients(item) {
     return customers.filter(c =>
@@ -2076,23 +2040,6 @@ For any issues please contact us on WhatsApp.
       {activeTab === "stock" && (
         <StockTab
           customers={customers}
-          parts={parts}
-          partsLoading={partsLoading}
-          loadParts={loadParts}
-          showAddPart={showAddPart}
-          setShowAddPart={setShowAddPart}
-          editingPart={editingPart}
-          setEditingPart={setEditingPart}
-          partForm={partForm}
-          setPartForm={setPartForm}
-          showPartSale={showPartSale}
-          setShowPartSale={setShowPartSale}
-          partSaleTarget={partSaleTarget}
-          setPartSaleTarget={setPartSaleTarget}
-          partsSold={partsSold}
-          partsSoldLoading={partsSoldLoading}
-          partsRevMTD={partsRevMTD}
-          loadPartsRevMTD={loadPartsRevMTD}
           showUpgrade={showUpgrade}
           setShowUpgrade={setShowUpgrade}
           upgradeTarget={upgradeTarget}
@@ -2101,8 +2048,6 @@ For any issues please contact us on WhatsApp.
           setShowQuickSale={setShowQuickSale}
           quickSalePrefill={quickSalePrefill}
           setQuickSalePrefill={setQuickSalePrefill}
-          savePart={savePart}
-          deletePart={deletePart}
           getMatchingClients={getMatchingClients}
           openBroadcast={openBroadcast}
           handleUpgradeApply={handleUpgradeApply}

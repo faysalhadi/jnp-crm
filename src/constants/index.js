@@ -153,6 +153,12 @@ STAGE LOGIC:
 
 export const EMPTY_STOCK = { brand: "", model: "", processor: "", ram: "", ssd: "", screen: "", condition: "", charger: "", box: "", activation_lock: "unknown", cost_price: "", min_price: "", max_price: "", serial_number: "", notes: "", photo_url: "", status: "available" };
 
+export const EMPTY_PART = {
+  category: "RAM", compatible_with: "", specs: "",
+  condition: "Used", quantity: 1, cost_price: "",
+  sell_price: "", source: "", notes: ""
+};
+
 export const PART_CATEGORIES = [
   "RAM", "SSD", "HDD", "Screen", "Battery",
   "Charger", "Keyboard", "Trackpad", "Other"
