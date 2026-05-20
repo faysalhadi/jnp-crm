@@ -8,14 +8,11 @@ import ReservationModal from "../modals/ReservationModal";
 import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS } from "../../constants";
 import { daysSince, timeAgo } from "../../utils/helpers";
 import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
+import { useCustomers } from "../../context/CustomerContext";
 
 export default function ChatDetailView({
   isMobile,
-  activeCustomer, activeDeal, activeDealId, setActiveDealId,
-  activeCustomerId, setActiveCustomerId,
   messages, setMessages,
-  customers,
-  view, setView,
   msgLoading,
   incomingText, setIncomingText,
   replyMode, setReplyMode,
@@ -24,7 +21,6 @@ export default function ChatDetailView({
   generatedReply, setGeneratedReply,
   generatedReplyLoading, setGeneratedReplyLoading,
   editingGenerated, setEditingGenerated,
-  pendingSuggestion, setPendingSuggestion,
   copied, setCopied,
   editSent, setEditSent,
   editingName, setEditingName,
@@ -34,9 +30,6 @@ export default function ChatDetailView({
   outreachMode, setOutreachMode,
   outreachReason, setOutreachReason,
   outreachCustom, setOutreachCustom,
-  showAddDeal, setShowAddDeal,
-  showDeleteConfirm, setShowDeleteConfirm,
-  showLossReason, setShowLossReason,
   showReceipt, setShowReceipt,
   receiptPaymentMethod, setReceiptPaymentMethod,
   showSupplierReply, setShowSupplierReply,
@@ -52,13 +45,11 @@ export default function ChatDetailView({
   showLinkStock, setShowLinkStock,
   linkStockDeal, setLinkStockDeal,
   showReservation, setShowReservation,
-  newDeal, setNewDeal,
   anthropicKey, cachedStock,
   bottomRef,
   NAV_TABS, activeTab, setActiveTab,
   stock,
-  loadCustomers, loadStock, refreshCachedStock, loadTodaySales,
-  updateCustomer, updateDeal, addDeal, deleteCustomer,
+  loadStock, refreshCachedStock, loadTodaySales,
   moveStage, handleConfirmSale, handleReserveDevice,
   addIncomingMessage, generateAIReply, sendAIReply,
   sendDirectReply, generateOpeningMessage,
@@ -70,6 +61,30 @@ export default function ChatDetailView({
   setShowSideDrawer,
   showToast,
 }) {
+  const {
+    activeCustomer,
+    activeDeal,
+    activeCustomerId, setActiveCustomerId,
+    activeDealId, setActiveDealId,
+    view, setView,
+    pendingSuggestion, setPendingSuggestion,
+    showAddDeal, setShowAddDeal,
+    showDeleteConfirm, setShowDeleteConfirm,
+    showLossReason, setShowLossReason,
+    newDeal, setNewDeal,
+    loadCustomers,
+    updateCustomer: _updateCustomer,
+    updateDeal: _updateDeal,
+    deleteCustomer: _deleteCustomer,
+    addDeal: _addDeal,
+  } = useCustomers();
+
+  // Bind IDs so existing call sites (no-arg pattern) work unchanged
+  const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
+  const updateDeal = (fields) => _updateDeal(activeDealId, fields);
+  const deleteCustomer = () => _deleteCustomer(activeCustomerId);
+  const addDeal = () => _addDeal(activeCustomerId, newDeal);
+
     const [aiComposeContext, setAiComposeContext] = useState("");
     const tier = TIERS[activeCustomer.tier] || TIERS.cold;
     const overdue = daysSince(activeCustomer.last_active) >= 1 && (activeCustomer.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");

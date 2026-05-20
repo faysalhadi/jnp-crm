@@ -23,6 +23,8 @@ import {
   buildOwnerContext,
 } from "./utils/claude";
 
+import { useCustomers } from "./context/CustomerContext";
+
 import { saveImportedMessages } from "./utils/whatsapp";
 import Badge from "./components/ui/Badge";
 import Spinner from "./components/ui/Spinner";
@@ -43,6 +45,34 @@ import ChatDetailView from "./components/chat/ChatDetailView";
 
 // ── main ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  const {
+    customers, setCustomers,
+    loading,
+    lastMsgMap,
+    activeCustomerId, setActiveCustomerId,
+    activeDealId, setActiveDealId,
+    activeCustomer,
+    activeDeal,
+    view, setView,
+    filter, setFilter,
+    search, setSearch,
+    contactTypeFilter, setContactTypeFilter,
+    pendingSuggestion, setPendingSuggestion,
+    showContactModal, setShowContactModal,
+    contactModalPreType, setContactModalPreType,
+    newCustomer, setNewCustomer,
+    newDeal, setNewDeal,
+    showAddDeal, setShowAddDeal,
+    showDeleteConfirm, setShowDeleteConfirm,
+    showLossReason, setShowLossReason,
+    loadCustomers,
+    addCustomer,
+    deleteCustomer,
+    updateCustomer,
+    updateDeal,
+    addDeal,
+  } = useCustomers();
+
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState("login"); // login | signup
@@ -54,11 +84,6 @@ export default function App() {
   const [anthropicKey, setAnthropicKey] = useState(getAnthropicKey);
   const [keyInput, setKeyInput] = useState("");
 
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [view, setView] = useState("list");
-  const [activeCustomerId, setActiveCustomerId] = useState(null);
-  const [activeDealId, setActiveDealId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [msgLoading, setMsgLoading] = useState(false);
   const [msgInput, setMsgInput] = useState("");
@@ -71,7 +96,6 @@ export default function App() {
   const [generatedReply,       setGeneratedReply]       = useState("");
   const [generatedReplyLoading,setGeneratedReplyLoading]= useState(false);
   const [editingGenerated,     setEditingGenerated]     = useState(false);
-  const [pendingSuggestion, setPendingSuggestion] = useState(null);
   const [copied, setCopied] = useState(null);
   const [editSent, setEditSent] = useState(null);
   const [editingName, setEditingName] = useState(false);
@@ -81,13 +105,6 @@ export default function App() {
   const [outreachMode, setOutreachMode] = useState(false);
   const [outreachReason, setOutreachReason] = useState("");
   const [outreachCustom, setOutreachCustom] = useState("");
-  const [showAddDeal, setShowAddDeal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showLossReason, setShowLossReason] = useState(false);
-  const [filter, setFilter] = useState("all");
-  const [search, setSearch] = useState("");
-  const [newCustomer, setNewCustomer] = useState({ name: "", number: "", notes: "" });
-  const [newDeal, setNewDeal] = useState({ brand: "", model: "", value: "" });
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
@@ -221,14 +238,6 @@ export default function App() {
   // ── sourcing alerts for dashboard ──
   const sourcingAlerts = useSourcingAlerts();
 
-  // ── global contact modal ──
-  const [showContactModal,   setShowContactModal]   = useState(false);
-  const [contactModalPreType,setContactModalPreType]= useState(null); // null | "client" | "trader" | "supplier"
-  const [contactTypeFilter,  setContactTypeFilter]  = useState("all"); // "all" | "client" | "trader" | "supplier"
-
-  // ── last messages for contact list previews ──
-  const [lastMsgMap, setLastMsgMap] = useState({}); // { customerId: { role, content, sent, ts } }
-
   // ── supplier reply generator ──
   const [showSupplierReply,   setShowSupplierReply]   = useState(false);
   const [supplierReplyCtx,    setSupplierReplyCtx]    = useState("");
@@ -258,38 +267,6 @@ export default function App() {
     }
     setSession(null);
     setAuthLoading(false);
-  }, []);
-
-  // ── load customers ──
-  const loadCustomers = useCallback(async () => {
-    setLoading(true);
-    const { data: custs } = await supabase.from("customers").select("*, deals(*)").order("last_active", { ascending: false });
-    setCustomers(custs || []);
-    setLoading(false);
-
-    // Batch-load the last message for every deal so the contact list
-    // can show real previews and an unread dot — one query, not N.
-    const dealIds = [];
-    const dealToCustomer = {};
-    (custs || []).forEach(c =>
-      (c.deals || []).forEach(d => {
-        dealIds.push(d.id);
-        dealToCustomer[d.id] = c.id;
-      })
-    );
-    if (!dealIds.length) return;
-    const { data: msgs } = await supabase
-      .from("messages")
-      .select("deal_id, role, content, sent, ts")
-      .in("deal_id", dealIds)
-      .order("ts", { ascending: false })
-      .limit(1000);
-    const map = {};
-    (msgs || []).forEach(msg => {
-      const cid = dealToCustomer[msg.deal_id];
-      if (cid && !map[cid]) map[cid] = msg; // first result = most recent (ordered desc)
-    });
-    setLastMsgMap(map);
   }, []);
 
   const loadStock = useCallback(async () => {
@@ -474,9 +451,6 @@ export default function App() {
       .then(({ data: d }) => { if (d) { setActiveDealId(d.id); loadCustomers(); } });
   }, [activeCustomerId, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const activeCustomer = customers.find(c => c.id === activeCustomerId);
-  const activeDeal = activeCustomer?.deals?.find(d => d.id === activeDealId);
-
   // ── auth actions ──
   async function handleAuth() {
     setAuthBusy(true); setAuthError("");
@@ -512,44 +486,6 @@ export default function App() {
     await supabase.auth.signOut().catch(() => {});
     setSession(null);
     setCustomers([]); setView("list"); setActiveCustomerId(null); setActiveDealId(null);
-  }
-
-  // ── customer actions ──
-  async function addCustomer() {
-    if (!newCustomer.name.trim()) return;
-    const { data: c } = await supabase.from("customers").insert({ name: newCustomer.name.trim(), number: newCustomer.number.trim(), notes: newCustomer.notes.trim(), tier: "cold", urgent: false }).select().single();
-    if (!c) return;
-    const { data: d } = await supabase.from("deals").insert({ customer_id: c.id, stage: "new_inquiry" }).select().single();
-    await loadCustomers();
-    setActiveCustomerId(c.id); setActiveDealId(d?.id);
-    setNewCustomer({ name: "", number: "", notes: "" });
-    setView("detail");
-  }
-
-  async function deleteCustomer() {
-    await supabase.from("customers").delete().eq("id", activeCustomerId);
-    setShowDeleteConfirm(false);
-    setActiveCustomerId(null); setActiveDealId(null);
-    setView("list");
-    await loadCustomers();
-  }
-
-  async function updateCustomer(fields) {
-    await supabase.from("customers").update({ ...fields, last_active: new Date().toISOString() }).eq("id", activeCustomerId);
-    await loadCustomers();
-  }
-
-  // ── deal actions ──
-  async function addDeal() {
-    const { data: d } = await supabase.from("deals").insert({ customer_id: activeCustomerId, brand: newDeal.brand, model: newDeal.model, value: newDeal.value ? parseFloat(newDeal.value) : null, stage: "new_inquiry" }).select().single();
-    await loadCustomers();
-    setActiveDealId(d?.id); setShowAddDeal(false);
-    setNewDeal({ brand: "", model: "", value: "" });
-  }
-
-  async function updateDeal(fields) {
-    await supabase.from("deals").update(fields).eq("id", activeDealId);
-    await loadCustomers();
   }
 
   async function handleReserveDevice() {
@@ -611,9 +547,9 @@ export default function App() {
     }
     const fields = { stage: stageId };
     if (stageId === "closed") fields.closed_at = new Date().toISOString();
-    await updateDeal(fields);
+    await updateDeal(activeDealId, fields);
     const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
-    await updateCustomer({ tier: autoTier(updatedDeals) });
+    await updateCustomer(activeCustomerId, { tier: autoTier(updatedDeals) });
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
     if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }
@@ -668,8 +604,8 @@ export default function App() {
       deal_id: activeDealId, role: "customer", content, is_voice: isVoice,
     }).select().single();
     if (msg) setMessages(prev => [...prev, msg]);
-    if (isUrgent) await updateCustomer({ urgent: true });
-    await updateCustomer({ last_active: new Date().toISOString() });
+    if (isUrgent) await updateCustomer(activeCustomerId, { urgent: true });
+    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
   }
 
   // Step 3b: call Claude with full conversation history, show result for review
@@ -707,10 +643,10 @@ export default function App() {
         if (parsed.storage && parsed.storage !== "unknown") specUpdate.storage = parsed.storage;
         if (parsed.condition && parsed.condition !== "unknown") specUpdate.condition = parsed.condition;
         if (parsed.budget) specUpdate.budget = parsed.budget;
-        if (Object.keys(specUpdate).length) await updateDeal(specUpdate);
+        if (Object.keys(specUpdate).length) await updateDeal(activeDealId, specUpdate);
         if (parsed.suggestedStage && parsed.suggestedStage !== activeDeal?.stage)
           setPendingSuggestion({ stage: parsed.suggestedStage, reason: parsed.stageReason });
-        if (parsed.urgency) await updateCustomer({ urgent: true });
+        if (parsed.urgency) await updateCustomer(activeCustomerId, { urgent: true });
       }
     } catch {
       setGeneratedReply("⚠️ Error generating. Check your API key in Settings.");
@@ -727,7 +663,7 @@ export default function App() {
     }).select().single();
     if (msg) setMessages(prev => [...prev, msg]);
     setGeneratedReply(""); setReplyMode(null); setReplyingToId(null); setEditingGenerated(false);
-    await updateCustomer({ last_active: new Date().toISOString() });
+    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
   }
 
   // Send the manually-typed reply
@@ -740,7 +676,7 @@ export default function App() {
     }).select().single();
     if (msg) setMessages(prev => [...prev, msg]);
     setReplyMode(null); setReplyingToId(null);
-    await updateCustomer({ last_active: new Date().toISOString() });
+    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
   }
 
   // Generate an opening message for an empty conversation
@@ -788,7 +724,7 @@ export default function App() {
       sent: content,
     }).select().single();
     if (msg) setMessages(prev => [...prev, msg]);
-    await updateCustomer({ last_active: new Date().toISOString() });
+    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
   }
 
   // Mode 2 — AI Reply: paste client message, Claude generates a reply
@@ -802,8 +738,8 @@ export default function App() {
     const { data: userMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "customer", content: msgInput.trim(), is_voice: isVoice }).select().single();
     setMessages(prev => [...prev, userMsg]);
     setMsgInput(""); setMsgLoading(true); setPendingSuggestion(null);
-    if (isUrgent) await updateCustomer({ urgent: true });
-    await updateCustomer({ last_active: new Date().toISOString() });
+    if (isUrgent) await updateCustomer(activeCustomerId, { urgent: true });
+    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
 
     try {
       const history = [...messages, userMsg].map(m => ({
@@ -834,7 +770,7 @@ export default function App() {
       if (parsed.activationLock && parsed.activationLock !== "unknown") specUpdate.activation_lock = parsed.activationLock;
       if (parsed.charger && parsed.charger !== "unknown") specUpdate.charger = parsed.charger;
       if (parsed.box && parsed.box !== "unknown") specUpdate.box = parsed.box;
-      if (Object.keys(specUpdate).length) await updateDeal(specUpdate);
+      if (Object.keys(specUpdate).length) await updateDeal(activeDealId, specUpdate);
 
       const { data: aiMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: parsed.reply || raw }).select().single();
       setMessages(prev => [...prev, aiMsg]);
@@ -842,7 +778,7 @@ export default function App() {
       if (parsed.suggestedStage && parsed.suggestedStage !== activeDeal.stage) {
         setPendingSuggestion({ stage: parsed.suggestedStage, reason: parsed.stageReason });
       }
-      if (parsed.urgency) await updateCustomer({ urgent: true });
+      if (parsed.urgency) await updateCustomer(activeCustomerId, { urgent: true });
 
     } catch {
       const { data: errMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: "⚠️ API error. Check your Anthropic key in Settings." }).select().single();
@@ -2155,17 +2091,8 @@ For any issues contact us on WhatsApp.
     return (
       <ChatDetailView
         isMobile={isMobile}
-        activeCustomer={activeCustomer}
-        activeDeal={activeDeal}
-        activeDealId={activeDealId}
-        setActiveDealId={setActiveDealId}
-        activeCustomerId={activeCustomerId}
-        setActiveCustomerId={setActiveCustomerId}
         messages={messages}
         setMessages={setMessages}
-        customers={customers}
-        view={view}
-        setView={setView}
         msgLoading={msgLoading}
         incomingText={incomingText}
         setIncomingText={setIncomingText}
@@ -2181,8 +2108,6 @@ For any issues contact us on WhatsApp.
         setGeneratedReplyLoading={setGeneratedReplyLoading}
         editingGenerated={editingGenerated}
         setEditingGenerated={setEditingGenerated}
-        pendingSuggestion={pendingSuggestion}
-        setPendingSuggestion={setPendingSuggestion}
         copied={copied}
         setCopied={setCopied}
         editSent={editSent}
@@ -2201,12 +2126,6 @@ For any issues contact us on WhatsApp.
         setOutreachReason={setOutreachReason}
         outreachCustom={outreachCustom}
         setOutreachCustom={setOutreachCustom}
-        showAddDeal={showAddDeal}
-        setShowAddDeal={setShowAddDeal}
-        showDeleteConfirm={showDeleteConfirm}
-        setShowDeleteConfirm={setShowDeleteConfirm}
-        showLossReason={showLossReason}
-        setShowLossReason={setShowLossReason}
         showReceipt={showReceipt}
         setShowReceipt={setShowReceipt}
         receiptPaymentMethod={receiptPaymentMethod}
@@ -2237,8 +2156,6 @@ For any issues contact us on WhatsApp.
         setLinkStockDeal={setLinkStockDeal}
         showReservation={showReservation}
         setShowReservation={setShowReservation}
-        newDeal={newDeal}
-        setNewDeal={setNewDeal}
         anthropicKey={anthropicKey}
         cachedStock={cachedStock}
         bottomRef={bottomRef}
@@ -2246,14 +2163,9 @@ For any issues contact us on WhatsApp.
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         stock={stock}
-        loadCustomers={loadCustomers}
         loadStock={loadStock}
         refreshCachedStock={refreshCachedStock}
         loadTodaySales={loadTodaySales}
-        updateCustomer={updateCustomer}
-        updateDeal={updateDeal}
-        addDeal={addDeal}
-        deleteCustomer={deleteCustomer}
         moveStage={moveStage}
         handleConfirmSale={handleConfirmSale}
         handleReserveDevice={handleReserveDevice}
@@ -2422,24 +2334,9 @@ For any issues contact us on WhatsApp.
       {activeTab === "customers" && (
         <CustomersTab
           isMobile={isMobile}
-          loading={loading}
-          filtered={filtered}
-          lastMsgMap={lastMsgMap}
-          setActiveCustomerId={setActiveCustomerId}
-          setActiveDealId={setActiveDealId}
-          setView={setView}
-          setPendingSuggestion={setPendingSuggestion}
           openDeals={openDeals}
           closedDeals={closedDeals}
           revenue={revenue}
-          search={search}
-          setSearch={setSearch}
-          filter={filter}
-          setFilter={setFilter}
-          contactTypeFilter={contactTypeFilter}
-          setContactTypeFilter={setContactTypeFilter}
-          setShowContactModal={setShowContactModal}
-          setContactModalPreType={setContactModalPreType}
           setShowSideDrawer={setShowSideDrawer}
         />
       )}

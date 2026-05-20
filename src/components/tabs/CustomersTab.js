@@ -4,26 +4,49 @@ import StageBar from "../ui/StageBar";
 import Spinner from "../ui/Spinner";
 import { TIERS } from "../../constants";
 import { daysSince, waTsFormat } from "../../utils/helpers";
+import { useCustomers } from "../../context/CustomerContext";
 
 export default function CustomersTab({
   isMobile,
-  loading,
-  filtered,
-  lastMsgMap,
-  setActiveCustomerId,
-  setActiveDealId,
-  setView,
-  setPendingSuggestion,
   openDeals,
   closedDeals,
   revenue,
-  search, setSearch,
-  filter, setFilter,
-  contactTypeFilter, setContactTypeFilter,
-  setShowContactModal,
-  setContactModalPreType,
   setShowSideDrawer,
 }) {
+  const {
+    customers,
+    loading,
+    lastMsgMap,
+    setActiveCustomerId,
+    setActiveDealId,
+    setView,
+    setPendingSuggestion,
+    filter, setFilter,
+    search, setSearch,
+    contactTypeFilter, setContactTypeFilter,
+    setShowContactModal,
+    setContactModalPreType,
+  } = useCustomers();
+
+  const filtered = customers
+    .filter(c => {
+      const cType = c.contact_type || "client";
+      if (contactTypeFilter !== "all" && cType !== contactTypeFilter) return false;
+      if (search) return c.name.toLowerCase().includes(search.toLowerCase()) || (c.number || "").includes(search);
+      if (filter === "urgent") return c.urgent;
+      if (filter === "overdue") return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+      if (filter === "vip") return c.tier === "vip";
+      if (filter === "cold") return c.tier === "cold";
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.urgent && !b.urgent) return -1;
+      if (!a.urgent && b.urgent) return 1;
+      const aTime = a.last_activity_at || a.last_active;
+      const bTime = b.last_activity_at || b.last_active;
+      return new Date(bTime) - new Date(aTime);
+    });
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
 

@@ -1,18 +1,5 @@
-Read src/App.js fully before making any changes.
-
-This is architecture rewrite Step 1.
-We are introducing React Context for customer state.
-Do NOT change any logic. Only move state and functions.
-The app must work exactly the same after this step.
-
-STEP 1A — Create src/context/CustomerContext.js
-
-Create this file exactly:
-
-import React, { createContext, useContext, useState, 
-  useCallback, useRef } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "../supabase";
-import { autoTier } from "../utils/helpers";
 
 const CustomerContext = createContext(null);
 
@@ -29,11 +16,11 @@ export function CustomerProvider({ children }) {
   const [pendingSuggestion, setPendingSuggestion] = useState(null);
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactModalPreType, setContactModalPreType] = useState(null);
-  const [newCustomer, setNewCustomer] = useState({ 
-    name: "", number: "", notes: "" 
+  const [newCustomer, setNewCustomer] = useState({
+    name: "", number: "", notes: ""
   });
-  const [newDeal, setNewDeal] = useState({ 
-    brand: "", model: "", value: "" 
+  const [newDeal, setNewDeal] = useState({
+    brand: "", model: "", value: ""
   });
   const [showAddDeal, setShowAddDeal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -180,120 +167,3 @@ export function useCustomers() {
   );
   return context;
 }
-
-STEP 1B — Wrap App with CustomerProvider
-
-In src/index.js find:
-  import App from './App';
-  root.render(<App />);
-
-Replace with:
-  import App from './App';
-  import { CustomerProvider } from './context/CustomerContext';
-  root.render(
-    <CustomerProvider>
-      <App />
-    </CustomerProvider>
-  );
-
-STEP 1C — Update App.js to use CustomerContext
-
-In App.js add this import near the top:
-  import { useCustomers } from "./context/CustomerContext";
-
-At the TOP of the App() function add:
-  const {
-    customers, setCustomers,
-    loading,
-    lastMsgMap,
-    activeCustomerId, setActiveCustomerId,
-    activeDealId, setActiveDealId,
-    activeCustomer,
-    activeDeal,
-    view, setView,
-    filter, setFilter,
-    search, setSearch,
-    contactTypeFilter, setContactTypeFilter,
-    pendingSuggestion, setPendingSuggestion,
-    showContactModal, setShowContactModal,
-    contactModalPreType, setContactModalPreType,
-    newCustomer, setNewCustomer,
-    newDeal, setNewDeal,
-    showAddDeal, setShowAddDeal,
-    showDeleteConfirm, setShowDeleteConfirm,
-    showLossReason, setShowLossReason,
-    loadCustomers,
-    addCustomer,
-    deleteCustomer,
-    updateCustomer,
-    updateDeal,
-    addDeal,
-  } = useCustomers();
-
-Then DELETE these from App.js since they are now 
-in CustomerContext:
-- const [customers, setCustomers] = useState([]);
-- const [loading, setLoading] = useState(false);
-- const [lastMsgMap, setLastMsgMap] = useState({});
-- const [activeCustomerId, setActiveCustomerId] = useState(null);
-- const [activeDealId, setActiveDealId] = useState(null);
-- const [view, setView] = useState("list");
-- const [filter, setFilter] = useState("all");
-- const [search, setSearch] = useState("");
-- const [contactTypeFilter, setContactTypeFilter] = useState("all");
-- const [pendingSuggestion, setPendingSuggestion] = useState(null);
-- const [showContactModal, setShowContactModal] = useState(false);
-- const [contactModalPreType, setContactModalPreType] = useState(null);
-- const [newCustomer, setNewCustomer] = useState({...});
-- const [newDeal, setNewDeal] = useState({...});
-- const [showAddDeal, setShowAddDeal] = useState(false);
-- const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-- const [showLossReason, setShowLossReason] = useState(false);
-- const loadCustomers = useCallback(...);
-- async function addCustomer() {...}
-- async function deleteCustomer() {...}
-- async function updateCustomer() {...}
-- async function updateDeal() {...}
-- async function addDeal() {...}
-- const activeCustomer = customers.find(...);
-- const activeDeal = activeCustomer?.deals?.find(...);
-
-STEP 1D — Update components to use CustomerContext directly
-
-In these files add the import and use the hook 
-instead of receiving props:
-
-src/components/tabs/CustomersTab.js:
-  Add: import { useCustomers } from "../../context/CustomerContext";
-  Add at top of component: const { customers, loading, ... } = useCustomers();
-  Remove these from props destructuring:
-    customers, loading, lastMsgMap, filtered,
-    setActiveCustomerId, setActiveDealId, setView,
-    setPendingSuggestion, filter, setFilter, search, setSearch,
-    contactTypeFilter, setContactTypeFilter
-
-src/components/chat/ChatDetailView.js:
-  Add: import { useCustomers } from "../../context/CustomerContext";
-  Add at top of component: const { activeCustomer, activeDeal, ... } = useCustomers();
-  Remove customer-related props from destructuring
-
-IMPORTANT RULES:
-- Do not change any logic
-- Do not rename any functions
-- Keep ALL existing functionality working
-- If a component uses a value from CustomerContext
-  get it from the hook not from props
-- Components that used to receive these as props
-  now get them directly from useCustomers()
-
-After changes:
-1. Run npm run build
-2. Fix ALL errors one by one
-3. Only when build is clean:
-   git add -A && git commit -m "architecture step 1: CustomerContext" 
-   && git push origin main --force
-4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app
-6. Test: contacts tab works, client chat opens, 
-   deals update correctly
-7. Tell me new App.js line count
