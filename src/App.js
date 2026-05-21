@@ -342,7 +342,6 @@ export default function App() {
 
   // Reset all chat input state when switching contacts
   useEffect(() => {
-    setChatMode("type"); setMsgInput("");
     setIncomingText(""); setReplyMode(null); setReplyingToId(null);
     setDirectReplyText(""); setGeneratedReply(""); setGeneratedReplyLoading(false); setEditingGenerated(false);
   }, [activeCustomerId]); // eslint-disable-line react-hooks/exhaustive-deps
