@@ -1,11 +1,23 @@
 import { useState } from "react";
 import { supabase } from "../supabase";
 import { useCustomers } from "../context/CustomerContext";
+import { useAuth } from "../context/AuthContext";
+import { useImportContext } from "../context/ImportContext";
 import { saveImportedMessages } from "../utils/whatsapp";
 import { cleanWhatsAppText } from "../utils/helpers";
 
-export function useImport(anthropicKey) {
+export function useImport() {
+  const { anthropicKey } = useAuth();
   const { loadCustomers, activeCustomerId, activeDealId } = useCustomers();
+  const {
+    importText, setImportText,
+    importing, setImporting,
+    importResult, setImportResult,
+    importingMultiple, setImportingMultiple,
+    importMultipleProgress, setImportMultipleProgress,
+    importMultipleResult, setImportMultipleResult,
+    exporting, setExporting,
+  } = useImportContext();
 
   async function importChatFile(file) {
     const text = cleanWhatsAppText(await file.text());
@@ -90,7 +102,7 @@ ${text.slice(0, 12000)}`;
     } catch { return null; }
   }
 
-  async function importSingleChatFile(file, setImporting, setImportResult) {
+  async function importSingleChatFile(file) {
     if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
     setImporting(true); setImportResult(null);
     const customer = await importChatFile(file);
@@ -100,7 +112,7 @@ ${text.slice(0, 12000)}`;
     setImporting(false);
   }
 
-  async function importMultipleChatFiles(files, setImportingMultiple, setImportMultipleProgress, setImportMultipleResult) {
+  async function importMultipleChatFiles(files) {
     if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
     setImportingMultiple(true); setImportMultipleResult(null);
     let created = 0; let failed = 0;
@@ -115,7 +127,7 @@ ${text.slice(0, 12000)}`;
     setImportMultipleProgress({ current: 0, total: 0 });
   }
 
-  async function importWhatsAppChat(importText, setImporting, setImportResult, setImportText) {
+  async function importWhatsAppChat() {
     if (!importText.trim() || !anthropicKey) return;
     setImporting(true); setImportResult(null);
 
@@ -219,7 +231,7 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
     setImporting(false);
   }
 
-  async function exportData(setExporting) {
+  async function exportData() {
     setExporting(true);
     try {
       const { data: allCustomers } = await supabase.from("customers").select("*, deals(*)").order("last_active", { ascending: false });

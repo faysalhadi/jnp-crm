@@ -112,6 +112,10 @@ export default function App() {
     importingStock,
     importStockResult, setImportStockResult,
     soldDealMap, setSoldDealMap,
+    showQuickSale, setShowQuickSale,
+    quickSalePrefill, setQuickSalePrefill,
+    showUpgrade, setShowUpgrade,
+    upgradeTarget, setUpgradeTarget,
     stockFileInputRef,
     importStockFileRef,
     loadStock,
@@ -253,13 +257,9 @@ export default function App() {
   // ── broadcast ── (managed by useBroadcast hook, initialized below after messages state)
 
   // ── quick sale ──
-  const [showQuickSale,    setShowQuickSale]    = useState(false);
-  const [quickSalePrefill, setQuickSalePrefill] = useState(null);
 
 
   // ── spec upgrade ──
-  const [showUpgrade,   setShowUpgrade]   = useState(false);
-  const [upgradeTarget, setUpgradeTarget] = useState(null);
 
 
 
@@ -275,35 +275,15 @@ export default function App() {
     generateOutreach, generateSupplierReply,
   } = useChatActions();
 
-  const { buildSmartContext, sendAskMessage: _sendAskMessage } = useAskClaude();
-
-  function sendAskMessage(msg) {
-    return _sendAskMessage(msg, askMessages, setAskMessages, setAskInput, setAskLoading);
-  }
+  const { buildSmartContext, sendAskMessage } = useAskClaude();
 
   const {
-    importChatFile: _importChatFile,
-    importSingleChatFile: _importSingleChatFile,
-    importMultipleChatFiles: _importMultipleChatFiles,
-    importWhatsAppChat: _importWhatsAppChat,
-    exportData: _exportData,
-  } = useImport(anthropicKey);
-
-  function importSingleChatFile(file) {
-    return _importSingleChatFile(file, setImporting, setImportResult);
-  }
-
-  function importMultipleChatFiles(files) {
-    return _importMultipleChatFiles(files, setImportingMultiple, setImportMultipleProgress, setImportMultipleResult);
-  }
-
-  function importWhatsAppChat() {
-    return _importWhatsAppChat(importText, setImporting, setImportResult, setImportText);
-  }
-
-  function exportData() {
-    return _exportData(setExporting);
-  }
+    importChatFile,
+    importSingleChatFile,
+    importMultipleChatFiles,
+    importWhatsAppChat,
+    exportData,
+  } = useImport();
 
   const {
     showBroadcast, setShowBroadcast,
@@ -910,14 +890,6 @@ export default function App() {
       {activeTab === "stock" && (
         <StockTab
           customers={customers}
-          showUpgrade={showUpgrade}
-          setShowUpgrade={setShowUpgrade}
-          upgradeTarget={upgradeTarget}
-          setUpgradeTarget={setUpgradeTarget}
-          showQuickSale={showQuickSale}
-          setShowQuickSale={setShowQuickSale}
-          quickSalePrefill={quickSalePrefill}
-          setQuickSalePrefill={setQuickSalePrefill}
           openBroadcast={openBroadcast}
           handleUpgradeApply={handleUpgradeApply}
           loadCustomers={loadCustomers}

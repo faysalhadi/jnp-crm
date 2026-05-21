@@ -23,6 +23,10 @@ export function StockProvider({ children }) {
   const [importStockResult, setImportStockResult] = useState(null);
   const [soldDealMap, setSoldDealMap] = useState({});
   const [filteredStock, setFilteredStock] = useState([]);
+  const [showQuickSale, setShowQuickSale] = useState(false);
+  const [quickSalePrefill, setQuickSalePrefill] = useState(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeTarget, setUpgradeTarget] = useState(null);
   const stockFileInputRef = useRef(null);
   const importStockFileRef = useRef(null);
 
@@ -208,6 +212,10 @@ export function StockProvider({ children }) {
       importingStock,
       importStockResult, setImportStockResult,
       soldDealMap, setSoldDealMap,
+      showQuickSale, setShowQuickSale,
+      quickSalePrefill, setQuickSalePrefill,
+      showUpgrade, setShowUpgrade,
+      upgradeTarget, setUpgradeTarget,
       filteredStock, setFilteredStock,
       stockFileInputRef,
       importStockFileRef,

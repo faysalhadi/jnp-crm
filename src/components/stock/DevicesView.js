@@ -23,10 +23,6 @@ export default function DevicesView({
   setSaleReceiptData,
   setReceiptEditName,
   setShowSaleReceipt,
-  showUpgrade, setShowUpgrade,
-  upgradeTarget, setUpgradeTarget,
-  showQuickSale, setShowQuickSale,
-  quickSalePrefill, setQuickSalePrefill,
   customers,
 }) {
   const {
@@ -47,6 +43,10 @@ export default function DevicesView({
     saveStock, deleteStockItem, toggleStockStatus,
     uploadStockPhoto, downloadStockTemplate,
     handleStockFileSelect, importStockItems,
+    showUpgrade, setShowUpgrade,
+    upgradeTarget, setUpgradeTarget,
+    showQuickSale, setShowQuickSale,
+    quickSalePrefill, setQuickSalePrefill,
   } = useStock();
   const {
     activeCustomerId, setActiveCustomerId,

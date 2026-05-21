@@ -5,9 +5,11 @@ import { useStock } from "../context/StockContext";
 import { useParts } from "../context/PartsContext";
 import { useSales } from "../context/SalesContext";
 import { useAuth } from "../context/AuthContext";
+import { useAskClaudeContext } from "../context/AskClaudeContext";
 
 export function useAskClaude() {
   const { anthropicKey } = useAuth();
+  const { askMessages, setAskMessages, setAskInput, setAskLoading } = useAskClaudeContext();
   const { customers } = useCustomers();
   const { stock, cachedStock } = useStock();
   const { parts } = useParts();
@@ -172,7 +174,7 @@ export function useAskClaude() {
     return context;
   }
 
-  async function sendAskMessage(msg, askMessages, setAskMessages, setAskInput, setAskLoading) {
+  async function sendAskMessage(msg) {
     const trimmed = (msg || "").trim();
     if (!trimmed) return;
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
