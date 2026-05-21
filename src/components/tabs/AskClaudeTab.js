@@ -1,16 +1,17 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { QUICK_ACTIONS } from "../../constants";
 import { useUI } from "../../context/UIContext";
+import { useAskClaudeContext } from "../../context/AskClaudeContext";
+import { useAskClaude } from "../../hooks/useAskClaude";
 
-export default function AskClaudeTab({
-  anthropicKey,
-  askMessages, setAskMessages,
-  askInput, setAskInput,
-  askLoading, setAskLoading,
-  askBottomRef,
-  sendAskMessage,
-}) {
+export default function AskClaudeTab() {
   const { isMobile } = useUI();
+  const { askMessages, setAskMessages, askInput, setAskInput, askLoading } = useAskClaudeContext();
+  const { sendAskMessage } = useAskClaude();
+  const askBottomRef = useRef(null);
+
+  useEffect(() => { askBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [askMessages]);
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
 

@@ -7,40 +7,19 @@ import { daysSince } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
+import { useChat } from "../../context/ChatContext";
+import { useChatActions } from "../../hooks/useChatActions";
 
-export default function ChatHeader({
-  editingName, setEditingName,
-  nameInput, setNameInput,
-  editingNumber, setEditingNumber,
-  numberInput, setNumberInput,
-  moveStage,
-  pendingSuggestion, setPendingSuggestion,
-  outreachMode, setOutreachMode,
-  outreachReason, setOutreachReason,
-  outreachCustom, setOutreachCustom,
-  showSupplierReply, setShowSupplierReply,
-  supplierReplyCtx, setSupplierReplyCtx,
-  supplierReplyGmail, setSupplierReplyGmail,
-  supplierReplyWA, setSupplierReplyWA,
-  supplierReplyLoading, setSupplierReplyLoading,
-  copiedSupGmail, setCopiedSupGmail,
-  copiedSupWA, setCopiedSupWA,
-  handleConfirmSale,
-  handleReserveDevice,
-  generateSupplierReply,
-}) {
+export default function ChatHeader() {
   const { setShowSideDrawer } = useUI();
-  const {
-    traderListings,
-    setTraderSearch,
-  } = useTraders();
+  const { traderListings, setTraderSearch } = useTraders();
   const {
     activeCustomer,
     activeDeal,
     activeDealId, setActiveDealId,
     activeCustomerId, setActiveCustomerId,
     setView,
-    pendingSuggestion: _pendingSuggestion, setPendingSuggestion: _setPendingSuggestion,
+    pendingSuggestion, setPendingSuggestion,
     showAddDeal, setShowAddDeal,
     showDeleteConfirm, setShowDeleteConfirm,
     showLossReason, setShowLossReason,
@@ -51,8 +30,24 @@ export default function ChatHeader({
     deleteCustomer: _deleteCustomer,
     addDeal: _addDeal,
   } = useCustomers();
+  const {
+    editingName, setEditingName,
+    nameInput, setNameInput,
+    editingNumber, setEditingNumber,
+    numberInput, setNumberInput,
+    outreachMode, setOutreachMode,
+    outreachReason, setOutreachReason,
+    outreachCustom, setOutreachCustom,
+    showSupplierReply, setShowSupplierReply,
+    supplierReplyCtx, setSupplierReplyCtx,
+    supplierReplyGmail, setSupplierReplyGmail,
+    supplierReplyWA, setSupplierReplyWA,
+    supplierReplyLoading, setSupplierReplyLoading,
+    copiedSupGmail, setCopiedSupGmail,
+    copiedSupWA, setCopiedSupWA,
+  } = useChat();
+  const { moveStage, handleConfirmSale, handleReserveDevice, generateSupplierReply } = useChatActions();
 
-  // Bind IDs so existing call sites (no-arg pattern) work unchanged
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);

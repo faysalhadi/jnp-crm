@@ -1,27 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { supabase } from "./supabase";
-import * as XLSX from "xlsx";
 import SourcingModule, { useSourcingAlerts } from "./SourcingModule";
 import ContactModal from "./ContactModal";
 
-import {
-  ANTHROPIC_KEY_STORAGE, STAGES, TIERS, BRANDS,
-  LOSS_REASONS, PAYMENT_STATUSES, OUTREACH_REASONS,
-  QUICK_ACTIONS, SOURCING_STAGES, SOURCING_STAGE_COLORS,
-  SOURCING_CHANNELS, SYSTEM_PROMPT, EMPTY_STOCK,
-} from "./constants";
-
-import {
-  getGreeting, timeAgo, waTsFormat, daysSince,
-  autoTier, monthRevenue, getAnthropicKey, saveAnthropicKey,
-  parseGB, labelGB, cleanWhatsAppText,
-} from "./utils/helpers";
-
-import {
-  callClaude,
-  buildSystemPromptFromCache,
-  buildOwnerContext,
-} from "./utils/claude";
+import { daysSince, monthRevenue } from "./utils/helpers";
 
 import { useAuth } from "./context/AuthContext";
 import { useCustomers } from "./context/CustomerContext";
@@ -30,21 +12,11 @@ import { useUI } from "./context/UIContext";
 import { useSales } from "./context/SalesContext";
 import { useParts } from "./context/PartsContext";
 import { useReservations } from "./context/ReservationsContext";
-import { moveStage as moveStageService, buildReceiptText as buildReceiptTextService, saveReceiptNumber as saveReceiptNumberService } from "./services/dealService";
-import { loadMessages as loadMessagesService, saveMessage as saveMessageService, generateReply as generateReplyService } from "./services/messageService";
-import { getMatchingClients as getMatchingClientsService } from "./services/broadcastService";
-import { useChatActions } from "./hooks/useChatActions";
-import { useAskClaude } from "./hooks/useAskClaude";
 import { useImport } from "./hooks/useImport";
 import { useChat } from "./context/ChatContext";
-import { useImportContext } from "./context/ImportContext";
-import { useAskClaudeContext } from "./context/AskClaudeContext";
 import { useBroadcast } from "./hooks/useBroadcast";
 
-import { saveImportedMessages } from "./utils/whatsapp";
-import Badge from "./components/ui/Badge";
 import Spinner from "./components/ui/Spinner";
-import StageBar from "./components/ui/StageBar";
 import PartSaleModal from "./components/modals/PartSaleModal";
 import LinkStockModal from "./components/modals/LinkStockModal";
 import SpecUpgradeModal from "./components/modals/SpecUpgradeModal";
@@ -64,6 +36,7 @@ import ToastNotification from "./components/layout/ToastNotification";
 import ReceiptModal from "./components/layout/ReceiptModal";
 import BroadcastModal from "./components/layout/BroadcastModal";
 import AuthScreen from "./components/layout/AuthScreen";
+import ApiKeySetup from "./components/layout/ApiKeySetup";
 import EditReservationModal from "./components/modals/EditReservationModal";
 import CompleteReservationModal from "./components/modals/CompleteReservationModal";
 import SettingsTab from "./components/tabs/SettingsTab";
@@ -72,8 +45,6 @@ import SettingsTab from "./components/tabs/SettingsTab";
 export default function App() {
   const {
     customers, setCustomers,
-    loading,
-    lastMsgMap,
     activeCustomerId, setActiveCustomerId,
     activeDealId, setActiveDealId,
     activeCustomer,
@@ -86,16 +57,8 @@ export default function App() {
     showContactModal, setShowContactModal,
     contactModalPreType, setContactModalPreType,
     newCustomer, setNewCustomer,
-    newDeal, setNewDeal,
-    showAddDeal, setShowAddDeal,
-    showDeleteConfirm, setShowDeleteConfirm,
-    showLossReason, setShowLossReason,
     loadCustomers,
     addCustomer,
-    deleteCustomer,
-    updateCustomer,
-    updateDeal,
-    addDeal,
   } = useCustomers();
 
   const {
@@ -193,95 +156,30 @@ export default function App() {
   } = useReservations();
 
   const {
-    session, setSession,
+    session,
     authLoading,
     authMode, setAuthMode,
     authEmail, setAuthEmail,
     authPassword, setAuthPassword,
     authError, setAuthError,
     authBusy,
-    anthropicKey, setAnthropicKey,
-    keyInput, setKeyInput,
+    anthropicKey,
     handleAuth, handleLogout,
   } = useAuth();
 
   const {
-    messages, setMessages,
-    msgLoading, setMsgLoading,
-    msgInput, setMsgInput,
-    incomingText, setIncomingText,
-    replyMode, setReplyMode,
-    replyingToId, setReplyingToId,
-    directReplyText, setDirectReplyText,
-    generatedReply, setGeneratedReply,
-    generatedReplyLoading, setGeneratedReplyLoading,
-    editingGenerated, setEditingGenerated,
-    copied, setCopied,
-    editSent, setEditSent,
-    editingName, setEditingName,
-    nameInput, setNameInput,
-    editingNumber, setEditingNumber,
-    numberInput, setNumberInput,
-    outreachMode, setOutreachMode,
-    outreachReason, setOutreachReason,
-    outreachCustom, setOutreachCustom,
-    showSupplierReply, setShowSupplierReply,
-    supplierReplyCtx, setSupplierReplyCtx,
-    supplierReplyGmail, setSupplierReplyGmail,
-    supplierReplyWA, setSupplierReplyWA,
-    supplierReplyLoading, setSupplierReplyLoading,
-    copiedSupGmail, setCopiedSupGmail,
-    copiedSupWA, setCopiedSupWA,
+    setMessages,
+    setIncomingText, setReplyMode, setReplyingToId,
+    setDirectReplyText, setGeneratedReply, setGeneratedReplyLoading, setEditingGenerated,
   } = useChat();
 
-  const {
-    importText, setImportText,
-    importing, setImporting,
-    importResult, setImportResult,
-    importingMultiple, setImportingMultiple,
-    importMultipleProgress, setImportMultipleProgress,
-    importMultipleResult, setImportMultipleResult,
-    exporting, setExporting,
-  } = useImportContext();
-
-  const {
-    askMessages, setAskMessages,
-    askInput, setAskInput,
-    askLoading, setAskLoading,
-    expandedSaleId, setExpandedSaleId,
-    marketingDevices, setMarketingDevices,
-  } = useAskClaudeContext();
   const chatFileInputRef = useRef(null);
   const chatFilesInputRef = useRef(null);
-  const bottomRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const askBottomRef = useRef(null);
-
-  // ── broadcast ── (managed by useBroadcast hook, initialized below after messages state)
-
-  // ── quick sale ──
-
-
-  // ── spec upgrade ──
-
-
 
   // ── sourcing alerts for dashboard ──
   const sourcingAlerts = useSourcingAlerts();
 
-  // ── hooks ──
   const {
-    handleReserveDevice, handleConfirmSale, moveStage,
-    addIncomingMessage, generateAIReply, sendAIReply,
-    sendDirectReply, generateOpeningMessage,
-    confirmSent, markNotSent, copyMsg,
-    generateOutreach, generateSupplierReply,
-  } = useChatActions();
-
-  const { buildSmartContext, sendAskMessage } = useAskClaude();
-
-  const {
-    importChatFile,
     importSingleChatFile,
     importMultipleChatFiles,
     importWhatsAppChat,
@@ -321,14 +219,11 @@ export default function App() {
       .then(({ data }) => setMessages(data || []));
   }, [activeDealId]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
   // Reset all chat input state when switching contacts
   useEffect(() => {
     setIncomingText(""); setReplyMode(null); setReplyingToId(null);
     setDirectReplyText(""); setGeneratedReply(""); setGeneratedReplyLoading(false); setEditingGenerated(false);
   }, [activeCustomerId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { askBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [askMessages]);
 
   // Auto-create a conversation deal for traders/suppliers that have none,
   // so the existing messages system (which requires deal_id) works unchanged.
@@ -421,7 +316,6 @@ export default function App() {
   }, [stockFilter, stock]);
 
 
-  const getMatchingClients = (item) => getMatchingClientsService(item, customers);
 
 
 
@@ -429,10 +323,7 @@ export default function App() {
 
 
 
-
-
-
-  // ── nav tabs (used by both sidebar instances) ──
+  // ── nav tabs ──
   const NAV_TABS = [
     { key: "home",      icon: "🏠", label: "Home" },
     { key: "customers", icon: "👥", label: "Contacts" },
@@ -502,23 +393,7 @@ export default function App() {
   );
 
   // api key setup
-  if (!anthropicKey) return (
-    <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: 24, padding: 28, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#94A3B8", marginBottom: 4 }}>ONE-TIME SETUP</div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>Add Anthropic API Key</div>
-        <div style={{ fontSize: 13, color: "#64748B", marginBottom: 20, lineHeight: 1.6 }}>
-          Get your key from <strong>console.anthropic.com</strong> → API Keys. Stored locally on your device only.
-        </div>
-        <input value={keyInput} onChange={e => setKeyInput(e.target.value)} placeholder="sk-ant-api03-..."
-          style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box", marginBottom: 12 }} />
-        <button onClick={() => { saveAnthropicKey(keyInput); setAnthropicKey(keyInput); }} disabled={!keyInput.startsWith("sk-")}
-          style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: keyInput.startsWith("sk-") ? "#6366F1" : "#E2E8F0", color: keyInput.startsWith("sk-") ? "#fff" : "#94A3B8", fontWeight: 700, fontSize: 14, cursor: keyInput.startsWith("sk-") ? "pointer" : "not-allowed" }}>
-          Save & Continue →
-        </button>
-      </div>
-    </div>
-  );
+  if (!anthropicKey) return <ApiKeySetup />;
 
   // settings view
   if (view === "settings") {
@@ -568,84 +443,7 @@ export default function App() {
 
   // detail view
   if (view === "detail" && activeCustomer) {
-    return (
-      <ChatDetailView
-        messages={messages}
-        setMessages={setMessages}
-        msgLoading={msgLoading}
-        incomingText={incomingText}
-        setIncomingText={setIncomingText}
-        replyMode={replyMode}
-        setReplyMode={setReplyMode}
-        replyingToId={replyingToId}
-        setReplyingToId={setReplyingToId}
-        directReplyText={directReplyText}
-        setDirectReplyText={setDirectReplyText}
-        generatedReply={generatedReply}
-        setGeneratedReply={setGeneratedReply}
-        generatedReplyLoading={generatedReplyLoading}
-        setGeneratedReplyLoading={setGeneratedReplyLoading}
-        editingGenerated={editingGenerated}
-        setEditingGenerated={setEditingGenerated}
-        copied={copied}
-        setCopied={setCopied}
-        editSent={editSent}
-        setEditSent={setEditSent}
-        editingName={editingName}
-        setEditingName={setEditingName}
-        nameInput={nameInput}
-        setNameInput={setNameInput}
-        editingNumber={editingNumber}
-        setEditingNumber={setEditingNumber}
-        numberInput={numberInput}
-        setNumberInput={setNumberInput}
-        outreachMode={outreachMode}
-        setOutreachMode={setOutreachMode}
-        outreachReason={outreachReason}
-        setOutreachReason={setOutreachReason}
-        outreachCustom={outreachCustom}
-        setOutreachCustom={setOutreachCustom}
-        showSupplierReply={showSupplierReply}
-        setShowSupplierReply={setShowSupplierReply}
-        supplierReplyCtx={supplierReplyCtx}
-        setSupplierReplyCtx={setSupplierReplyCtx}
-        supplierReplyGmail={supplierReplyGmail}
-        setSupplierReplyGmail={setSupplierReplyGmail}
-        supplierReplyWA={supplierReplyWA}
-        setSupplierReplyWA={setSupplierReplyWA}
-        supplierReplyLoading={supplierReplyLoading}
-        setSupplierReplyLoading={setSupplierReplyLoading}
-        copiedSupGmail={copiedSupGmail}
-        setCopiedSupGmail={setCopiedSupGmail}
-        copiedSupWA={copiedSupWA}
-        setCopiedSupWA={setCopiedSupWA}
-        anthropicKey={anthropicKey}
-        cachedStock={cachedStock}
-        bottomRef={bottomRef}
-        NAV_TABS={NAV_TABS}
-        activeTab={activeTab}
-        stock={stock}
-        loadStock={loadStock}
-        refreshCachedStock={refreshCachedStock}
-        loadTodaySales={loadTodaySales}
-        moveStage={moveStage}
-        handleConfirmSale={handleConfirmSale}
-        handleReserveDevice={handleReserveDevice}
-        addIncomingMessage={addIncomingMessage}
-        generateAIReply={generateAIReply}
-        sendAIReply={sendAIReply}
-        sendDirectReply={sendDirectReply}
-        generateOpeningMessage={generateOpeningMessage}
-        confirmSent={confirmSent}
-        markNotSent={markNotSent}
-        copyMsg={copyMsg}
-        generateOutreach={generateOutreach}
-        generateSupplierReply={generateSupplierReply}
-        showToast={showToast}
-        setStockSearch={setStockSearch}
-        setStockFilter={setStockFilter}
-      />
-    );
+    return <ChatDetailView />;
   }
 
   // list view
@@ -820,17 +618,7 @@ export default function App() {
 
       {/* ── ASK CLAUDE TAB ── */}
       {activeTab === "ask" && (
-        <AskClaudeTab
-          anthropicKey={anthropicKey}
-          askMessages={askMessages}
-          setAskMessages={setAskMessages}
-          askInput={askInput}
-          setAskInput={setAskInput}
-          askLoading={askLoading}
-          setAskLoading={setAskLoading}
-          askBottomRef={askBottomRef}
-          sendAskMessage={sendAskMessage}
-        />
+        <AskClaudeTab />
       )}
 
       {/* ── SALES HISTORY TAB ── */}

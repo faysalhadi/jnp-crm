@@ -1,32 +1,40 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { timeAgo } from "../../utils/helpers";
-import Spinner from "../ui/Spinner";
 import { useCustomers } from "../../context/CustomerContext";
+import { useChat } from "../../context/ChatContext";
+import { useChatActions } from "../../hooks/useChatActions";
 
-export default function MessageList({
-  messages,
-  replyMode, setReplyMode,
-  replyingToId, setReplyingToId,
-  generatedReply, setGeneratedReply,
-  generatedReplyLoading,
-  editingGenerated, setEditingGenerated,
-  copied, setCopied,
-  editSent, setEditSent,
-  confirmSent, markNotSent, copyMsg,
-  bottomRef,
-  generateAIReply,
-  sendAIReply,
-  generateOpeningMessage,
-  showSupplierReply, setShowSupplierReply,
-  supplierReplyCtx, setSupplierReplyCtx,
-  supplierReplyGmail, setSupplierReplyGmail,
-  supplierReplyWA, setSupplierReplyWA,
-  supplierReplyLoading, setSupplierReplyLoading,
-  copiedSupGmail, setCopiedSupGmail,
-  copiedSupWA, setCopiedSupWA,
-  generateSupplierReply,
-}) {
+export default function MessageList() {
   const { activeCustomer } = useCustomers();
+  const {
+    messages,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    generatedReply, setGeneratedReply,
+    generatedReplyLoading,
+    editingGenerated, setEditingGenerated,
+    copied, setCopied,
+    editSent, setEditSent,
+    showSupplierReply, setShowSupplierReply,
+    supplierReplyCtx, setSupplierReplyCtx,
+    supplierReplyGmail, setSupplierReplyGmail,
+    supplierReplyWA, setSupplierReplyWA,
+    supplierReplyLoading, setSupplierReplyLoading,
+    copiedSupGmail, setCopiedSupGmail,
+    copiedSupWA, setCopiedSupWA,
+  } = useChat();
+  const {
+    confirmSent,
+    markNotSent,
+    copyMsg,
+    generateAIReply,
+    sendAIReply,
+    generateOpeningMessage,
+    generateSupplierReply,
+  } = useChatActions();
+  const bottomRef = useRef(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   return (
     <>
@@ -39,7 +47,7 @@ export default function MessageList({
             <div style={{ fontSize: 40, marginBottom: 10 }}>💬</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8", marginBottom: 20 }}>No messages yet</div>
             <div style={{ display: "flex", gap: 10, width: "100%" }}>
-              <button onClick={() => { setReplyMode("myself"); setDirectReplyText(""); }}
+              <button onClick={() => { setReplyMode("myself"); }}
                 style={{ flex: 1, padding: "11px 8px", borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                 ✏️ I'll start typing
               </button>
@@ -60,7 +68,6 @@ export default function MessageList({
 
         {/* Message list with inline reply buttons */}
         {(() => {
-          // Compute which customer messages still need a reply
           const lastAssistantTs = messages
             .filter(m => m.role === "assistant" && m.sent && m.sent !== "NOT_SENT")
             .map(m => new Date(m.ts).getTime()).sort().pop() || 0;
@@ -100,7 +107,7 @@ export default function MessageList({
                 {/* Inline reply buttons — shown on each unanswered client message */}
                 {showReplyBtns && (
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    <button onClick={() => { setReplyingToId(msg.id); setReplyMode("myself"); setDirectReplyText(""); }}
+                    <button onClick={() => { setReplyingToId(msg.id); setReplyMode("myself"); }}
                       style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                       ✏️ Reply Myself
                     </button>

@@ -1,27 +1,33 @@
 import React, { useState } from "react";
 import { callClaude, buildSystemPromptFromCache } from "../../utils/claude";
 import { useCustomers } from "../../context/CustomerContext";
+import { useChat } from "../../context/ChatContext";
+import { useAuth } from "../../context/AuthContext";
+import { useStock } from "../../context/StockContext";
+import { useChatActions } from "../../hooks/useChatActions";
 
-export default function InputBar({
-  messages,
-  incomingText, setIncomingText,
-  replyMode, setReplyMode,
-  replyingToId, setReplyingToId,
-  directReplyText, setDirectReplyText,
-  generatedReply, setGeneratedReply,
-  generatedReplyLoading, setGeneratedReplyLoading,
-  editingGenerated, setEditingGenerated,
-  anthropicKey,
-  cachedStock,
-  addIncomingMessage,
-  generateAIReply,
-  sendAIReply,
-  sendDirectReply,
-  generateOpeningMessage,
-  handleConfirmSale,
-  handleReserveDevice,
-}) {
-  const { activeCustomer, activeDeal } = useCustomers();
+export default function InputBar() {
+  const { activeCustomer } = useCustomers();
+  const {
+    messages,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    generatedReplyLoading, setGeneratedReplyLoading,
+    editingGenerated, setEditingGenerated,
+  } = useChat();
+  const { anthropicKey } = useAuth();
+  const { cachedStock } = useStock();
+  const {
+    addIncomingMessage,
+    generateAIReply,
+    sendAIReply,
+    sendDirectReply,
+    handleConfirmSale,
+    handleReserveDevice,
+  } = useChatActions();
   const [aiComposeContext, setAiComposeContext] = useState("");
 
   return (
@@ -118,7 +124,6 @@ export default function InputBar({
 
       {/* ── PRIMARY ACTION BAR ── */}
       <div style={{ marginBottom: 8 }}>
-        {/* Reserve — primary action for WhatsApp clients */}
         <button
           onClick={handleReserveDevice}
           style={{
@@ -136,7 +141,6 @@ export default function InputBar({
         >
           🔒 Reserve Device
         </button>
-        {/* Confirm Sale — secondary action */}
         <div style={{ textAlign: "center" }}>
           <button
             onClick={handleConfirmSale}
@@ -174,7 +178,6 @@ export default function InputBar({
 
       {/* BOTTOM ROW — type your own outgoing message (always usable) */}
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-        {/* AI compose button — always visible */}
         <button
           onClick={() => {
             setReplyMode(replyMode === "ai_compose" ? null : "ai_compose");
@@ -194,14 +197,12 @@ export default function InputBar({
           rows={2}
           style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
         />
-        {/* Save only — shown when no number */}
         {!activeCustomer?.number && (
           <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
             style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 20, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
             ↑
           </button>
         )}
-        {/* Combined Save + WhatsApp — shown when number exists */}
         {activeCustomer?.number && (
           <button
             onClick={async () => {
