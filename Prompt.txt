@@ -1,80 +1,173 @@
-Read src/App.js and src/context/StockContext.js 
-fully before making any changes.
+Read src/App.js fully before making any changes.
 
-CHANGE 1 — Move showQuickSale and showUpgrade to StockContext
+CHANGE 1 — Extract Edit Reservation Modal
 
-In src/context/StockContext.js add these state variables
-inside StockProvider:
-  const [showQuickSale, setShowQuickSale] = useState(false);
-  const [quickSalePrefill, setQuickSalePrefill] = useState(null);
-  const [showUpgrade, setShowUpgrade] = useState(false);
-  const [upgradeTarget, setUpgradeTarget] = useState(null);
+Find the Edit Reservation modal in App.js around line 1032.
+It starts with:
+  {showEditReservation && editReservationItem && (
 
-Add them to the StockContext.Provider value:
-  showQuickSale, setShowQuickSale,
-  quickSalePrefill, setQuickSalePrefill,
-  showUpgrade, setShowUpgrade,
-  upgradeTarget, setUpgradeTarget,
+Extract it into src/components/modals/EditReservationModal.js:
 
-In App.js add these to the useStock() destructuring:
-  showQuickSale, setShowQuickSale,
-  quickSalePrefill, setQuickSalePrefill,
-  showUpgrade, setShowUpgrade,
-  upgradeTarget, setUpgradeTarget,
+  import React from "react";
+  import { supabase } from "../../supabase";
+  import { useReservations } from "../../context/ReservationsContext";
+  import { useStock } from "../../context/StockContext";
+  import { useCustomers } from "../../context/CustomerContext";
 
-Then DELETE these from App.js:
-  const [showQuickSale, setShowQuickSale] = useState(false);
-  const [quickSalePrefill, setQuickSalePrefill] = useState(null);
-  const [showUpgrade, setShowUpgrade] = useState(false);
-  const [upgradeTarget, setUpgradeTarget] = useState(null);
+  export default function EditReservationModal() {
+    const {
+      showEditReservation, setShowEditReservation,
+      editReservationItem, setEditReservationItem,
+      editReservationForm, setEditReservationForm,
+      loadReservedDeals,
+    } = useReservations();
+    const { loadStock } = useStock();
+    const { loadCustomers } = useCustomers();
 
-CHANGE 2 — Clean up wrapper functions in App.js
+    if (!showEditReservation || !editReservationItem) return null;
 
-Find these wrapper functions in App.js:
-  function sendAskMessage(msg) { ... }
-  function importSingleChatFile(file) { ... }
-  function importMultipleChatFiles(files) { ... }
-  function importWhatsAppChat() { ... }
-  function exportData() { ... }
+    return (
+      // exact same JSX
+    );
+  }
 
-These are just wrappers around hook functions.
-Check if they are still needed or if components
-can call the hook functions directly.
+In App.js replace the entire edit reservation modal block with:
+  import EditReservationModal from 
+    "./components/modals/EditReservationModal";
+  
+  <EditReservationModal />
 
-For each one:
-- If it just calls the hook function with same params,
-  delete the wrapper and update any references to use
-  the hook function directly
-- If it adds extra logic, keep it
+CHANGE 2 — Extract Complete Reservation Modal
 
-CHANGE 3 — Update DevicesView and other components
-to get showQuickSale and showUpgrade from StockContext
+Find the Complete Reservation modal in App.js around line 1179.
+It starts with:
+  {showCompleteReservation && completingDeal && (
 
-In src/components/stock/DevicesView.js:
-  Add: const { showQuickSale, setShowQuickSale,
-    quickSalePrefill, setQuickSalePrefill,
-    showUpgrade, setShowUpgrade,
-    upgradeTarget, setUpgradeTarget } = useStock();
-  Remove these from props destructuring.
+Extract it into src/components/modals/CompleteReservationModal.js:
 
-In App.js find where DevicesView or StockTab is rendered.
-Remove these props:
-  showQuickSale={showQuickSale}
-  setShowQuickSale={setShowQuickSale}
-  quickSalePrefill={quickSalePrefill}
-  setQuickSalePrefill={setQuickSalePrefill}
-  showUpgrade={showUpgrade}
-  setShowUpgrade={setShowUpgrade}
-  upgradeTarget={upgradeTarget}
-  setUpgradeTarget={setUpgradeTarget}
+  import React from "react";
+  import { supabase } from "../../supabase";
+  import { useReservations } from "../../context/ReservationsContext";
+  import { useStock } from "../../context/StockContext";
+  import { useCustomers } from "../../context/CustomerContext";
+  import { useSales } from "../../context/SalesContext";
+  import { useUI } from "../../context/UIContext";
 
-After changes:
+  export default function CompleteReservationModal() {
+    const {
+      showCompleteReservation, setShowCompleteReservation,
+      completingDeal, setCompletingDeal,
+      completionPaymentMethod, setCompletionPaymentMethod,
+      loadReservedDeals,
+    } = useReservations();
+    const { loadStock } = useStock();
+    const { loadCustomers } = useCustomers();
+    const { 
+      setSaleReceiptData, setReceiptEditName, 
+      setShowSaleReceipt, loadTodaySales 
+    } = useSales();
+    const { isMobile } = useUI();
+
+    if (!showCompleteReservation || !completingDeal) return null;
+
+    return (
+      // exact same JSX
+    );
+  }
+
+In App.js replace the complete reservation modal block with:
+  import CompleteReservationModal from 
+    "./components/modals/CompleteReservationModal";
+  
+  <CompleteReservationModal />
+
+CHANGE 3 — Extract Settings View
+
+Find the settings view in App.js.
+It starts with:
+  if (view === "settings") {
+    return (
+
+Extract it into src/components/tabs/SettingsTab.js:
+
+  import React from "react";
+  import { useAuth } from "../../context/AuthContext";
+  import { useUI } from "../../context/UIContext";
+  import { useCustomers } from "../../context/CustomerContext";
+  import { useImportContext } from "../../context/ImportContext";
+  import { saveAnthropicKey } from "../../utils/helpers";
+
+  export default function SettingsTab({
+    importText, setImportText,
+    importing, setImporting,
+    importResult, setImportResult,
+    importingMultiple, setImportingMultiple,
+    importMultipleProgress, setImportMultipleProgress,
+    importMultipleResult, setImportMultipleResult,
+    exporting, setExporting,
+    importWhatsAppChat,
+    importSingleChatFile,
+    importMultipleChatFiles,
+    exportData,
+    handleLogoutWithUI,
+    fileInputRef,
+    multipleFileInputRef,
+  }) {
+    const { anthropicKey, setAnthropicKey, keyInput, 
+      setKeyInput } = useAuth();
+    const { isMobile, setView } = useUI();
+
+    return (
+      // exact same settings JSX
+    );
+  }
+
+In App.js replace:
+  if (view === "settings") {
+    return ( ... );
+  }
+
+With:
+  import SettingsTab from "./components/tabs/SettingsTab";
+
+  if (view === "settings") {
+    return (
+      <SettingsTab
+        importText={importText}
+        setImportText={setImportText}
+        importing={importing}
+        setImporting={setImporting}
+        importResult={importResult}
+        setImportResult={setImportResult}
+        importingMultiple={importingMultiple}
+        setImportingMultiple={setImportingMultiple}
+        importMultipleProgress={importMultipleProgress}
+        setImportMultipleProgress={setImportMultipleProgress}
+        importMultipleResult={importMultipleResult}
+        setImportMultipleResult={setImportMultipleResult}
+        exporting={exporting}
+        setExporting={setExporting}
+        importWhatsAppChat={importWhatsAppChat}
+        importSingleChatFile={importSingleChatFile}
+        importMultipleChatFiles={importMultipleChatFiles}
+        exportData={exportData}
+        handleLogoutWithUI={handleLogoutWithUI}
+        fileInputRef={fileInputRef}
+        multipleFileInputRef={multipleFileInputRef}
+      />
+    );
+  }
+
+After ALL changes:
 1. Run npm run build
-2. Fix ALL errors
-3. git add -A && git commit -m "architecture: move remaining state to contexts" 
+2. Fix ALL errors one by one
+3. git add -A && git commit -m "architecture: extract reservation modals and settings tab" 
    && git push origin main --force
-4. Test:
-   - Stock tab works?
-   - Can upgrade a device?
-   - Quick sale works?
-5. Tell me new App.js line count
+4. Wait 2 minutes
+5. Open https://jnp-crm.vercel.app
+6. Test:
+   - Settings tab opens correctly?
+   - Edit reservation works?
+   - Complete reservation works?
+   - Receipt appears after completing reservation?
+7. Tell me new App.js line count
