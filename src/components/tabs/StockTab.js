@@ -1,23 +1,16 @@
 import React from "react";
 import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
+import { useCustomers } from "../../context/CustomerContext";
+import { useSales } from "../../context/SalesContext";
 import DevicesView from "../stock/DevicesView";
 import PartsView from "../stock/PartsView";
 
-export default function StockTab({
-  customers,
-  showUpgrade, setShowUpgrade,
-  upgradeTarget, setUpgradeTarget,
-  showQuickSale, setShowQuickSale,
-  quickSalePrefill, setQuickSalePrefill,
-  openBroadcast,
-  handleUpgradeApply,
-  loadCustomers, loadTodaySales,
-  setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
-  filteredStock,
-}) {
+export default function StockTab({ openBroadcast, handleUpgradeApply }) {
   const { isMobile } = useUI();
-  const { stockView, setStockView } = useStock();
+  const { stockView, setStockView, filteredStock } = useStock();
+  const { customers, loadCustomers } = useCustomers();
+  const { loadTodaySales, setSaleReceiptData, setReceiptEditName, setShowSaleReceipt } = useSales();
 
   return (
     <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 32px 40px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -49,14 +42,6 @@ export default function StockTab({
           setSaleReceiptData={setSaleReceiptData}
           setReceiptEditName={setReceiptEditName}
           setShowSaleReceipt={setShowSaleReceipt}
-          showUpgrade={showUpgrade}
-          setShowUpgrade={setShowUpgrade}
-          upgradeTarget={upgradeTarget}
-          setUpgradeTarget={setUpgradeTarget}
-          showQuickSale={showQuickSale}
-          setShowQuickSale={setShowQuickSale}
-          quickSalePrefill={quickSalePrefill}
-          setQuickSalePrefill={setQuickSalePrefill}
           customers={customers}
         />
       )}

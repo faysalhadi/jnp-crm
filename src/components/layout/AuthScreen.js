@@ -1,14 +1,15 @@
 import React from "react";
-import { supabase } from "../../supabase";
+import { useAuth } from "../../context/AuthContext";
 
-export default function AuthScreen({
-  authMode, setAuthMode,
-  authEmail, setAuthEmail,
-  authPassword, setAuthPassword,
-  authError, setAuthError,
-  authBusy, setAuthBusy,
-  handleAuth,
-}) {
+export default function AuthScreen() {
+  const {
+    authMode, setAuthMode,
+    authEmail, setAuthEmail,
+    authPassword, setAuthPassword,
+    authError, setAuthError,
+    authBusy,
+    handleAuth,
+  } = useAuth();
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: 24, padding: 32, boxShadow: "0 8px 40px rgba(99,102,241,0.12)" }}>

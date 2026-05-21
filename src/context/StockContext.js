@@ -22,7 +22,6 @@ export function StockProvider({ children }) {
   const [importingStock, setImportingStock] = useState(false);
   const [importStockResult, setImportStockResult] = useState(null);
   const [soldDealMap, setSoldDealMap] = useState({});
-  const [filteredStock, setFilteredStock] = useState([]);
   const [showQuickSale, setShowQuickSale] = useState(false);
   const [quickSalePrefill, setQuickSalePrefill] = useState(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -194,6 +193,20 @@ export function StockProvider({ children }) {
     setImportingStock(false);
   }
 
+  const filteredStock = stock.filter(item => {
+    if (stockSearch) {
+      const q = stockSearch.toLowerCase();
+      return (item.brand || "").toLowerCase().includes(q) ||
+             (item.model || "").toLowerCase().includes(q) ||
+             (item.processor || "").toLowerCase().includes(q) ||
+             (item.serial_number || "").toLowerCase().includes(q);
+    }
+    if (stockFilter === "available") return item.status === "available";
+    if (stockFilter === "reserved") return item.status === "reserved";
+    if (stockFilter === "sold") return item.status === "sold";
+    return true;
+  });
+
   return (
     <StockContext.Provider value={{
       stock, setStock,
@@ -216,7 +229,7 @@ export function StockProvider({ children }) {
       quickSalePrefill, setQuickSalePrefill,
       showUpgrade, setShowUpgrade,
       upgradeTarget, setUpgradeTarget,
-      filteredStock, setFilteredStock,
+      filteredStock,
       stockFileInputRef,
       importStockFileRef,
       loadStock,

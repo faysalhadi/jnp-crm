@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "../supabase";
+import { daysSince, monthRevenue } from "../utils/helpers";
 
 const CustomerContext = createContext(null);
 
@@ -60,6 +61,29 @@ export function CustomerProvider({ children }) {
 
   const activeCustomer = customers.find(c => c.id === activeCustomerId);
   const activeDeal = activeCustomer?.deals?.find(d => d.id === activeDealId);
+
+  const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").length, 0);
+  const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
+  const revenue = monthRevenue(customers);
+
+  const filtered = customers
+    .filter(c => {
+      const cType = c.contact_type || "client";
+      if (contactTypeFilter !== "all" && cType !== contactTypeFilter) return false;
+      if (search) return c.name.toLowerCase().includes(search.toLowerCase()) || (c.number || "").includes(search);
+      if (filter === "urgent") return c.urgent;
+      if (filter === "overdue") return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+      if (filter === "vip") return c.tier === "vip";
+      if (filter === "cold") return c.tier === "cold";
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.urgent && !b.urgent) return -1;
+      if (!a.urgent && b.urgent) return 1;
+      const aTime = a.last_activity_at || a.last_active;
+      const bTime = b.last_activity_at || b.last_active;
+      return new Date(bTime) - new Date(aTime);
+    });
 
   async function addCustomer() {
     if (!newCustomer.name.trim()) return;
@@ -148,6 +172,10 @@ export function CustomerProvider({ children }) {
       showAddDeal, setShowAddDeal,
       showDeleteConfirm, setShowDeleteConfirm,
       showLossReason, setShowLossReason,
+      openDeals,
+      closedDeals,
+      revenue,
+      filtered,
       loadCustomers,
       addCustomer,
       deleteCustomer,

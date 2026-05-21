@@ -1,173 +1,217 @@
 Read src/App.js fully before making any changes.
 
-CHANGE 1 — Extract Edit Reservation Modal
+CHANGE 1 — Remove "add" view from App.js
 
-Find the Edit Reservation modal in App.js around line 1032.
-It starts with:
-  {showEditReservation && editReservationItem && (
+Find and DELETE this entire block:
+  if (view === "add") return (
+    <div style={{ minHeight: "100vh"...}>
+      ...
+    </div>
+  );
 
-Extract it into src/components/modals/EditReservationModal.js:
+This is no longer used. ContactModal handles 
+adding customers now.
 
-  import React from "react";
-  import { supabase } from "../../supabase";
-  import { useReservations } from "../../context/ReservationsContext";
-  import { useStock } from "../../context/StockContext";
-  import { useCustomers } from "../../context/CustomerContext";
+CHANGE 2 — Update AuthScreen to use AuthContext directly
 
-  export default function EditReservationModal() {
-    const {
-      showEditReservation, setShowEditReservation,
-      editReservationItem, setEditReservationItem,
-      editReservationForm, setEditReservationForm,
-      loadReservedDeals,
-    } = useReservations();
-    const { loadStock } = useStock();
-    const { loadCustomers } = useCustomers();
-
-    if (!showEditReservation || !editReservationItem) return null;
-
-    return (
-      // exact same JSX
-    );
-  }
-
-In App.js replace the entire edit reservation modal block with:
-  import EditReservationModal from 
-    "./components/modals/EditReservationModal";
-  
-  <EditReservationModal />
-
-CHANGE 2 — Extract Complete Reservation Modal
-
-Find the Complete Reservation modal in App.js around line 1179.
-It starts with:
-  {showCompleteReservation && completingDeal && (
-
-Extract it into src/components/modals/CompleteReservationModal.js:
-
-  import React from "react";
-  import { supabase } from "../../supabase";
-  import { useReservations } from "../../context/ReservationsContext";
-  import { useStock } from "../../context/StockContext";
-  import { useCustomers } from "../../context/CustomerContext";
-  import { useSales } from "../../context/SalesContext";
-  import { useUI } from "../../context/UIContext";
-
-  export default function CompleteReservationModal() {
-    const {
-      showCompleteReservation, setShowCompleteReservation,
-      completingDeal, setCompletingDeal,
-      completionPaymentMethod, setCompletionPaymentMethod,
-      loadReservedDeals,
-    } = useReservations();
-    const { loadStock } = useStock();
-    const { loadCustomers } = useCustomers();
-    const { 
-      setSaleReceiptData, setReceiptEditName, 
-      setShowSaleReceipt, loadTodaySales 
-    } = useSales();
-    const { isMobile } = useUI();
-
-    if (!showCompleteReservation || !completingDeal) return null;
-
-    return (
-      // exact same JSX
-    );
-  }
-
-In App.js replace the complete reservation modal block with:
-  import CompleteReservationModal from 
-    "./components/modals/CompleteReservationModal";
-  
-  <CompleteReservationModal />
-
-CHANGE 3 — Extract Settings View
-
-Find the settings view in App.js.
-It starts with:
-  if (view === "settings") {
-    return (
-
-Extract it into src/components/tabs/SettingsTab.js:
-
-  import React from "react";
+In src/components/layout/AuthScreen.js add:
   import { useAuth } from "../../context/AuthContext";
-  import { useUI } from "../../context/UIContext";
-  import { useCustomers } from "../../context/CustomerContext";
-  import { useImportContext } from "../../context/ImportContext";
-  import { saveAnthropicKey } from "../../utils/helpers";
 
-  export default function SettingsTab({
-    importText, setImportText,
-    importing, setImporting,
-    importResult, setImportResult,
-    importingMultiple, setImportingMultiple,
-    importMultipleProgress, setImportMultipleProgress,
-    importMultipleResult, setImportMultipleResult,
-    exporting, setExporting,
-    importWhatsAppChat,
-    importSingleChatFile,
-    importMultipleChatFiles,
-    exportData,
-    handleLogoutWithUI,
-    fileInputRef,
-    multipleFileInputRef,
-  }) {
-    const { anthropicKey, setAnthropicKey, keyInput, 
-      setKeyInput } = useAuth();
-    const { isMobile, setView } = useUI();
+Add at top of AuthScreen component:
+  const {
+    authMode, setAuthMode,
+    authEmail, setAuthEmail,
+    authPassword, setAuthPassword,
+    authError, setAuthError,
+    authBusy,
+    handleLogin,
+    handleSignup,
+  } = useAuth();
 
-    return (
-      // exact same settings JSX
-    );
-  }
+Remove ALL props from AuthScreen destructuring.
 
 In App.js replace:
-  if (view === "settings") {
-    return ( ... );
-  }
+  if (!session) return (
+    <AuthScreen
+      authMode={authMode} setAuthMode={setAuthMode}
+      ...many props...
+    />
+  );
 
 With:
-  import SettingsTab from "./components/tabs/SettingsTab";
+  if (!session) return <AuthScreen />;
 
-  if (view === "settings") {
-    return (
-      <SettingsTab
-        importText={importText}
-        setImportText={setImportText}
-        importing={importing}
-        setImporting={setImporting}
-        importResult={importResult}
-        setImportResult={setImportResult}
-        importingMultiple={importingMultiple}
-        setImportingMultiple={setImportingMultiple}
-        importMultipleProgress={importMultipleProgress}
-        setImportMultipleProgress={setImportMultipleProgress}
-        importMultipleResult={importMultipleResult}
-        setImportMultipleResult={setImportMultipleResult}
-        exporting={exporting}
-        setExporting={setExporting}
-        importWhatsAppChat={importWhatsAppChat}
-        importSingleChatFile={importSingleChatFile}
-        importMultipleChatFiles={importMultipleChatFiles}
-        exportData={exportData}
-        handleLogoutWithUI={handleLogoutWithUI}
-        fileInputRef={fileInputRef}
-        multipleFileInputRef={multipleFileInputRef}
-      />
-    );
-  }
+CHANGE 3 — Move openDeals, closedDeals, revenue 
+to CustomerContext
+
+In src/context/CustomerContext.js add these 
+computed values inside CustomerProvider:
+
+  import { monthRevenue } from "../utils/helpers";
+
+  const openDeals = customers.reduce((a, c) => 
+    a + (c.deals || []).filter(d => 
+      d.stage !== "closed" && d.stage !== "lost"
+    ).length, 0);
+  
+  const closedDeals = customers.reduce((a, c) => 
+    a + (c.deals || []).filter(d => 
+      d.stage === "closed"
+    ).length, 0);
+  
+  const revenue = monthRevenue(customers);
+
+Add them to the Provider value:
+  openDeals,
+  closedDeals,
+  revenue,
+
+In App.js remove:
+  const openDeals = customers.reduce(...);
+  const closedDeals = customers.reduce(...);
+  const revenue = monthRevenue(customers);
+
+Add to useCustomers() destructuring in App.js:
+  openDeals, closedDeals, revenue,
+
+In HomeTab.js add to useCustomers() destructuring:
+  const { ..., openDeals, closedDeals, revenue } = useCustomers();
+Remove these from HomeTab props.
+
+In CustomersTab.js add to useCustomers() destructuring:
+  const { ..., openDeals, closedDeals, revenue } = useCustomers();
+Remove these from CustomersTab props.
+
+In App.js remove these from HomeTab and CustomersTab usage:
+  openDeals={openDeals}
+  closedDeals={closedDeals}
+  revenue={revenue}
+
+CHANGE 4 — Update StockTab to use contexts directly
+
+In src/components/tabs/StockTab.js add:
+  import { useCustomers } from "../../context/CustomerContext";
+  import { useSales } from "../../context/SalesContext";
+
+Add at top of StockTab:
+  const { customers, loadCustomers } = useCustomers();
+  const { loadTodaySales, setSaleReceiptData,
+    setReceiptEditName, setShowSaleReceipt } = useSales();
+
+Remove these from StockTab props destructuring:
+  customers, loadCustomers, loadTodaySales,
+  setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
+
+In App.js find where StockTab is rendered.
+Remove these props:
+  customers={customers}
+  loadCustomers={loadCustomers}
+  loadTodaySales={loadTodaySales}
+  setSaleReceiptData={setSaleReceiptData}
+  setReceiptEditName={setReceiptEditName}
+  setShowSaleReceipt={setShowSaleReceipt}
+
+CHANGE 5 — Move filtered and filteredStock 
+to their contexts
+
+In CustomerContext.js add filtered computation:
+
+  import { daysSince } from "../utils/helpers";
+
+  const filtered = customers
+    .filter(c => {
+      const cType = c.contact_type || "client";
+      if (contactTypeFilter !== "all" && 
+          cType !== contactTypeFilter) return false;
+      if (search) return c.name.toLowerCase()
+        .includes(search.toLowerCase()) || 
+        (c.number || "").includes(search);
+      if (filter === "urgent") return c.urgent;
+      if (filter === "overdue") return daysSince(c.last_active) >= 1 && 
+        (c.deals || []).some(d => 
+          d.stage !== "closed" && d.stage !== "lost");
+      if (filter === "vip") return c.tier === "vip";
+      if (filter === "cold") return c.tier === "cold";
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.urgent && !b.urgent) return -1;
+      if (!a.urgent && b.urgent) return 1;
+      const aTime = a.last_activity_at || a.last_active;
+      const bTime = b.last_activity_at || b.last_active;
+      return new Date(bTime) - new Date(aTime);
+    });
+
+Add filtered to Provider value:
+  filtered,
+
+In StockContext.js add filteredStock computation:
+
+  const filteredStock = stock.filter(item => {
+    if (stockSearch) {
+      const q = stockSearch.toLowerCase();
+      return (item.brand || "").toLowerCase().includes(q) ||
+             (item.model || "").toLowerCase().includes(q) ||
+             (item.processor || "").toLowerCase().includes(q) ||
+             (item.serial_number || "").toLowerCase().includes(q);
+    }
+    if (stockFilter === "available") 
+      return item.status === "available";
+    if (stockFilter === "reserved") 
+      return item.status === "reserved";
+    if (stockFilter === "sold") 
+      return item.status === "sold";
+    return true;
+  });
+
+Add filteredStock to StockContext Provider value:
+  filteredStock,
+
+In App.js remove:
+  const filtered = customers.filter(...).sort(...);
+  const filteredStock = stock.filter(...);
+
+Add to useCustomers() destructuring:
+  filtered,
+
+Add to useStock() destructuring:
+  filteredStock,
+
+CHANGE 6 — Clean up remaining props in App.js
+
+After all above changes find StockTab in App.js.
+It should now look like:
+  {activeTab === "stock" && (
+    <StockTab
+      openBroadcast={openBroadcast}
+      handleUpgradeApply={handleUpgradeApply}
+      filteredStock={filteredStock}
+    />
+  )}
+
+Update StockTab.js to get filteredStock from useStock():
+  const { ..., filteredStock } = useStock();
+Remove filteredStock from props.
+
+Final StockTab in App.js should be:
+  {activeTab === "stock" && (
+    <StockTab
+      openBroadcast={openBroadcast}
+      handleUpgradeApply={handleUpgradeApply}
+    />
+  )}
 
 After ALL changes:
 1. Run npm run build
 2. Fix ALL errors one by one
-3. git add -A && git commit -m "architecture: extract reservation modals and settings tab" 
+3. git add -A && git commit -m "architecture: final App.js cleanup under 500 lines" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test:
-   - Settings tab opens correctly?
-   - Edit reservation works?
-   - Complete reservation works?
-   - Receipt appears after completing reservation?
+6. Test everything:
+   - Login works?
+   - Contacts filter works?
+   - Stock search works?
+   - Dashboard shows correct stats?
+   - All tabs work?
 7. Tell me new App.js line count

@@ -7,15 +7,13 @@ import { useStock } from "../../context/StockContext";
 import { useSales } from "../../context/SalesContext";
 import { useParts } from "../../context/PartsContext";
 
-export default function HomeTab({
-  tasks, sourcingAlerts,
-  openDeals, closedDeals, revenue,
-}) {
+export default function HomeTab({ tasks, sourcingAlerts }) {
   const { activeTab, setActiveTab, isMobile } = useUI();
   const {
     customers,
     setView, setActiveCustomerId, setActiveDealId, setPendingSuggestion,
     setFilter, setSearch,
+    openDeals, closedDeals, revenue,
   } = useCustomers();
   const { stock, setStockFilter, setShowAddStock, setEditingStock, setStockForm, setShowQuickSale } = useStock();
   const { todaySales, openComplaints } = useSales();

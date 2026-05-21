@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 import SourcingModule, { useSourcingAlerts } from "./SourcingModule";
 import ContactModal from "./ContactModal";
 
-import { daysSince, monthRevenue } from "./utils/helpers";
+import { daysSince } from "./utils/helpers";
 
 import { useAuth } from "./context/AuthContext";
 import { useCustomers } from "./context/CustomerContext";
@@ -54,9 +54,8 @@ export default function App() {
     view, setView,
     showContactModal, setShowContactModal,
     contactModalPreType, setContactModalPreType,
-    newCustomer, setNewCustomer,
     loadCustomers,
-    addCustomer,
+    openDeals, closedDeals, revenue,
   } = useCustomers();
 
   const {
@@ -82,9 +81,6 @@ export default function App() {
 
   const {
     salesFilter,
-    setSaleReceiptData,
-    setReceiptEditName,
-    setShowSaleReceipt,
     loadTodaySales,
     loadSalesHistory,
   } = useSales();
@@ -107,13 +103,8 @@ export default function App() {
   const {
     session,
     authLoading,
-    authMode, setAuthMode,
-    authEmail, setAuthEmail,
-    authPassword, setAuthPassword,
-    authError, setAuthError,
-    authBusy,
     anthropicKey,
-    handleAuth, handleLogout,
+    handleLogout,
   } = useAuth();
 
   const {
@@ -282,25 +273,6 @@ export default function App() {
     { key: "ask",       icon: "🤖", label: "Ask Claude" },
   ];
 
-  // ── computed ──
-  const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").length, 0);
-  const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
-  const revenue = monthRevenue(customers);
-
-  const filteredStock = stock.filter(item => {
-    if (stockSearch) {
-      const q = stockSearch.toLowerCase();
-      return (item.brand || "").toLowerCase().includes(q) ||
-             (item.model || "").toLowerCase().includes(q) ||
-             (item.processor || "").toLowerCase().includes(q) ||
-             (item.serial_number || "").toLowerCase().includes(q);
-    }
-    if (stockFilter === "available") return item.status === "available";
-    if (stockFilter === "reserved") return item.status === "reserved";
-    if (stockFilter === "sold") return item.status === "sold";
-    return true;
-  });
-
   // ── screens ──────────────────────────────────────────────────────────────────
 
   // loading
@@ -311,16 +283,7 @@ export default function App() {
   );
 
   // auth screen
-  if (!session) return (
-    <AuthScreen
-      authMode={authMode} setAuthMode={setAuthMode}
-      authEmail={authEmail} setAuthEmail={setAuthEmail}
-      authPassword={authPassword} setAuthPassword={setAuthPassword}
-      authError={authError} setAuthError={setAuthError}
-      authBusy={authBusy} setAuthBusy={setAuthBusy}
-      handleAuth={handleAuth}
-    />
-  );
+  if (!session) return <AuthScreen />;
 
   // api key setup
   if (!anthropicKey) return <ApiKeySetup />;
@@ -339,37 +302,6 @@ export default function App() {
       />
     );
   }
-
-  // add customer view
-  if (view === "add") return (
-    <div style={{ minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", padding: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
-        <button onClick={() => setView("list")} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.08)", cursor: "pointer", fontSize: 18 }}>←</button>
-        <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>New Customer</span>
-      </div>
-      <div style={{ background: "#fff", borderRadius: 20, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", gap: 14 }}>
-        {[
-          { label: "NAME *", key: "name", placeholder: "e.g. Ali Hassan", type: "text" },
-          { label: "WHATSAPP NUMBER", key: "number", placeholder: "e.g. 971501234567", type: "tel" },
-        ].map(f => (
-          <div key={f.key}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 5, letterSpacing: 0.5 }}>{f.label}</div>
-            <input value={newCustomer[f.key]} onChange={e => setNewCustomer(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} type={f.type}
-              style={{ width: "100%", padding: "11px 13px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-          </div>
-        ))}
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 5, letterSpacing: 0.5 }}>NOTES</div>
-          <textarea value={newCustomer.notes} onChange={e => setNewCustomer(p => ({ ...p, notes: e.target.value }))} placeholder="e.g. Prefers MacBook, pays cash, lives in Sharjah..." rows={3}
-            style={{ width: "100%", padding: "11px 13px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
-        </div>
-        <button onClick={addCustomer} disabled={!newCustomer.name.trim()}
-          style={{ padding: 14, borderRadius: 14, border: "none", background: newCustomer.name.trim() ? "#6366F1" : "#E2E8F0", color: newCustomer.name.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 15, cursor: newCustomer.name.trim() ? "pointer" : "not-allowed" }}>
-          Add Customer →
-        </button>
-      </div>
-    </div>
-  );
 
   // detail view
   if (view === "detail" && activeCustomer) {
@@ -423,37 +355,15 @@ export default function App() {
       <TopBar />
       {/* ── HOME / DASHBOARD TAB ── */}
       {activeTab === "home" && (
-        <HomeTab
-          tasks={tasks}
-          sourcingAlerts={sourcingAlerts}
-          openDeals={openDeals}
-          closedDeals={closedDeals}
-          revenue={revenue}
-        />
+        <HomeTab tasks={tasks} sourcingAlerts={sourcingAlerts} />
       )}
 
       {/* ── CUSTOMERS TAB ── */}
-      {activeTab === "customers" && (
-        <CustomersTab
-          openDeals={openDeals}
-          closedDeals={closedDeals}
-          revenue={revenue}
-        />
-      )}
+      {activeTab === "customers" && <CustomersTab />}
 
       {/* ── STOCK TAB ── */}
       {activeTab === "stock" && (
-        <StockTab
-          customers={customers}
-          openBroadcast={openBroadcast}
-          handleUpgradeApply={handleUpgradeApply}
-          loadCustomers={loadCustomers}
-          loadTodaySales={loadTodaySales}
-          setSaleReceiptData={setSaleReceiptData}
-          setReceiptEditName={setReceiptEditName}
-          setShowSaleReceipt={setShowSaleReceipt}
-          filteredStock={filteredStock}
-        />
+        <StockTab openBroadcast={openBroadcast} handleUpgradeApply={handleUpgradeApply} />
       )}
 
       {/* ── TRADERS TAB ── */}
