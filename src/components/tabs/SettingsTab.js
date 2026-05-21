@@ -1,6 +1,7 @@
 import React from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useUI } from "../../context/UIContext";
+import { useCustomers } from "../../context/CustomerContext";
 import { useImportContext } from "../../context/ImportContext";
 import { saveAnthropicKey } from "../../utils/helpers";
 
@@ -14,7 +15,8 @@ export default function SettingsTab({
   multipleFileInputRef,
 }) {
   const { anthropicKey, setAnthropicKey, keyInput, setKeyInput, session } = useAuth();
-  const { isMobile, setView } = useUI();
+  const { isMobile } = useUI();
+  const { setView } = useCustomers();
   const {
     importText, setImportText,
     importing,

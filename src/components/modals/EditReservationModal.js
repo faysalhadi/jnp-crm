@@ -92,6 +92,7 @@ export default function EditReservationModal() {
                   }).eq("id", dealData.id);
                 }
                 setShowEditReservation(false);
+                loadReservedDeals();
                 loadStock();
                 loadCustomers();
               }}
