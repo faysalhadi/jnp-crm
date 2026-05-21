@@ -1,50 +1,171 @@
-Read src/context/PartsContext.js, src/App.js and 
-src/components/stock/PartsView.js before making changes.
+Read src/components/chat/ChatDetailView.js fully 
+before making any changes.
 
-CHANGE 1 — Wrap loadPartsSold in useCallback in PartsContext
+This is architecture rewrite Step 11.
+We are splitting ChatDetailView into smaller files.
+Do NOT change any logic. Only split into separate files.
 
-In PartsContext.js find:
-  async function loadPartsSold() {
+STEP 11A — Create src/components/chat/ChatHeader.js
 
-Replace with:
-  const loadPartsSold = useCallback(async () => {
-    setPartsSoldLoading(true);
-    const { data } = await supabase
-      .from("parts_sales")
-      .select("*")
-      .order("sold_at", { ascending: false });
-    setPartsSold(data || []);
-    setPartsSoldLoading(false);
-  }, []);
+Extract the chat header section from ChatDetailView.
+It is the top section showing:
+- Back button
+- Customer name and tier badge
+- Phone number
+- Action buttons (edit name, edit number, delete, 📊)
+- Urgent toggle
+- Stage bar and deal card
 
-Make sure useCallback is imported at the top of PartsContext.js.
+Create src/components/chat/ChatHeader.js:
 
-CHANGE 2 — Remove loadPartsSold from PartsView.js
+  import React from "react";
+  import { useCustomers } from "../../context/CustomerContext";
+  import { useUI } from "../../context/UIContext";
+  import { useReservations } from "../../context/ReservationsContext";
+  import Badge from "../ui/Badge";
+  import StageBar from "../ui/StageBar";
+  import { STAGES, TIERS } from "../../constants";
+  import { daysSince } from "../../utils/helpers";
 
-In PartsView.js find where loadPartsSold is called.
-Remove any useEffect that calls loadPartsSold.
-PartsView should NOT load parts sold data itself.
-App.js handles this via the stockFilter useEffect.
+  export default function ChatHeader({
+    editingName, setEditingName,
+    nameInput, setNameInput,
+    editingNumber, setEditingNumber,
+    numberInput, setNumberInput,
+    showAddDeal, setShowAddDeal,
+    showDeleteConfirm, setShowDeleteConfirm,
+    showLossReason, setShowLossReason,
+    showReceipt, setShowReceipt,
+    receiptPaymentMethod, setReceiptPaymentMethod,
+    moveStage,
+    updateCustomer,
+    updateDeal,
+    deleteCustomer,
+    buildReceiptText,
+    saveReceiptNumber,
+    loadCustomers,
+    newDeal, setNewDeal,
+    addDeal,
+    handleConfirmSale,
+    handleReserveDevice,
+  }) {
+    const { activeCustomer, activeDeal, activeDealId,
+      setActiveDealId, setView } = useCustomers();
+    const { setShowSideDrawer } = useUI();
 
-Remove loadPartsSold from the useParts destructuring
-in PartsView.js.
+    // exact same JSX for the header section
+  }
 
-CHANGE 3 — Keep loadPartsSold only in App.js useEffect
+STEP 11B — Create src/components/chat/MessageList.js
 
-In App.js make sure this is the only place 
-loadPartsSold is called:
-  useEffect(() => {
-    if (stockFilter !== "parts_sold") return;
-    loadPartsSold();
-  }, [stockFilter, loadPartsSold]);
+Extract the messages display section from ChatDetailView.
+It shows the list of messages — customer on left, 
+owner on right.
+
+Create src/components/chat/MessageList.js:
+
+  import React from "react";
+  import { useCustomers } from "../../context/CustomerContext";
+  import { timeAgo } from "../../utils/helpers";
+
+  export default function MessageList({
+    messages,
+    copied, setCopied,
+    editSent, setEditSent,
+    confirmSent,
+    markNotSent,
+    copyMsg,
+    bottomRef,
+    msgLoading,
+  }) {
+    const { activeCustomer } = useCustomers();
+
+    // exact same JSX for message bubbles list
+  }
+
+STEP 11C — Create src/components/chat/InputBar.js
+
+Extract the input bar section from ChatDetailView.
+It is the bottom section showing:
+- Reserve Device button
+- Confirm Sale link
+- TOP ROW: paste client message input
+- AI reply box (when generatedReply exists)
+- BOTTOM ROW: type your own message + 📱 send button
+- AI compose box
+
+Create src/components/chat/InputBar.js:
+
+  import React, { useState } from "react";
+  import { useCustomers } from "../../context/CustomerContext";
+  import { useReservations } from "../../context/ReservationsContext";
+  import { callClaude, buildSystemPromptFromCache } 
+    from "../../utils/claude";
+
+  export default function InputBar({
+    messages,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    generatedReplyLoading, setGeneratedReplyLoading,
+    editingGenerated, setEditingGenerated,
+    anthropicKey,
+    cachedStock,
+    addIncomingMessage,
+    generateAIReply,
+    sendAIReply,
+    sendDirectReply,
+    generateOpeningMessage,
+    handleConfirmSale,
+    handleReserveDevice,
+  }) {
+    const { activeCustomer, activeDeal } = useCustomers();
+    const [aiComposeContext, setAiComposeContext] = useState("");
+
+    // exact same JSX for the input bar
+  }
+
+STEP 11D — Update ChatDetailView.js to use sub-components
+
+In ChatDetailView.js replace the extracted sections with:
+
+  import ChatHeader from "./ChatHeader";
+  import MessageList from "./MessageList";
+  import InputBar from "./InputBar";
+
+Replace each section in the return with the component.
+Pass required props to each.
+
+ChatDetailView should now only contain:
+- Import statements
+- Props destructuring
+- State that is shared between sub-components
+- The main return with ChatHeader, MessageList, InputBar
+- Modals (LinkStockModal, ReservationModal, ComplaintModal)
+
+IMPORTANT RULES:
+- Every new file must have import React from "react" at top
+- Do not change any logic
+- Each sub-component gets shared state from context hooks
+- Only pass props that cannot come from context
+- Make sure AI reply still works after extraction
+- Make sure Reserve and Confirm Sale still work
 
 After changes:
 1. Run npm run build
-2. Fix any errors
-3. git add -A && git commit -m "fix: parts sold no longer flickers" 
+2. Fix ALL errors one by one
+3. Only when build is clean:
+   git add -A && git commit -m "architecture step 11: split ChatDetailView" 
    && git push origin main --force
-4. Test:
-   - Stock → Parts → Parts Sold filter
-   - Does it load once without flickering?
-   - Does it show parts sold list?
-5. Tell me if it works and StockTab.js line count
+4. Wait 2 minutes
+5. Open https://jnp-crm.vercel.app
+6. Test client chat thoroughly:
+   - Messages load correctly?
+   - Can send a message?
+   - AI reply works?
+   - Reserve button works?
+   - Confirm Sale works?
+   - Receipt generates?
+7. Tell me new ChatDetailView.js line count
