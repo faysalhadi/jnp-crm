@@ -6,14 +6,10 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useSales } from "../../context/SalesContext";
 import Spinner from "../ui/Spinner";
 
-export default function ReservedView({
-  setSaleReceiptData,
-  setReceiptEditName,
-  setShowSaleReceipt,
-  loadTodaySales,
-}) {
+export default function ReservedView() {
   const { loadStock, refreshCachedStock } = useStock();
   const { loadCustomers } = useCustomers();
+  const { setSaleReceiptData, setReceiptEditName, setShowSaleReceipt } = useSales();
   const {
     reservedDeals, reservedDealsLoading,
     loadReservedDeals,
@@ -116,6 +112,30 @@ export default function ReservedView({
                 }}
                   style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   ✏️ Edit
+                </button>
+                <button onClick={() => {
+                  const receiptItems = (deal.deal_items || []).map(i => ({
+                    label: i.item_type === "device"
+                      ? ([i.brand, i.model].filter(Boolean).join(" ") || "Device")
+                      : `${i.category || "Part"}${i.specs ? ` · ${i.specs}` : ""}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`,
+                    price: Number(i.agreed_price || 0),
+                  }));
+                  setSaleReceiptData({
+                    type: "reserved",
+                    date: deal.created_at,
+                    customerName: deal.customers?.name || "Customer",
+                    customerNumber: deal.customers?.number || null,
+                    price: Number(deal.value || 0),
+                    depositAmount: Number(deal.deposit_amount || 0),
+                    balanceDue: Number(deal.balance_due || 0),
+                    paymentMethod: "Cash",
+                    items: receiptItems,
+                  });
+                  setReceiptEditName(deal.customers?.name || "Customer");
+                  setShowSaleReceipt(true);
+                }}
+                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "1.5px solid #6366F1", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  🧾
                 </button>
                 <button onClick={async () => {
                   if (!window.confirm("Release all items in this reservation?")) return;

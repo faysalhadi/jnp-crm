@@ -76,25 +76,27 @@ export default function EditReservationModal() {
                 const agreedN = Number(editReservationForm.agreedPrice) || 0;
                 const depositN = Number(editReservationForm.depositAmount) || 0;
                 const balanceN = Number(editReservationForm.balanceDue) || 0;
-                await supabase.from("stock").update({
-                  pickup_date: editReservationForm.pickupDate || null,
-                  sold_price: agreedN || null,
-                }).eq("id", editReservationItem.id);
-                const { data: dealData } = await supabase.from("deals")
-                  .select("id").eq("stock_item_id", editReservationItem.id).single();
-                if (dealData) {
+                try {
                   await supabase.from("deals").update({
                     value: agreedN || null,
                     deposit_amount: depositN || null,
                     balance_due: balanceN || null,
                     pickup_date: editReservationForm.pickupDate || null,
                     reservation_notes: editReservationForm.notes || null,
-                  }).eq("id", dealData.id);
+                  }).eq("id", editReservationItem.id);
+                  if (editReservationItem.stock_item_id) {
+                    await supabase.from("stock").update({
+                      pickup_date: editReservationForm.pickupDate || null,
+                      sold_price: agreedN || null,
+                    }).eq("id", editReservationItem.stock_item_id);
+                  }
+                  setShowEditReservation(false);
+                  loadReservedDeals();
+                  loadStock();
+                  loadCustomers();
+                } catch (e) {
+                  alert("Error saving: " + e.message);
                 }
-                setShowEditReservation(false);
-                loadReservedDeals();
-                loadStock();
-                loadCustomers();
               }}
                 style={{ flex: 2, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
                 Save Changes
@@ -105,7 +107,6 @@ export default function EditReservationModal() {
               try {
                 const deal = editReservationItem;
 
-                // Release all reserved stock items linked to this deal
                 const { data: dealItems } = await supabase
                   .from("deal_items")
                   .select("*")
@@ -123,7 +124,6 @@ export default function EditReservationModal() {
                   }
                 }
 
-                // Also try to release via stock_item_id on deal directly
                 if (deal.stock_item_id) {
                   await supabase.from("stock").update({
                     status: "available",
@@ -134,10 +134,8 @@ export default function EditReservationModal() {
                   }).eq("id", deal.stock_item_id);
                 }
 
-                // Delete deal items
                 await supabase.from("deal_items").delete().eq("deal_id", deal.id);
 
-                // Reset the deal stage
                 await supabase.from("deals").update({
                   stage: "device_found",
                   value: null,
@@ -148,12 +146,11 @@ export default function EditReservationModal() {
                 }).eq("id", deal.id);
 
                 setShowEditReservation(false);
+                loadReservedDeals();
                 loadStock();
                 loadCustomers();
-                loadReservedDeals();
-                showToast("Device released back to stock 🔓");
               } catch (e) {
-                alert("Error releasing reservation: " + (e.message || "Unknown error"));
+                alert("Error releasing: " + e.message);
               }
             }}
               style={{ padding: 12, borderRadius: 12, border: "1.5px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>

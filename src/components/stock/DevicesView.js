@@ -204,12 +204,7 @@ export default function DevicesView({
 
       {/* Reserved deals — deal-centric view */}
       {stockFilter === "reserved" && (
-        <ReservedView
-          setSaleReceiptData={setSaleReceiptData}
-          setReceiptEditName={setReceiptEditName}
-          setShowSaleReceipt={setShowSaleReceipt}
-          loadTodaySales={loadTodaySales}
-        />
+        <ReservedView />
       )}
 
       {/* Stock cards — hidden when parts_sold filter is active */}
