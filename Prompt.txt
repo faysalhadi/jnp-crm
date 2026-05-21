@@ -1,12 +1,13 @@
-Read src/App.js and src/context/PartsContext.js 
-fully before making any changes.
+Read src/context/PartsContext.js, src/App.js and 
+src/components/stock/PartsView.js before making changes.
 
-CHANGE 1 — Move parts sold loading to PartsContext
+CHANGE 1 — Wrap loadPartsSold in useCallback in PartsContext
 
-In src/context/PartsContext.js add a new function
-loadPartsSold inside PartsProvider:
-
+In PartsContext.js find:
   async function loadPartsSold() {
+
+Replace with:
+  const loadPartsSold = useCallback(async () => {
     setPartsSoldLoading(true);
     const { data } = await supabase
       .from("parts_sales")
@@ -14,59 +15,36 @@ loadPartsSold inside PartsProvider:
       .order("sold_at", { ascending: false });
     setPartsSold(data || []);
     setPartsSoldLoading(false);
-  }
+  }, []);
 
-Add loadPartsSold to the context Provider value:
-  loadPartsSold,
+Make sure useCallback is imported at the top of PartsContext.js.
 
-Export it from the context.
+CHANGE 2 — Remove loadPartsSold from PartsView.js
 
-CHANGE 2 — Update App.js to use loadPartsSold from context
+In PartsView.js find where loadPartsSold is called.
+Remove any useEffect that calls loadPartsSold.
+PartsView should NOT load parts sold data itself.
+App.js handles this via the stockFilter useEffect.
 
-In App.js add loadPartsSold to the useParts destructuring:
-  const {
-    ...existing,
-    loadPartsSold,
-  } = useParts();
+Remove loadPartsSold from the useParts destructuring
+in PartsView.js.
 
-Find this useEffect in App.js:
-  useEffect(() => {
-    if (stockFilter !== "parts_sold") return;
-    setPartsSoldLoading(true);
-    supabase.from("parts_sales").select("*")
-      .order("sold_at", { ascending: false })
-      .then(({ data }) => { 
-        setPartsSold(data || []); 
-        setPartsSoldLoading(false); 
-      });
-  }, [stockFilter]);
+CHANGE 3 — Keep loadPartsSold only in App.js useEffect
 
-Replace with:
+In App.js make sure this is the only place 
+loadPartsSold is called:
   useEffect(() => {
     if (stockFilter !== "parts_sold") return;
     loadPartsSold();
   }, [stockFilter, loadPartsSold]);
 
-CHANGE 3 — Update PartsView to use loadPartsSold
-
-In src/components/stock/PartsView.js find where
-parts sold data is loaded. Make sure it calls
-loadPartsSold from useParts() context instead of
-trying to use setPartsSoldLoading directly.
-
-Add loadPartsSold to the useParts destructuring 
-in PartsView.js:
-  const { 
-    ...existing,
-    loadPartsSold,
-  } = useParts();
-
 After changes:
 1. Run npm run build
 2. Fix any errors
-3. git add -A && git commit -m "fix: parts sold loading moved to PartsContext" 
+3. git add -A && git commit -m "fix: parts sold no longer flickers" 
    && git push origin main --force
 4. Test:
-   - Stock tab → Parts toggle → Parts Sold filter
-   - Does it show without blank screen?
-5. Tell me if it works and new StockTab.js line count
+   - Stock → Parts → Parts Sold filter
+   - Does it load once without flickering?
+   - Does it show parts sold list?
+5. Tell me if it works and StockTab.js line count

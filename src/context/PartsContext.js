@@ -55,7 +55,7 @@ export function PartsProvider({ children }) {
     setParts(prev => prev.filter(p => p.id !== id));
   }
 
-  async function loadPartsSold() {
+  const loadPartsSold = useCallback(async () => {
     setPartsSoldLoading(true);
     const { data } = await supabase
       .from("parts_sales")
@@ -63,7 +63,7 @@ export function PartsProvider({ children }) {
       .order("sold_at", { ascending: false });
     setPartsSold(data || []);
     setPartsSoldLoading(false);
-  }
+  }, []);
 
   const loadPartsRevMTD = useCallback(async () => {
     const monthStart = new Date();
