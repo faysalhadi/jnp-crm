@@ -1,187 +1,200 @@
-Read src/SourcingModule.js fully before making any changes.
+Read src/components/tabs/StockTab.js fully before making changes.
 
-This is architecture rewrite Step 9.
-We are splitting SourcingModule.js into smaller files.
-Do NOT change any logic. Only move code into new files.
+This is architecture rewrite Step 10.
+We are splitting StockTab into smaller sub-components.
+Do NOT change any logic. Only split into separate files.
 
-STEP 9A — Create src/components/sourcing/SourcingHelpers.js
+First run this in PowerShell to see the structure:
+$lines = Get-Content "C:\Users\Faisal\jnp-crm\src\components\tabs\StockTab.js"
+$lines | Select-String -Pattern "^\s*{/\* ──" | Select-Object LineNumber, Line
 
-Create this file with all shared helpers and small components:
+STEP 10A — Create src/components/stock/DevicesView.js
+
+Find the devices view section in StockTab.js.
+It renders when stockView === "devices" and 
+stockFilter !== "reserved".
+It shows the list of available/sold stock cards.
+
+Extract this entire section into:
 
   import React from "react";
+  import { useStock } from "../../context/StockContext";
+  import { useReservations } from "../../context/ReservationsContext";
+  import { useSales } from "../../context/SalesContext";
+  import { useParts } from "../../context/PartsContext";
+  import { useCustomers } from "../../context/CustomerContext";
+  import { useUI } from "../../context/UIContext";
+  import Badge from "../ui/Badge";
+  import Spinner from "../ui/Spinner";
+  import SpecUpgradeModal from "../modals/SpecUpgradeModal";
+  import { BRANDS, EMPTY_STOCK, PART_ICONS, 
+    PART_CATEGORIES, EMPTY_PART } from "../../constants";
+  import { daysSince, timeAgo, parseGB, labelGB } 
+    from "../../utils/helpers";
 
-  export const DEFAULT_RATE = 3.67;
-  export const DUTY_PCT = 0.05;
-
-  export const STAGES = [
-    // exact same STAGES array from SourcingModule.js
-  ];
-  export const STAGE_MAP = Object.fromEntries(
-    STAGES.map(s => [s.id, s])
-  );
-  export const MILESTONES = {
-    // exact same MILESTONES object from SourcingModule.js
-  };
-
-  export const fmtUSD = n => n 
-    ? "$" + Number(n).toLocaleString("en-US", 
-        { maximumFractionDigits: 0 }) 
-    : "—";
-  export const fmtAED = n => (n || n === 0) 
-    ? "AED " + Number(n).toLocaleString("en-US", 
-        { maximumFractionDigits: 0 }) 
-    : "—";
-
-  export function hoursUntil(ts) {
-    // exact same code
-  }
-  export function timeAgo(ts) {
-    // exact same code
-  }
-  export function fmtTime(ts) {
-    // exact same code
-  }
-  export function calcLanded(d, rate) {
-    // exact same code
-  }
-  export function calcProfit(d, rate) {
-    // exact same code
-  }
-  export async function callClaude(apiKey, prompt, system) {
-    // exact same code
-  }
-  export function StageBadge({ status }) {
-    // exact same code
-  }
-  export function MilestoneBadge({ milestone }) {
-    // exact same code
-  }
-  export function Row({ label, value, bold, color }) {
-    // exact same code
-  }
-
-STEP 9B — Create src/components/sourcing/DealDetail.js
-
-Extract the DealDetail function (lines 121-958) 
-into its own file:
-
-  import React, { useState, useEffect, useRef } from "react";
-  import { supabase } from "../../supabase";
-  import { 
-    STAGES, STAGE_MAP, MILESTONES, DEFAULT_RATE, DUTY_PCT,
-    fmtUSD, fmtAED, hoursUntil, timeAgo, fmtTime,
-    calcLanded, calcProfit, callClaude,
-    StageBadge, MilestoneBadge, Row
-  } from "./SourcingHelpers";
-  import SourcingCalculator from "./SourcingCalculator";
-  import SourcingMessages from "./SourcingMessages";
-
-  export default function DealDetail({ 
-    deal: initialDeal, suppliers, rate, 
-    anthropicKey, onBack, onUpdate 
+  export default function DevicesView({
+    filteredStock,
+    openBroadcast,
+    handleUpgradeApply,
+    loadTodaySales,
+    setSaleReceiptData,
+    setReceiptEditName,
+    setShowSaleReceipt,
+    showUpgrade, setShowUpgrade,
+    upgradeTarget, setUpgradeTarget,
+    showQuickSale, setShowQuickSale,
+    quickSalePrefill, setQuickSalePrefill,
   }) {
-    // exact same code from lines 121-958
+    const { 
+      stock, loadStock, refreshCachedStock,
+      stockFilter, stockSearch, 
+      expandedStockId, setExpandedStockId,
+      editingStock, setEditingStock,
+      stockForm, setStockForm,
+      stockPhotoUploading,
+      showAddStock, setShowAddStock,
+      saveStock, deleteStockItem, toggleStockStatus,
+      uploadStockPhoto, soldDealMap, setSoldDealMap,
+    } = useStock();
+    const { loadCustomers } = useCustomers();
+    const { showToast } = useUI();
+
+    // exact same JSX for devices list
   }
 
-STEP 9C — Create src/components/sourcing/SupplierComponents.js
+STEP 10B — Create src/components/stock/ReservedView.js
 
-Extract these smaller components into one file:
-  - DealCard (lines 959-1035)
-  - NewDealModal (lines 1036-1153)
-  - GmailSheet (lines 1154-1219)
-  - SectionToggle (lines 1220-1263)
-  - SupplierDetail (lines 1264-1408)
-  - SuppliersList (lines 1409-1508)
-  - AddSupplierModal (lines 1509-end)
+Find the reserved view section in StockTab.js.
+It renders when stockFilter === "reserved".
+It shows the deal-centric reservation cards.
 
-  import React, { useState, useEffect } from "react";
-  import { supabase } from "../../supabase";
-  import {
-    STAGES, STAGE_MAP, DEFAULT_RATE, DUTY_PCT,
-    fmtUSD, fmtAED, timeAgo, calcLanded, calcProfit,
-    callClaude, StageBadge, Row
-  } from "./SourcingHelpers";
+Extract this entire section into:
 
-  export function DealCard({ deal: d, rate, onClick }) {
-    // exact same code
-  }
-  export function NewDealModal({ suppliers, rate, onClose, onCreate }) {
-    // exact same code
-  }
-  export function GmailSheet({ anthropicKey, onClose, onCreateDeal }) {
-    // exact same code
-  }
-  export function SectionToggle({ section, setSection, deals, suppliers }) {
-    // exact same code
-  }
-  export function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, onUpdate }) {
-    // exact same code
-  }
-  export function SuppliersList({ suppliers, deals, rate, onSelect, onAdd }) {
-    // exact same code
-  }
-  export function AddSupplierModal({ onClose, onCreate }) {
-    // exact same code
+  import React from "react";
+  import { useStock } from "../../context/StockContext";
+  import { useReservations } from "../../context/ReservationsContext";
+  import { useCustomers } from "../../context/CustomerContext";
+  import { useSales } from "../../context/SalesContext";
+  import Spinner from "../ui/Spinner";
+
+  export default function ReservedView({
+    setSaleReceiptData,
+    setReceiptEditName,
+    setShowSaleReceipt,
+    loadTodaySales,
+  }) {
+    const { loadStock } = useStock();
+    const { loadCustomers } = useCustomers();
+    const {
+      reservedDeals, reservedDealsLoading,
+      loadReservedDeals,
+      expandedReservedDeal, setExpandedReservedDeal,
+      showCompleteReservation, setShowCompleteReservation,
+      completingDeal, setCompletingDeal,
+      completionPaymentMethod, setCompletionPaymentMethod,
+      showEditReservation, setShowEditReservation,
+      editReservationItem, setEditReservationItem,
+      editReservationForm, setEditReservationForm,
+    } = useReservations();
+
+    // exact same JSX for reserved deals view
   }
 
-STEP 9D — Update SourcingModule.js to use new files
+STEP 10C — Create src/components/stock/PartsView.js
 
-In SourcingModule.js:
+Find the parts view section in StockTab.js.
+It renders when stockView === "parts".
+It shows parts inventory and parts sold.
 
-1. Add these imports:
-   import DealDetail from "./components/sourcing/DealDetail";
-   import {
-     DealCard, NewDealModal, GmailSheet, SectionToggle,
-     SupplierDetail, SuppliersList, AddSupplierModal
-   } from "./components/sourcing/SupplierComponents";
-   import {
-     STAGES, STAGE_MAP, MILESTONES, DEFAULT_RATE, DUTY_PCT,
-     fmtUSD, fmtAED, hoursUntil, timeAgo, fmtTime,
-     calcLanded, calcProfit, callClaude,
-     StageBadge, MilestoneBadge, Row
-   } from "./components/sourcing/SourcingHelpers";
+Extract this entire section into:
 
-2. DELETE all extracted code from SourcingModule.js:
-   - STAGES, STAGE_MAP, MILESTONES constants
-   - DEFAULT_RATE, DUTY_PCT constants
-   - fmtUSD, fmtAED, hoursUntil, timeAgo, fmtTime functions
-   - calcLanded, calcProfit, callClaude functions
-   - StageBadge, MilestoneBadge, Row components
-   - DealDetail function (entire 837 lines)
-   - DealCard function
-   - NewDealModal function
-   - GmailSheet function
-   - SectionToggle function
-   - SupplierDetail function
-   - SuppliersList function
-   - AddSupplierModal function
+  import React from "react";
+  import { useParts } from "../../context/PartsContext";
+  import { useUI } from "../../context/UIContext";
+  import Spinner from "../ui/Spinner";
+  import PartSaleModal from "../modals/PartSaleModal";
+  import { PART_ICONS, PART_CATEGORIES, EMPTY_PART } 
+    from "../../constants";
 
-3. SourcingModule.js should now only contain:
-   - The main SourcingModule export function
-   - State declarations
-   - Data loading functions
-   - Main return JSX using the imported components
+  export default function PartsView() {
+    const {
+      parts, partsLoading, loadParts,
+      showAddPart, setShowAddPart,
+      editingPart, setEditingPart,
+      partForm, setPartForm,
+      showPartSale, setShowPartSale,
+      partSaleTarget, setPartSaleTarget,
+      partsSold, partsSoldLoading,
+      partsRevMTD, loadPartsRevMTD,
+      savePart, deletePart,
+    } = useParts();
+    const { showToast } = useUI();
+
+    // exact same JSX for parts view
+  }
+
+STEP 10D — Update StockTab.js to use sub-components
+
+In StockTab.js replace the extracted sections with:
+
+  import DevicesView from "../stock/DevicesView";
+  import ReservedView from "../stock/ReservedView";
+  import PartsView from "../stock/PartsView";
+
+Replace each section JSX with the component:
+
+  {stockView === "devices" && stockFilter !== "reserved" && (
+    <DevicesView
+      filteredStock={filteredStock}
+      openBroadcast={openBroadcast}
+      handleUpgradeApply={handleUpgradeApply}
+      loadTodaySales={loadTodaySales}
+      setSaleReceiptData={setSaleReceiptData}
+      setReceiptEditName={setReceiptEditName}
+      setShowSaleReceipt={setShowSaleReceipt}
+      showUpgrade={showUpgrade}
+      setShowUpgrade={setShowUpgrade}
+      upgradeTarget={upgradeTarget}
+      setUpgradeTarget={setUpgradeTarget}
+      showQuickSale={showQuickSale}
+      setShowQuickSale={setShowQuickSale}
+      quickSalePrefill={quickSalePrefill}
+      setQuickSalePrefill={setQuickSalePrefill}
+    />
+  )}
+
+  {stockFilter === "reserved" && (
+    <ReservedView
+      setSaleReceiptData={setSaleReceiptData}
+      setReceiptEditName={setReceiptEditName}
+      setShowSaleReceipt={setShowSaleReceipt}
+      loadTodaySales={loadTodaySales}
+    />
+  )}
+
+  {stockView === "parts" && (
+    <PartsView />
+  )}
 
 IMPORTANT RULES:
 - Every new file must have import React from "react" at top
 - Do not change any logic
-- Make sure all imports are correct in each file
-- SourcingCalculator.js and SourcingMessages.js 
-  already exist — do not recreate them
-- SourcingDealList.js already exists — do not recreate it
+- Each sub-component gets state from context hooks directly
+- Only pass props that cannot come from context
+- Make sure QuickSaleModal and PartSaleModal still work
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean:
-   git add -A && git commit -m "architecture step 9: split SourcingModule components" 
+   git add -A && git commit -m "architecture step 10: split StockTab into sub-components" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test Sourcing tab:
-   - Does supplier list show?
-   - Does deal detail open?
-   - Does stage change work?
-   - Does WhatsApp paste work?
-   - Does Gmail sync work?
-7. Tell me new SourcingModule.js line count
+6. Test Stock tab thoroughly:
+   - Devices show correctly?
+   - Can add/edit/delete device?
+   - Reserved tab shows correctly?
+   - Parts tab works?
+   - Can sell a part?
+7. Tell me new StockTab.js line count
