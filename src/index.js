@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { AuthProvider } from './context/AuthContext';
 import { CustomerProvider } from './context/CustomerContext';
 import { StockProvider } from './context/StockContext';
 import { UIProvider } from './context/UIContext';
@@ -13,23 +14,23 @@ import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <UIProvider>
-      <SalesProvider>
-        <PartsProvider>
-          <CustomerProvider>
-            <TradersProvider anthropicKey={
-              localStorage.getItem("jnp_anthropic_key") || ""
-            }>
-              <ReservationsProvider>
-                <StockProvider>
-                  <App />
-                </StockProvider>
-              </ReservationsProvider>
-            </TradersProvider>
-          </CustomerProvider>
-        </PartsProvider>
-      </SalesProvider>
-    </UIProvider>
+    <AuthProvider>
+      <UIProvider>
+        <SalesProvider>
+          <PartsProvider>
+            <CustomerProvider>
+              <TradersProvider anthropicKey={localStorage.getItem("jnp_anthropic_key") || ""}>
+                <ReservationsProvider>
+                  <StockProvider>
+                    <App />
+                  </StockProvider>
+                </ReservationsProvider>
+              </TradersProvider>
+            </CustomerProvider>
+          </PartsProvider>
+        </SalesProvider>
+      </UIProvider>
+    </AuthProvider>
   </React.StrictMode>
 );
 

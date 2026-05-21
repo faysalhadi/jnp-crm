@@ -1,282 +1,543 @@
 Read src/App.js fully before making any changes.
 
-This is architecture rewrite Step 12 — final step.
-We are cleaning up App.js to under 500 lines.
-Do NOT change any logic. Only move remaining code.
+This is architecture rewrite Step 12 continued.
+We are moving remaining business logic out of App.js.
 
-STEP 12A — Create src/components/layout/SideDrawer.js
+STEP 12A — Create src/services/chatService.js
 
-Find the side drawer JSX in App.js.
-It starts with:
-  {showSideDrawer && (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
+Move these functions from App.js into chatService.js.
+They need access to supabase, contexts and claude utils.
+Since they need React state, we will create a custom hook.
 
-Extract it into:
+Create src/hooks/useChat.js:
 
-  import React from "react";
-  import { useUI } from "../../context/UIContext";
-  import { useSales } from "../../context/SalesContext";
+  import { useCallback } from "react";
+  import { supabase } from "../supabase";
+  import { useCustomers } from "../context/CustomerContext";
+  import { useStock } from "../context/StockContext";
+  import { useReservations } from "../context/ReservationsContext";
+  import { useSales } from "../context/SalesContext";
+  import { callClaude, buildSystemPromptFromCache } 
+    from "../utils/claude";
 
-  export default function SideDrawer({ handleLogout }) {
-    const { showSideDrawer, setShowSideDrawer, 
-            setActiveTab } = useUI();
-
-    return (
-      // exact same side drawer JSX
-    );
-  }
-
-In App.js replace the side drawer JSX with:
-  import SideDrawer from "./components/layout/SideDrawer";
-  
-  {showSideDrawer && (
-    <SideDrawer handleLogout={handleLogout} />
-  )}
-
-STEP 12B — Create src/components/layout/BottomNav.js
-
-Find the bottom tab bar in App.js.
-It renders the 6 tab buttons at the bottom.
-
-Extract into:
-
-  import React from "react";
-  import { useUI } from "../../context/UIContext";
-  import { SOURCING_STAGES } from "../../constants";
-
-  export default function BottomNav({ 
-    NAV_TABS, sourcingAlerts 
-  }) {
-    const { activeTab, setActiveTab } = useUI();
-
-    return (
-      // exact same bottom nav JSX
-    );
-  }
-
-In App.js replace with:
-  import BottomNav from "./components/layout/BottomNav";
-  
-  <BottomNav 
-    NAV_TABS={NAV_TABS} 
-    sourcingAlerts={sourcingAlerts} 
-  />
-
-STEP 12C — Create src/components/layout/ToastNotification.js
-
-Find the toast JSX in App.js:
-  {toast && (
-    <div style={{ position: "fixed", bottom: ... }}>
-
-Extract into:
-
-  import React from "react";
-  import { useUI } from "../../context/UIContext";
-
-  export default function ToastNotification() {
-    const { toast, isMobile } = useUI();
-    if (!toast) return null;
-
-    return (
-      // exact same toast JSX
-    );
-  }
-
-In App.js replace with:
-  import ToastNotification from "./components/layout/ToastNotification";
-  
-  <ToastNotification />
-
-STEP 12D — Create src/components/layout/ReceiptModal.js
-
-Find the sale receipt modal in App.js:
-  {showSaleReceipt && saleReceiptData && (
-    <div style={{ position: "fixed"...}}>
-
-Extract into:
-
-  import React from "react";
-  import { useSales } from "../../context/SalesContext";
-  import { useUI } from "../../context/UIContext";
-
-  export default function ReceiptModal() {
+  export function useChat(
+    messages, setMessages,
+    setMsgLoading,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    setGeneratedReplyLoading,
+    setEditingGenerated,
+    copied, setCopied,
+    setEditSent,
+    anthropicKey,
+  ) {
+    const { activeCustomer, activeDeal, activeDealId,
+      setActiveDealId, loadCustomers, updateDeal } = useCustomers();
+    const { cachedStock, loadStock, refreshCachedStock } = useStock();
+    const { loadTodaySales } = useSales();
     const { 
-      showSaleReceipt, setShowSaleReceipt,
-      saleReceiptData,
-      receiptEditName, setReceiptEditName,
-      buildSaleReceiptText,
-    } = useSales();
-    const { isMobile } = useUI();
+      setShowLinkStock, setLinkStockDeal,
+      setShowReservation,
+    } = useReservations();
 
-    if (!showSaleReceipt || !saleReceiptData) return null;
+    async function handleReserveDevice() {
+      // exact same code from App.js
+    }
 
-    return (
-      // exact same receipt modal JSX
-    );
+    async function handleConfirmSale() {
+      // exact same code from App.js
+    }
+
+    async function moveStage(stageId) {
+      // exact same code from App.js
+    }
+
+    async function addIncomingMessage() {
+      // exact same code from App.js
+    }
+
+    async function generateAIReply(triggerMsgId) {
+      // exact same code from App.js
+    }
+
+    async function sendAIReply() {
+      // exact same code from App.js
+    }
+
+    async function sendDirectReply() {
+      // exact same code from App.js
+    }
+
+    async function generateOpeningMessage() {
+      // exact same code from App.js
+    }
+
+    async function confirmSent(msgId, text) {
+      // exact same code from App.js
+    }
+
+    async function markNotSent(msgId) {
+      // exact same code from App.js
+    }
+
+    function copyMsg(text, id) {
+      // exact same code from App.js
+    }
+
+    async function generateOutreach(
+      outreachReason, outreachCustom, setOutreachMode
+    ) {
+      // exact same code from App.js
+    }
+
+    async function generateSupplierReply(
+      supplierReplyCtx,
+      setSupplierReplyGmail,
+      setSupplierReplyWA,
+      setSupplierReplyLoading,
+    ) {
+      // exact same code from App.js
+    }
+
+    return {
+      handleReserveDevice,
+      handleConfirmSale,
+      moveStage,
+      addIncomingMessage,
+      generateAIReply,
+      sendAIReply,
+      sendDirectReply,
+      generateOpeningMessage,
+      confirmSent,
+      markNotSent,
+      copyMsg,
+      generateOutreach,
+      generateSupplierReply,
+    };
   }
 
-In App.js replace with:
-  import ReceiptModal from "./components/layout/ReceiptModal";
-  
-  <ReceiptModal />
+STEP 12B — Create src/hooks/useAskClaude.js
 
-STEP 12E — Create src/components/layout/BroadcastModal.js
+Move the Ask Claude functions into a custom hook:
 
-Find the broadcast modal in App.js:
-  {showBroadcast && broadcastItem && (
-    <div style={{ position: "fixed"...}}>
+  import { useCallback } from "react";
+  import { supabase } from "../supabase";
+  import { useCustomers } from "../context/CustomerContext";
+  import { useStock } from "../context/StockContext";
+  import { useParts } from "../context/PartsContext";
+  import { useSales } from "../context/SalesContext";
 
-Extract into:
+  export function useAskClaude(anthropicKey) {
+    const { customers } = useCustomers();
+    const { stock, cachedStock } = useStock();
+    const { parts } = useParts();
+    const { salesHistory } = useSales();
 
-  import React from "react";
-  import { useUI } from "../../context/UIContext";
+    function detectQueryType(question) {
+      // exact same code from App.js
+    }
 
-  export default function BroadcastModal({
+    async function buildContactsContext() {
+      // exact same code from App.js
+    }
+
+    async function buildStockContext() {
+      // exact same code from App.js
+    }
+
+    async function buildMarginsContext() {
+      // exact same code from App.js
+    }
+
+    async function buildFollowupsContext() {
+      // exact same code from App.js
+    }
+
+    async function buildRevenueContext() {
+      // exact same code from App.js
+    }
+
+    async function buildPartsContext() {
+      // exact same code from App.js
+    }
+
+    async function buildSmartContext(question) {
+      // exact same code from App.js
+    }
+
+    async function sendAskMessage(
+      msg, askMessages, setAskMessages,
+      setAskInput, setAskLoading
+    ) {
+      // exact same code from App.js
+    }
+
+    return {
+      detectQueryType,
+      buildSmartContext,
+      sendAskMessage,
+    };
+  }
+
+STEP 12C — Create src/hooks/useImport.js
+
+Move the import/export functions into a custom hook:
+
+  import { useState } from "react";
+  import { supabase } from "../supabase";
+  import { useCustomers } from "../context/CustomerContext";
+  import { cleanWhatsAppText } from "../utils/helpers";
+
+  export function useImport(anthropicKey) {
+    const { loadCustomers, activeCustomerId, 
+      activeDealId } = useCustomers();
+
+    async function importChatFile(file) {
+      // exact same code from App.js
+    }
+
+    async function importSingleChatFile(file) {
+      // exact same code from App.js
+    }
+
+    async function importMultipleChatFiles(files) {
+      // exact same code from App.js
+    }
+
+    async function importWhatsAppChat(
+      importText, setImporting, setImportResult,
+      setMessages
+    ) {
+      // exact same code from App.js
+    }
+
+    async function exportData(setExporting) {
+      // exact same code from App.js
+    }
+
+    return {
+      importChatFile,
+      importSingleChatFile,
+      importMultipleChatFiles,
+      importWhatsAppChat,
+      exportData,
+    };
+  }
+
+STEP 12D — Create src/hooks/useBroadcast.js
+
+Move broadcast functions into a custom hook:
+
+  import { useState } from "react";
+  import { useCustomers } from "../context/CustomerContext";
+  import { useStock } from "../context/StockContext";
+  import { getMatchingClients, generateBroadcastMessages } 
+    from "../services/broadcastService";
+
+  export function useBroadcast(anthropicKey) {
+    const [showBroadcast, setShowBroadcast] = useState(false);
+    const [broadcastItem, setBroadcastItem] = useState(null);
+    const [broadcastClients, setBroadcastClients] = useState([]);
+    const [broadcastSelected, setBroadcastSelected] = 
+      useState(new Set());
+    const [broadcastMessages, setBroadcastMessages] = useState([]);
+    const [broadcastLoading, setBroadcastLoading] = useState(false);
+    const [broadcastStep, setBroadcastStep] = useState("clients");
+    const [broadcastSent, setBroadcastSent] = useState(new Set());
+
+    const { customers } = useCustomers();
+    const { stock } = useStock();
+
+    function openBroadcast(item) {
+      // exact same code from App.js
+    }
+
+    async function handleGenerateBroadcastMessages() {
+      // exact same code from App.js
+      // rename generateBroadcastMessages to 
+      // handleGenerateBroadcastMessages to avoid conflict
+      // with the imported service function
+    }
+
+    return {
+      showBroadcast, setShowBroadcast,
+      broadcastItem, setBroadcastItem,
+      broadcastClients, setBroadcastClients,
+      broadcastSelected, setBroadcastSelected,
+      broadcastMessages, setBroadcastMessages,
+      broadcastLoading, setBroadcastLoading,
+      broadcastStep, setBroadcastStep,
+      broadcastSent, setBroadcastSent,
+      openBroadcast,
+      generateBroadcastMessages: handleGenerateBroadcastMessages,
+    };
+  }
+
+STEP 12E — Update App.js to use all new hooks
+
+In App.js replace the functions with hook calls:
+
+  import { useChat } from "./hooks/useChat";
+  import { useAskClaude } from "./hooks/useAskClaude";
+  import { useImport } from "./hooks/useImport";
+  import { useBroadcast } from "./hooks/useBroadcast";
+
+At top of App() function add:
+
+  const {
+    handleReserveDevice, handleConfirmSale, moveStage,
+    addIncomingMessage, generateAIReply, sendAIReply,
+    sendDirectReply, generateOpeningMessage,
+    confirmSent, markNotSent, copyMsg,
+    generateOutreach, generateSupplierReply,
+  } = useChat(
+    messages, setMessages,
+    setMsgLoading,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    setGeneratedReplyLoading,
+    setEditingGenerated,
+    copied, setCopied,
+    setEditSent,
+    anthropicKey,
+  );
+
+  const { buildSmartContext, sendAskMessage } = 
+    useAskClaude(anthropicKey);
+
+  const { 
+    importChatFile, importSingleChatFile,
+    importMultipleChatFiles, importWhatsAppChat,
+    exportData,
+  } = useImport(anthropicKey);
+
+  const {
     showBroadcast, setShowBroadcast,
     broadcastItem, setBroadcastItem,
     broadcastClients, setBroadcastClients,
     broadcastSelected, setBroadcastSelected,
     broadcastMessages, setBroadcastMessages,
-    broadcastLoading,
+    broadcastLoading, setBroadcastLoading,
     broadcastStep, setBroadcastStep,
     broadcastSent, setBroadcastSent,
+    openBroadcast,
     generateBroadcastMessages,
-  }) {
-    const { isMobile } = useUI();
+  } = useBroadcast(anthropicKey);
 
-    if (!showBroadcast || !broadcastItem) return null;
+Then DELETE from App.js:
+- handleReserveDevice function
+- handleConfirmSale function
+- moveStage function
+- addIncomingMessage function
+- generateAIReply function
+- sendAIReply function
+- sendDirectReply function
+- generateOpeningMessage function
+- sendDirectMessage function (if separate)
+- confirmSent function
+- markNotSent function
+- copyMsg function
+- generateOutreach function
+- generateSupplierReply function
+- detectQueryType function
+- buildContactsContext function
+- buildStockContext function
+- buildMarginsContext function
+- buildFollowupsContext function
+- buildRevenueContext function
+- buildPartsContext function
+- buildSmartContext function
+- sendAskMessage function
+- importChatFile function
+- importSingleChatFile function
+- importMultipleChatFiles function
+- importWhatsAppChat function
+- exportData function
+- openBroadcast function
+- generateBroadcastMessages function
+- showBroadcast, setBroadcast states (now in hook)
+- broadcastItem, setBroadcastItem states
+- broadcastClients, setBroadcastClients states
+- broadcastSelected, setBroadcastSelected states
+- broadcastMessages, setBroadcastMessages states
+- broadcastLoading, setBroadcastLoading states
+- broadcastStep, setBroadcastStep states
+- broadcastSent, setBroadcastSent states
+
+STEP 12F — Move auth state to AuthContext
+
+Create src/context/AuthContext.js:
+
+  import React, { createContext, useContext, 
+    useState, useEffect } from "react";
+  import { supabase } from "../supabase";
+  import { getAnthropicKey, saveAnthropicKey } 
+    from "../utils/helpers";
+
+  const AuthContext = createContext(null);
+
+  export function AuthProvider({ children }) {
+    const [session, setSession] = useState(null);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [authMode, setAuthMode] = useState("login");
+    const [authEmail, setAuthEmail] = useState("");
+    const [authPassword, setAuthPassword] = useState("");
+    const [authError, setAuthError] = useState("");
+    const [authBusy, setAuthBusy] = useState(false);
+    const [anthropicKey, setAnthropicKey] = 
+      useState(getAnthropicKey);
+    const [keyInput, setKeyInput] = useState("");
+
+    useEffect(() => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+        setAuthLoading(false);
+      });
+      const { data: { subscription } } = 
+        supabase.auth.onAuthStateChange((_event, session) => {
+          setSession(session);
+        });
+      return () => subscription.unsubscribe();
+    }, []);
+
+    async function handleLogin() {
+      setAuthBusy(true);
+      setAuthError("");
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+      if (error) setAuthError(error.message);
+      setAuthBusy(false);
+    }
+
+    async function handleSignup() {
+      setAuthBusy(true);
+      setAuthError("");
+      const { error } = await supabase.auth.signUp({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+      if (error) setAuthError(error.message);
+      else setAuthMode("login");
+      setAuthBusy(false);
+    }
+
+    async function handleLogout() {
+      await supabase.auth.signOut();
+      setSession(null);
+    }
 
     return (
-      // exact same broadcast modal JSX
+      <AuthContext.Provider value={{
+        session, setSession,
+        authLoading,
+        authMode, setAuthMode,
+        authEmail, setAuthEmail,
+        authPassword, setAuthPassword,
+        authError, setAuthError,
+        authBusy,
+        anthropicKey, setAnthropicKey,
+        keyInput, setKeyInput,
+        handleLogin,
+        handleSignup,
+        handleLogout,
+      }}>
+        {children}
+      </AuthContext.Provider>
     );
   }
 
-In App.js replace with:
-  import BroadcastModal from "./components/layout/BroadcastModal";
+  export function useAuth() {
+    const context = useContext(AuthContext);
+    if (!context) throw new Error(
+      "useAuth must be used within AuthProvider"
+    );
+    return context;
+  }
 
-  <BroadcastModal
-    showBroadcast={showBroadcast}
-    setShowBroadcast={setShowBroadcast}
-    broadcastItem={broadcastItem}
-    setBroadcastItem={setBroadcastItem}
-    broadcastClients={broadcastClients}
-    setBroadcastClients={setBroadcastClients}
-    broadcastSelected={broadcastSelected}
-    setBroadcastSelected={setBroadcastSelected}
-    broadcastMessages={broadcastMessages}
-    setBroadcastMessages={setBroadcastMessages}
-    broadcastLoading={broadcastLoading}
-    broadcastStep={broadcastStep}
-    setBroadcastStep={setBroadcastStep}
-    broadcastSent={broadcastSent}
-    setBroadcastSent={setBroadcastSent}
-    generateBroadcastMessages={generateBroadcastMessages}
-  />
+Add AuthProvider to index.js as the outermost wrapper:
+  import { AuthProvider } from './context/AuthContext';
 
-STEP 12F — Create src/components/layout/AuthScreen.js
+  root.render(
+    <AuthProvider>
+      <UIProvider>
+        <SalesProvider>
+          <PartsProvider>
+            <CustomerProvider>
+              <TradersProvider anthropicKey={
+                localStorage.getItem("jnp_anthropic_key") || ""
+              }>
+                <ReservationsProvider>
+                  <StockProvider>
+                    <App />
+                  </StockProvider>
+                </ReservationsProvider>
+              </TradersProvider>
+            </CustomerProvider>
+          </PartsProvider>
+        </SalesProvider>
+      </UIProvider>
+    </AuthProvider>
+  );
 
-Find the auth screen in App.js.
-It shows when there is no session.
-It includes login and signup forms.
+In App.js add:
+  import { useAuth } from "./context/AuthContext";
 
-Extract into:
-
-  import React from "react";
-  import { supabase } from "../../supabase";
-
-  export default function AuthScreen({
+  const {
+    session, authLoading,
     authMode, setAuthMode,
     authEmail, setAuthEmail,
     authPassword, setAuthPassword,
     authError, setAuthError,
-    authBusy, setAuthBusy,
-    handleLogin,
-    handleSignup,
-  }) {
-    return (
-      // exact same auth screen JSX
-    );
-  }
+    authBusy,
+    anthropicKey, setAnthropicKey,
+    keyInput, setKeyInput,
+    handleLogin, handleSignup, handleLogout,
+  } = useAuth();
 
-In App.js replace the auth screen with:
-  import AuthScreen from "./components/layout/AuthScreen";
-
-  if (!session) {
-    return (
-      <AuthScreen
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        authEmail={authEmail}
-        setAuthEmail={setAuthEmail}
-        authPassword={authPassword}
-        setAuthPassword={setAuthPassword}
-        authError={authError}
-        setAuthError={setAuthError}
-        authBusy={authBusy}
-        setAuthBusy={setAuthBusy}
-        handleLogin={handleLogin}
-        handleSignup={handleSignup}
-      />
-    );
-  }
-
-STEP 12G — Move remaining business logic to App.js services
-
-Find these functions still in App.js and check if 
-they can be simplified:
-
-1. handleConfirmSale — keep in App.js but make sure
-   it uses context values not props
-
-2. handleReserveDevice — keep in App.js
-
-3. addIncomingMessage — keep in App.js
-
-4. generateAIReply — keep in App.js
-
-5. sendAIReply — keep in App.js
-
-6. sendDirectReply — keep in App.js
-
-7. generateOutreach — keep in App.js
-
-8. generateSupplierReply — keep in App.js
-
-9. openBroadcast — keep in App.js
-
-10. handleUpgradeApply — keep in App.js
-
-These functions need access to multiple contexts
-so they stay in App.js for now.
-
-STEP 12H — Clean up unused imports in App.js
-
-After all extractions find and remove any imports
-in App.js that are no longer used:
-- Remove unused useState imports
-- Remove unused component imports
-- Remove unused function imports
+Then DELETE from App.js:
+- const [session, setSession] = useState(null);
+- const [authLoading, setAuthLoading] = useState(true);
+- const [authMode, setAuthMode] = useState("login");
+- const [authEmail, setAuthEmail] = useState("");
+- const [authPassword, setAuthPassword] = useState("");
+- const [authError, setAuthError] = useState("");
+- const [authBusy, setAuthBusy] = useState(false);
+- const [anthropicKey, setAnthropicKey] = useState(...);
+- const [keyInput, setKeyInput] = useState("");
+- handleAuth function
+- handleLogout function
+- The useEffect for session management
 
 IMPORTANT RULES:
-- Every new file must have import React from "react" at top
 - Do not change any logic
-- Test everything after deployment
-- If App.js is still over 500 lines after this step
-  identify what is left and we will split further
+- Every new file needs import React from "react"
+- Make sure session check still works in App.js
+  App.js should use: const { session } = useAuth();
+- Make sure anthropicKey is accessible in all hooks
+  that need it via useAuth()
 
 After ALL changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean:
-   git add -A && git commit -m "architecture step 12: clean App.js to under 500 lines" 
+   git add -A && git commit -m "architecture step 12: extract hooks and AuthContext" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test everything:
+6. Test EVERYTHING:
    - Login works?
    - All tabs work?
-   - Client chat works?
-   - Reserve works?
-   - Sales history works?
-   - Marketing tab works?
+   - Send message works?
+   - AI reply works?
+   - Import WhatsApp works?
+   - Broadcast works?
+   - Ask Claude works?
 7. Tell me new App.js line count

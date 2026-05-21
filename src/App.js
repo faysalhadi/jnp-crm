@@ -23,6 +23,7 @@ import {
   buildOwnerContext,
 } from "./utils/claude";
 
+import { useAuth } from "./context/AuthContext";
 import { useCustomers } from "./context/CustomerContext";
 import { useStock } from "./context/StockContext";
 import { useUI } from "./context/UIContext";
@@ -32,6 +33,10 @@ import { useReservations } from "./context/ReservationsContext";
 import { moveStage as moveStageService, buildReceiptText as buildReceiptTextService, saveReceiptNumber as saveReceiptNumberService } from "./services/dealService";
 import { loadMessages as loadMessagesService, saveMessage as saveMessageService, generateReply as generateReplyService } from "./services/messageService";
 import { getMatchingClients as getMatchingClientsService } from "./services/broadcastService";
+import { useChat } from "./hooks/useChat";
+import { useAskClaude } from "./hooks/useAskClaude";
+import { useImport } from "./hooks/useImport";
+import { useBroadcast } from "./hooks/useBroadcast";
 
 import { saveImportedMessages } from "./utils/whatsapp";
 import Badge from "./components/ui/Badge";
@@ -177,16 +182,18 @@ export default function App() {
     loadReservedDeals,
   } = useReservations();
 
-  const [session, setSession] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState("login"); // login | signup
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [authBusy, setAuthBusy] = useState(false);
-
-  const [anthropicKey, setAnthropicKey] = useState(getAnthropicKey);
-  const [keyInput, setKeyInput] = useState("");
+  const {
+    session, setSession,
+    authLoading,
+    authMode, setAuthMode,
+    authEmail, setAuthEmail,
+    authPassword, setAuthPassword,
+    authError, setAuthError,
+    authBusy,
+    anthropicKey, setAnthropicKey,
+    keyInput, setKeyInput,
+    handleAuth, handleLogout,
+  } = useAuth();
 
   const [messages, setMessages] = useState([]);
   const [msgLoading, setMsgLoading] = useState(false);
@@ -235,15 +242,7 @@ export default function App() {
   // ── side drawer / sales history ──
   const [expandedSaleId,       setExpandedSaleId]       = useState(null);
 
-  // ── broadcast ──
-  const [showBroadcast, setShowBroadcast] = useState(false);
-  const [broadcastItem, setBroadcastItem] = useState(null);
-  const [broadcastClients, setBroadcastClients] = useState([]);
-  const [broadcastSelected, setBroadcastSelected] = useState(new Set());
-  const [broadcastMessages, setBroadcastMessages] = useState([]);
-  const [broadcastLoading, setBroadcastLoading] = useState(false);
-  const [broadcastStep, setBroadcastStep] = useState("clients");
-  const [broadcastSent, setBroadcastSent] = useState(new Set());
+  // ── broadcast ── (managed by useBroadcast hook, initialized below after messages state)
 
   // ── quick sale ──
   const [showQuickSale,    setShowQuickSale]    = useState(false);
@@ -268,27 +267,79 @@ export default function App() {
   const [copiedSupGmail,      setCopiedSupGmail]      = useState(false);
   const [copiedSupWA,         setCopiedSupWA]         = useState(false);
 
-  // ── auth ──
-  useEffect(() => {
-    const stored = localStorage.getItem('jnp_session');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (parsed?.access_token) {
-          // Restore session into supabase client
-          supabase.auth.setSession({
-            access_token: parsed.access_token,
-            refresh_token: parsed.refresh_token || '',
-          }).catch(() => {});
-          setSession(parsed);
-          setAuthLoading(false);
-          return;
-        }
-      } catch {}
-    }
-    setSession(null);
-    setAuthLoading(false);
-  }, []);
+  // ── hooks ──
+  const {
+    handleReserveDevice, handleConfirmSale, moveStage,
+    addIncomingMessage, generateAIReply, sendAIReply,
+    sendDirectReply, generateOpeningMessage,
+    confirmSent, markNotSent, copyMsg,
+    generateOutreach: _generateOutreach,
+    generateSupplierReply: _generateSupplierReply,
+  } = useChat(
+    messages, setMessages,
+    setMsgLoading,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    setGeneratedReplyLoading,
+    setEditingGenerated,
+    copied, setCopied,
+    setEditSent,
+    anthropicKey,
+  );
+
+  function generateOutreach() {
+    return _generateOutreach(outreachReason, outreachCustom, setOutreachMode, setOutreachReason, setOutreachCustom);
+  }
+
+  function generateSupplierReply() {
+    return _generateSupplierReply(supplierReplyCtx, setSupplierReplyGmail, setSupplierReplyWA, setSupplierReplyLoading);
+  }
+
+  const { buildSmartContext, sendAskMessage: _sendAskMessage } = useAskClaude(anthropicKey);
+
+  function sendAskMessage(msg) {
+    return _sendAskMessage(msg, askMessages, setAskMessages, setAskInput, setAskLoading);
+  }
+
+  const {
+    importChatFile: _importChatFile,
+    importSingleChatFile: _importSingleChatFile,
+    importMultipleChatFiles: _importMultipleChatFiles,
+    importWhatsAppChat: _importWhatsAppChat,
+    exportData: _exportData,
+  } = useImport(anthropicKey);
+
+  function importSingleChatFile(file) {
+    return _importSingleChatFile(file, setImporting, setImportResult);
+  }
+
+  function importMultipleChatFiles(files) {
+    return _importMultipleChatFiles(files, setImportingMultiple, setImportMultipleProgress, setImportMultipleResult);
+  }
+
+  function importWhatsAppChat() {
+    return _importWhatsAppChat(importText, setImporting, setImportResult, setImportText);
+  }
+
+  function exportData() {
+    return _exportData(setExporting);
+  }
+
+  const {
+    showBroadcast, setShowBroadcast,
+    broadcastItem, setBroadcastItem,
+    broadcastClients, setBroadcastClients,
+    broadcastSelected, setBroadcastSelected,
+    broadcastMessages, setBroadcastMessages,
+    broadcastLoading, setBroadcastLoading,
+    broadcastStep, setBroadcastStep,
+    broadcastSent, setBroadcastSent,
+    openBroadcast,
+    generateBroadcastMessages,
+  } = useBroadcast(anthropicKey);
 
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
@@ -339,109 +390,12 @@ export default function App() {
       .then(({ data: d }) => { if (d) { setActiveDealId(d.id); loadCustomers(); } });
   }, [activeCustomerId, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── auth actions ──
-  async function handleAuth() {
-    setAuthBusy(true); setAuthError("");
-    try {
-      if (authMode === "login") {
-        const { data, error } = await supabase.auth.signInWithPassword({ 
-          email: authEmail.trim(), 
-          password: authPassword 
-        });
-        if (error) { setAuthError(error.message); setAuthBusy(false); return; }
-        if (data?.session) {
-          // Store session in localStorage manually
-          localStorage.setItem('jnp_session', JSON.stringify(data.session));
-          setSession(data.session);
-        }
-      } else {
-        const { error } = await supabase.auth.signUp({ 
-          email: authEmail.trim(), 
-          password: authPassword 
-        });
-        if (error) { setAuthError(error.message); setAuthBusy(false); return; }
-        setAuthError("✅ Account created! You can now sign in.");
-        setAuthMode("login");
-      }
-    } catch (e) {
-      setAuthError("Something went wrong. Please try again.");
-    }
-    setAuthBusy(false);
-  }
-
-  async function handleLogout() {
-    localStorage.removeItem('jnp_session');
-    await supabase.auth.signOut().catch(() => {});
-    setSession(null);
+  // ── auth/handleLogout: clears local UI state on logout ──
+  // NOTE: handleAuth and handleLogout come from useAuth().
+  // handleLogout in AuthContext only clears session/auth; we also clear customer UI state:
+  function handleLogoutWithUI() {
     setCustomers([]); setView("list"); setActiveCustomerId(null); setActiveDealId(null);
-  }
-
-  async function handleReserveDevice() {
-    let deal = activeDeal;
-    if (!deal && activeCustomer?.id) {
-      const { data: newD } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: "new_inquiry",
-        brand: "", model: "",
-      }).select().single();
-      if (newD) {
-        deal = newD;
-        setActiveDealId(newD.id);
-        loadCustomers();
-      }
-    }
-    if (!deal) return;
-    setLinkStockDeal({ ...deal });
-    setShowReservation(true);
-  }
-
-  async function handleConfirmSale() {
-    if (activeDeal) {
-      setLinkStockDeal({ ...activeDeal });
-      setShowLinkStock(true);
-      return;
-    }
-    if (!activeCustomer?.id) return;
-    const { data: newD } = await supabase.from("deals").insert({
-      customer_id: activeCustomer.id,
-      stage: "new_inquiry",
-      brand: "", model: "",
-    }).select().single();
-    if (newD) {
-      setActiveDealId(newD.id);
-      setLinkStockDeal({ ...newD });
-      setShowLinkStock(true);
-      loadCustomers();
-    }
-  }
-
-  async function moveStage(stageId) {
-    // Auto-create deal if none exists
-    if (!activeDealId && activeCustomer?.id) {
-      const { data: newDeal } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: stageId,
-        brand: "", model: "",
-        ...(stageId === "closed" ? { closed_at: new Date().toISOString() } : {}),
-      }).select().single();
-      if (newDeal) {
-        setActiveDealId(newDeal.id);
-        await loadCustomers();
-        if (stageId === "lost") setShowLossReason(true);
-        if (stageId === "confirmed_pending_pickup") { setLinkStockDeal(newDeal); setShowReservation(true); }
-        if (stageId === "closed") { setLinkStockDeal(newDeal); setShowLinkStock(true); }
-      }
-      return;
-    }
-    const fields = { stage: stageId };
-    if (stageId === "closed") fields.closed_at = new Date().toISOString();
-    await updateDeal(activeDealId, fields);
-    const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
-    await updateCustomer(activeCustomerId, { tier: autoTier(updatedDeals) });
-    setPendingSuggestion(null);
-    if (stageId === "lost") setShowLossReason(true);
-    if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }
-    if (stageId === "closed") { setLinkStockDeal({ ...activeDeal, ...fields }); setShowLinkStock(true); }
+    handleLogout();
   }
 
   async function handleUpgradeApply(option, { newRam, newSsd, finalPrice, upgradeNote }) {
@@ -460,289 +414,6 @@ export default function App() {
     setShowUpgrade(false);
     setUpgradeTarget(null);
     setShowQuickSale(true);
-  }
-
-  // ── message actions ──
-
-  // ── NEW CHAT FLOW FUNCTIONS ─────────────────────────────────────────────────
-
-  // Step 1: add an incoming client message (saves as role=customer, shows LEFT)
-  async function addIncomingMessage() {
-    if (!incomingText.trim()) return;
-    // Auto-create a deal if no active deal exists (e.g. new contact from floating button)
-    let dealId = activeDealId;
-    if (!dealId && activeCustomer?.id) {
-      const { data: newDeal } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: "new_inquiry",
-        brand: "", model: "",
-      }).select().single();
-      if (newDeal) {
-        dealId = newDeal.id;
-        setActiveDealId(newDeal.id);
-        await loadCustomers();
-      }
-    }
-    if (!dealId) return;
-    const content = incomingText.trim();
-    setIncomingText("");
-    const isVoice  = content.toLowerCase().startsWith("voice note:");
-    const isUrgent = /urgent|today|asap|same day|need it now|quickly/i.test(content);
-    const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId, role: "customer", content, is_voice: isVoice,
-    }).select().single();
-    if (msg) setMessages(prev => [...prev, msg]);
-    if (isUrgent) await updateCustomer(activeCustomerId, { urgent: true });
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-  }
-
-  // Step 3b: call Claude with full conversation history, show result for review
-  async function generateAIReply(triggerMsgId) {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setReplyingToId(triggerMsgId);
-    setReplyMode("ai");
-    setGeneratedReplyLoading(true);
-    setGeneratedReply("");
-    setEditingGenerated(false);
-
-    const history = messages.map(m => ({
-      role: m.role === "customer" ? "user" : "assistant",
-      content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
-    }));
-
-    const cType = activeCustomer?.contact_type || "client";
-    const systemPrompt = cType === "trader"
-      ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, a local laptop trader. Keep messages short, direct and casual. Return JSON with only a "reply" field (WhatsApp style, max 3 lines).`
-      : cType === "supplier"
-      ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, an international laptop supplier. Write professional business messages. Return JSON with only a "reply" field (formal, 2-4 sentences).`
-      : buildSystemPromptFromCache(cachedStock); // clients and walk-ins
-
-    try {
-      const raw = await callClaude(anthropicKey, history, systemPrompt);
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-      setGeneratedReply(parsed.reply || raw);
-      // Update deal specs from AI analysis (clients and walk-ins)
-      if ((cType === "client" || cType === "walkin") && parsed) {
-        const specUpdate = {};
-        if (parsed.brand && parsed.brand !== "unknown" && !activeDeal?.brand) specUpdate.brand = parsed.brand;
-        if (parsed.model && parsed.model !== "unknown" && !activeDeal?.model) specUpdate.model = parsed.model;
-        if (parsed.ram   && parsed.ram   !== "unknown") specUpdate.ram   = parsed.ram;
-        if (parsed.storage && parsed.storage !== "unknown") specUpdate.storage = parsed.storage;
-        if (parsed.condition && parsed.condition !== "unknown") specUpdate.condition = parsed.condition;
-        if (parsed.budget) specUpdate.budget = parsed.budget;
-        if (Object.keys(specUpdate).length) await updateDeal(activeDealId, specUpdate);
-        if (parsed.suggestedStage && parsed.suggestedStage !== activeDeal?.stage)
-          setPendingSuggestion({ stage: parsed.suggestedStage, reason: parsed.stageReason });
-        if (parsed.urgency) await updateCustomer(activeCustomerId, { urgent: true });
-      }
-    } catch {
-      setGeneratedReply("⚠️ Error generating. Check your API key in Settings.");
-    }
-    setGeneratedReplyLoading(false);
-  }
-
-  // Send the AI-generated reply (or edited version)
-  async function sendAIReply() {
-    const content = generatedReply.trim();
-    if (!content || !activeDealId) return;
-    const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId, role: "assistant", content, sent: content,
-    }).select().single();
-    if (msg) setMessages(prev => [...prev, msg]);
-    setGeneratedReply(""); setReplyMode(null); setReplyingToId(null); setEditingGenerated(false);
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-  }
-
-  // Send the manually-typed reply
-  async function sendDirectReply() {
-    const content = directReplyText.trim();
-    if (!content || !activeDealId) return;
-    setDirectReplyText("");
-    const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId, role: "assistant", content, sent: content,
-    }).select().single();
-    if (msg) setMessages(prev => [...prev, msg]);
-    setReplyMode(null); setReplyingToId(null);
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-  }
-
-  // Generate an opening message for an empty conversation
-  async function generateOpeningMessage() {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setReplyMode("ai");
-    setGeneratedReplyLoading(true);
-    setGeneratedReply("");
-    const prompt = `Generate a friendly opening WhatsApp message from "Laptop for Less" (UAE laptop reseller) to a new client named ${activeCustomer?.name}. ${activeDeal?.brand ? `They are interested in: ${activeDeal.brand} ${activeDeal.model || ""}` : ""}${activeDeal?.budget ? `. Budget: AED ${activeDeal.budget}` : ""}. Keep it short, welcoming, ask what they're looking for. Return JSON with only a "reply" field.`;
-    try {
-      const raw = await callClaude(anthropicKey, [{ role: "user", content: prompt }], buildSystemPromptFromCache(cachedStock));
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-      setGeneratedReply(parsed.reply || raw);
-    } catch { setGeneratedReply("Error generating. Check your API key."); }
-    setGeneratedReplyLoading(false);
-  }
-
-  // ── LEGACY (kept so nothing breaks) ─────────────────────────────────────────
-
-  // Mode 1 — Type Message: save owner's own typed text directly (no AI)
-  async function sendDirectMessage() {
-    if (!msgInput.trim()) return;
-    // Auto-create a deal if no active deal exists
-    let dealId = activeDealId;
-    if (!dealId && activeCustomer?.id) {
-      const { data: newDeal } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: "new_inquiry",
-        brand: "", model: "",
-      }).select().single();
-      if (newDeal) {
-        dealId = newDeal.id;
-        setActiveDealId(newDeal.id);
-        await loadCustomers();
-      }
-    }
-    if (!dealId) return;
-    const content = msgInput.trim();
-    setMsgInput("");
-    const { data: msg } = await supabase.from("messages").insert({
-      deal_id: dealId,
-      role: "assistant",
-      content,
-      sent: content,
-    }).select().single();
-    if (msg) setMessages(prev => [...prev, msg]);
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-  }
-
-  // Mode 2 — AI Reply: paste client message, Claude generates a reply
-  async function sendMessage() {
-    if (!msgInput.trim() || !activeDeal || msgLoading) return;
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-
-    const isVoice = msgInput.toLowerCase().startsWith("voice note:");
-    const isUrgent = /urgent|today|asap|same day|need it now|quickly/i.test(msgInput);
-
-    const { data: userMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "customer", content: msgInput.trim(), is_voice: isVoice }).select().single();
-    setMessages(prev => [...prev, userMsg]);
-    setMsgInput(""); setMsgLoading(true); setPendingSuggestion(null);
-    if (isUrgent) await updateCustomer(activeCustomerId, { urgent: true });
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-
-    try {
-      const history = [...messages, userMsg].map(m => ({
-        role: m.role === "customer" ? "user" : "assistant",
-        content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
-      }));
-
-      const cType = activeCustomer?.contact_type || "client";
-      const systemPrompt = cType === "trader"
-        ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, a local laptop trader. Keep messages short, direct and casual — this is a trader-to-trader conversation. You may be buying from or selling to them. Return JSON with only a "reply" field (WhatsApp style, max 3 lines).`
-        : cType === "supplier"
-        ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, an international laptop supplier. Write professional business messages. Return JSON with only a "reply" field (formal but friendly, 2-4 sentences).`
-        : buildSystemPromptFromCache(cachedStock);
-      const raw = await callClaude(anthropicKey, history, systemPrompt);
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let parsed;
-      try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-
-      // update deal specs
-      const specUpdate = {};
-      if (parsed.brand && parsed.brand !== "unknown" && !activeDeal.brand) specUpdate.brand = parsed.brand;
-      if (parsed.model && parsed.model !== "unknown" && !activeDeal.model) specUpdate.model = parsed.model;
-      if (parsed.ram && parsed.ram !== "unknown") specUpdate.ram = parsed.ram;
-      if (parsed.storage && parsed.storage !== "unknown") specUpdate.storage = parsed.storage;
-      if (parsed.screen && parsed.screen !== "unknown") specUpdate.screen = parsed.screen;
-      if (parsed.condition && parsed.condition !== "unknown") specUpdate.condition = parsed.condition;
-      if (parsed.budget) specUpdate.budget = parsed.budget;
-      if (parsed.activationLock && parsed.activationLock !== "unknown") specUpdate.activation_lock = parsed.activationLock;
-      if (parsed.charger && parsed.charger !== "unknown") specUpdate.charger = parsed.charger;
-      if (parsed.box && parsed.box !== "unknown") specUpdate.box = parsed.box;
-      if (Object.keys(specUpdate).length) await updateDeal(activeDealId, specUpdate);
-
-      const { data: aiMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: parsed.reply || raw }).select().single();
-      setMessages(prev => [...prev, aiMsg]);
-
-      if (parsed.suggestedStage && parsed.suggestedStage !== activeDeal.stage) {
-        setPendingSuggestion({ stage: parsed.suggestedStage, reason: parsed.stageReason });
-      }
-      if (parsed.urgency) await updateCustomer(activeCustomerId, { urgent: true });
-
-    } catch {
-      const { data: errMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: "⚠️ API error. Check your Anthropic key in Settings." }).select().single();
-      setMessages(prev => [...prev, errMsg]);
-    } finally { setMsgLoading(false); }
-  }
-
-  async function generateSupplierReply() {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setSupplierReplyLoading(true); setSupplierReplyGmail(""); setSupplierReplyWA("");
-    const sup = activeCustomer;
-    const prompt = `You are writing communications on behalf of Faisal Hadi, Laptop for Less, Sharjah UAE.
-
-Supplier: ${sup?.name || "Supplier"}
-${sup?.location ? `Location: ${sup.location}` : ""}
-${sup?.email ? `Email: ${sup.email}` : ""}
-Context: ${supplierReplyCtx || "General follow-up"}
-
-Write TWO versions. Return JSON only:
-{
-  "gmail": "Formal email, 3-5 sentences, professional tone. End with: Best regards,\\nFaisal Hadi\\nLaptop for Less, UAE",
-  "whatsapp": "Casual, 2-3 lines max, 1 emoji, no formal sign-off"
-}`;
-    try {
-      const raw = await callClaude(anthropicKey, [{ role: "user", content: prompt }],
-        "You write professional supplier communications for a UAE laptop reseller. Return only valid JSON.");
-      const p = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      setSupplierReplyGmail(p.gmail || ""); setSupplierReplyWA(p.whatsapp || "");
-    } catch { setSupplierReplyGmail("Error generating — check your API key."); }
-    setSupplierReplyLoading(false);
-  }
-
-  async function generateOutreach() {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    const reason = outreachReason === "Custom message" ? outreachCustom : outreachReason;
-    if (!reason) return;
-    setMsgLoading(true);
-
-    const context = `Generate a WhatsApp outreach message to send to ${activeCustomer?.name}.
-Reason: ${reason}
-Customer history: ${activeDeal?.brand ? `Interested in ${activeDeal.brand} ${activeDeal.model || ""}` : "General customer"}
-Budget: ${activeDeal?.budget ? `AED ${activeDeal.budget}` : "Unknown"}
-Last stage: ${STAGES.find(s => s.id === activeDeal?.stage)?.label}
-Return JSON with only a "reply" field containing the message.`;
-
-    try {
-      const systemPrompt = buildSystemPromptFromCache(cachedStock);
-      const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], systemPrompt);
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let parsed;
-      try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-      const { data: aiMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: parsed.reply || raw }).select().single();
-      setMessages(prev => [...prev, aiMsg]);
-    } catch {
-      alert("Error generating message. Check your API key.");
-    } finally {
-      setMsgLoading(false); setOutreachMode(false); setOutreachReason(""); setOutreachCustom("");
-    }
-  }
-
-  async function confirmSent(msgId, text) {
-    await supabase.from("messages").update({ sent: text }).eq("id", msgId);
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, sent: text } : m));
-    setEditSent(null);
-    // open whatsapp
-    if (activeCustomer?.number) window.open(`https://wa.me/${activeCustomer.number.replace(/\D/g,"")}?text=${encodeURIComponent(text)}`, "_blank");
-  }
-
-  async function markNotSent(msgId) {
-    await supabase.from("messages").update({ sent: "NOT_SENT" }).eq("id", msgId);
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, sent: "NOT_SENT" } : m));
-  }
-
-  function copyMsg(text, id) {
-    navigator.clipboard.writeText(text);
-    setCopied(id); setTimeout(() => setCopied(null), 2000);
   }
 
   // ── tasks — used by dashboard overdue logic ──
@@ -800,484 +471,7 @@ Return JSON with only a "reply" field containing the message.`;
 
 
 
-  // ── import whatsapp chat ──
-  async function importChatFile(file) {
-    const text = cleanWhatsAppText(await file.text());
 
-    // Extract name + phone from filename
-    let filename = file.name.replace(/\.txt$/i, "").replace(/^WhatsApp\s*(Chat\s*)?(with\s*)?[-–]?\s*/i, "").trim();
-    let numberFromFile = "";
-    const phoneMatch = filename.match(/\+?\d[\d\s\-()]{7,}/);
-    if (phoneMatch) {
-      numberFromFile = phoneMatch[0].replace(/\s/g, "");
-      filename = filename.replace(phoneMatch[0], "").replace(/[-_]/g, " ").trim();
-    }
-
-    // Find first non-owner sender in chat
-    let senderFromChat = "";
-    for (const line of text.split("\n")) {
-      const m = line.match(/\[\d{1,2}\/\d{1,2}\/\d{4}[^\]]+\]\s+~?([^:]+):/);
-      if (m) {
-        const s = m[1].replace(/^~/, "").trim();
-        if (!s.toLowerCase().includes("laptop for less")) { senderFromChat = s; break; }
-      }
-    }
-
-    const customerName = (filename || senderFromChat || "Unknown Customer").trim();
-
-    const chatPrompt = `Analyze this WhatsApp chat between 'Laptop For Less' (a UAE laptop reseller) and a customer.
-
-PARSING:
-- 'Laptop For Less' = the owner/seller (ignore for customer profile, read for context)
-- All other senders = the customer
-- Strip ~ from sender names
-- English + Urdu/Arabic mix is normal
-
-EXTRACT:
-- intent: 'buying' or 'selling'
-- brand: MacBook/Dell/HP/Lenovo/Other/Unknown
-- model: specific model (e.g. 'Dell 5420', 'MacBook Air M1') or empty
-- processor: e.g. 'Core i5 11th Gen' / 'Apple M1' or empty
-- ram: e.g. '8GB' or empty
-- storage: e.g. '256GB' or empty
-- condition: New/Like New/Used/Unknown
-- quantity: units wanted (default 1)
-- budget: price in AED if mentioned (number only, null if not)
-- urgency: true if said urgent/today/asap/need now
-- stage: 'new_inquiry'|'requirement_noted'|'negotiation'|'closed'|'lost'
-- notes: important context
-
-SHORTHAND: '8/256'=8GB RAM/256GB SSD. '16/512'=16GB/512GB. 'i5 11th'=Core i5 11th Gen. '750aed'=AED 750.
-
-Return ONLY valid JSON (no markdown):
-{"intent":"buying","brand":"Unknown","model":"","processor":"","ram":"","storage":"","condition":"Unknown","quantity":1,"budget":null,"urgency":false,"stage":"new_inquiry","notes":""}
-
-Chat:
-${text.slice(0, 12000)}`;
-
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 800, messages: [{ role: "user", content: chatPrompt }] }),
-      });
-      const data = await res.json();
-      const raw = (data?.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
-      let info; try { info = JSON.parse(raw); } catch { info = {}; }
-
-      const { data: customer } = await supabase.from("customers").insert({
-        name: customerName, number: numberFromFile || "", notes: info.notes || "",
-        tier: "cold", urgent: info.urgency || false,
-      }).select().single();
-      if (!customer) return null;
-
-      const { data: deal } = await supabase.from("deals").insert({
-        customer_id: customer.id,
-        brand: info.brand && info.brand !== "Unknown" ? info.brand : "",
-        model: info.model || "",
-        ram: info.ram || "", storage: info.storage || "",
-        condition: info.condition && info.condition !== "Unknown" ? info.condition : "",
-        budget: info.budget || null, stage: info.stage || "new_inquiry",
-      }).select().single();
-      if (deal) await saveImportedMessages(deal.id, text);
-      return customer;
-    } catch { return null; }
-  }
-
-  async function importSingleChatFile(file) {
-    if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
-    setImporting(true); setImportResult(null);
-    const customer = await importChatFile(file);
-    await loadCustomers();
-    if (customer) setImportResult({ success: true, message: `✅ Imported ${customer.name} successfully!` });
-    else setImportResult({ success: false, message: "❌ Import failed. Check your API key." });
-    setImporting(false);
-  }
-
-  async function importMultipleChatFiles(files) {
-    if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
-    setImportingMultiple(true); setImportMultipleResult(null);
-    let created = 0; let failed = 0;
-    for (let i = 0; i < files.length; i++) {
-      setImportMultipleProgress({ current: i + 1, total: files.length });
-      const result = await importChatFile(files[i]);
-      if (result) created++; else failed++;
-    }
-    await loadCustomers();
-    setImportMultipleResult({ created, failed, total: files.length });
-    setImportingMultiple(false);
-    setImportMultipleProgress({ current: 0, total: 0 });
-  }
-
-  async function importWhatsAppChat() {
-    if (!importText.trim() || !anthropicKey) return;
-    setImporting(true); setImportResult(null);
-
-    const prompt = `You are analyzing a WhatsApp chat export for a UAE laptop reselling business called "Laptop for Less".
-
-WHATSAPP FORMAT: Lines start with [DD/MM/YYYY, H:MM:SS AM/PM] SenderName: message
-- Strip ~ from sender names (e.g. ~Kunchana → Kunchana)
-- "Laptop For Less" = the business owner — read their messages for context but do NOT create a record for them
-- Skip system messages and media omissions ("image omitted" etc.)
-
-YOUR TASK: Extract EVERY non-owner person as a customer. Do NOT skip anyone even if they only sent 1 message.
-
-SHORTHAND SPECS:
-- "8/256" = RAM:8GB, Storage:256GB  |  "16/512" = RAM:16GB, Storage:512GB
-- "i5 11th" or "i5/11gen" = Processor: Core i5 11th Gen
-- "i7 12th" = Core i7 12th Gen  |  "i3 10th" = Core i3 10th Gen
-- "m1","m2","m3" = Apple Silicon  |  "ryzen 5","r5" = Ryzen 5
-- Numbers like "620", "1250 aed" = budget
-
-STAGE RULES:
-- new_inquiry: asked if something is available, no price/specs discussed
-- requirement_noted: specs and/or price mentioned by either side
-- negotiation: back-and-forth on price happened
-- closed: deal confirmed ("confirmed", "done", "I'll take it", "ok done")
-- lost: said no, or no reply after price given
-
-Return ONLY a JSON array — no markdown, no explanation:
-[{
-  "name": "customer name (strip ~)",
-  "number": "phone number from filename like +971 55 539 0642 or empty",
-  "intent": "buying or selling or unknown",
-  "brand": "MacBook or Dell or HP or Lenovo or Other or unknown",
-  "model": "model number/name or empty",
-  "processor": "Core i5 11th Gen or Apple M1 etc or empty",
-  "ram": "8GB or empty",
-  "storage": "256GB or empty",
-  "condition": "New or Like New or Used or Refurbished or unknown",
-  "budget": price as number or null,
-  "quantity": units wanted as number or null,
-  "urgent": true or false,
-  "notes": "key context from the conversation",
-  "stage": "new_inquiry or requirement_noted or negotiation or closed or lost"
-}]
-
-CRITICAL RULES:
-- Include EVERY customer even if they only sent 1 message
-- Include even if intent is not clear — set intent to "unknown"
-- Merge multiple appearances of same person into one entry
-- Never skip a contact just because the conversation is brief
-- Return ONLY the JSON array
-
-WhatsApp Chat:
-${cleanWhatsAppText(importText).slice(0, 12000)}`;
-
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 8000, messages: [{ role: "user", content: prompt }] }),
-      });
-      const data = await res.json();
-      const raw = data?.content?.[0]?.text || "[]";
-      const clean = raw.replace(/\`\`\`json|\`\`\`/g, "").trim();
-      let contacts;
-      try { contacts = JSON.parse(clean); } catch { contacts = []; }
-
-      if (!contacts.length) {
-        setImportResult({ success: false, message: "No contacts extracted. Try a longer chat or check the format." });
-        setImporting(false); return;
-      }
-
-      // Create customers and deals in Supabase
-      let created = 0;
-      for (const c of contacts) {
-        if (!c.name) continue;
-        const { data: customer } = await supabase.from("customers").insert({
-          name: c.name, number: c.number || "", notes: c.notes || "",
-          tier: "cold", urgent: c.urgent || false,
-        }).select().single();
-        if (!customer) continue;
-        const { data: deal } = await supabase.from("deals").insert({
-          customer_id: customer.id,
-          brand: c.brand && c.brand !== "unknown" ? c.brand : "",
-          model: c.model || "",
-          ram: c.ram || "",
-          storage: c.storage || "",
-          condition: c.condition && c.condition !== "unknown" ? c.condition : "",
-          budget: c.budget || null,
-          stage: c.stage || "new_inquiry",
-        }).select().single();
-        if (deal) await saveImportedMessages(deal.id, cleanWhatsAppText(importText));
-        created++;
-      }
-
-      await loadCustomers();
-      setImportResult({ success: true, message: `✅ Imported ${created} customer${created !== 1 ? "s" : ""} successfully!` });
-      setImportText("");
-    } catch (e) {
-      setImportResult({ success: false, message: "Error importing. Check your API key." });
-    }
-    setImporting(false);
-  }
-
-  // ── export data ──
-  async function exportData() {
-    setExporting(true);
-    try {
-      const { data: allCustomers } = await supabase.from("customers").select("*, deals(*)").order("last_active", { ascending: false });
-      const exportObj = {
-        exported_at: new Date().toISOString(),
-        business: "Laptop for Less",
-        total_customers: allCustomers?.length || 0,
-        customers: allCustomers || [],
-      };
-      const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `jnp-crm-export-${new Date().toISOString().slice(0,10)}.json`;
-      a.click(); URL.revokeObjectURL(url);
-
-      // Also export as CSV
-      const rows = [["Name", "Number", "Tier", "Urgent", "Brand", "Model", "Stage", "Budget (AED)", "Value (AED)", "Last Active", "Notes"]];
-      (allCustomers || []).forEach(c => {
-        const deal = (c.deals || [])[0] || {};
-        rows.push([
-          c.name, c.number || "", c.tier, c.urgent ? "Yes" : "No",
-          deal.brand || "", deal.model || "", deal.stage || "",
-          deal.budget || "", deal.value || "",
-          c.last_active ? new Date(c.last_active).toLocaleDateString() : "",
-          c.notes || "",
-        ]);
-      });
-      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-      const csvBlob = new Blob([csv], { type: "text/csv" });
-      const csvUrl = URL.createObjectURL(csvBlob);
-      const b = document.createElement("a");
-      b.href = csvUrl; b.download = `jnp-crm-export-${new Date().toISOString().slice(0,10)}.csv`;
-      setTimeout(() => { b.click(); URL.revokeObjectURL(csvUrl); }, 500);
-    } catch (e) {
-      alert("Export failed. Please try again.");
-    }
-    setExporting(false);
-  }
-
-  // ── ask claude: smart context ──
-  function detectQueryType(question) {
-    const q = question.toLowerCase();
-    if (q.match(/contact|trader|supplier|who deals|find.*person|find.*contact|deals in|sells|buying|who has|who sell|who buy|customer|client/))
-      return "contacts";
-    if (q.match(/stock|inventory|available|how many|do you have|in stock|devices|laptops/))
-      return "stock";
-    if (q.match(/margin|profit|cost|markup|best deal|most profitable|earning/))
-      return "margins";
-    if (q.match(/follow up|cold|silent|overdue|not replied|inactive|who to contact/))
-      return "followups";
-    if (q.match(/revenue|sales|earned|this month|total sales|how much|income/))
-      return "revenue";
-    if (q.match(/sourcing|shipment|supplier|order|lot|arriving|transit|customs/))
-      return "sourcing";
-    if (q.match(/part|ram|ssd|hdd|screen|battery|charger|keyboard|spare/))
-      return "parts";
-    return "general";
-  }
-
-  async function buildContactsContext() {
-    const { data: contacts } = await supabase
-      .from("customers")
-      .select("name, number, contact_type, notes, location, last_active")
-      .order("last_active", { ascending: false });
-    const lines = (contacts || []).map(c => {
-      const type = c.contact_type || "client";
-      const parts = [
-        `[${type.toUpperCase()}]`,
-        c.name,
-        c.number ? `📱 ${c.number}` : null,
-        c.location ? `📍 ${c.location}` : null,
-        c.notes ? `Notes: ${c.notes}` : null,
-        `Last active: ${c.last_active ? Math.floor((Date.now() - new Date(c.last_active)) / 86400000) + "d ago" : "never"}`,
-      ].filter(Boolean);
-      return parts.join(" · ");
-    }).join("\n");
-    return `CONTACTS (${(contacts || []).length} total):\n${lines || "(none)"}`;
-  }
-
-  async function buildStockContext() {
-    const { data: stock } = await supabase
-      .from("stock")
-      .select("brand, model, processor, ram, ssd, condition, status, max_price, created_at")
-      .eq("status", "available")
-      .order("brand");
-    const lines = (stock || []).map((s, i) => {
-      const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
-      return `${i + 1}. ${s.brand || ""} ${s.model || ""} ${s.processor || ""} ${s.ram || ""}/${s.ssd || ""} ${s.condition || ""} AED${s.max_price || 0} (${age}d)`;
-    }).join("\n");
-    return `AVAILABLE STOCK (${(stock || []).length} items):\n${lines || "(none)"}`;
-  }
-
-  async function buildMarginsContext() {
-    const { data: stock } = await supabase
-      .from("stock")
-      .select("brand, model, condition, cost_price, min_price, max_price, created_at")
-      .eq("status", "available")
-      .order("brand");
-    const lines = (stock || []).map((s, i) => {
-      const cost = Number(s.cost_price) || 0;
-      const sell = Number(s.max_price) || 0;
-      const profit = sell - cost;
-      const margin = sell > 0 ? Math.round((profit / sell) * 100) : 0;
-      const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
-      return `${i + 1}. ${s.brand || ""} ${s.model || ""} ${s.condition || ""} Cost:AED${cost} Sell:AED${sell} Profit:AED${profit}(${margin}%) ${age}d`;
-    }).join("\n");
-    return `STOCK WITH MARGINS:\n${lines || "(none)"}`;
-  }
-
-  async function buildFollowupsContext() {
-    const { data: custs } = await supabase
-      .from("customers")
-      .select("name, last_active, contact_type, deals(stage, brand, model, budget)")
-      .order("last_active", { ascending: true })
-      .limit(50);
-    const overdue = (custs || []).filter(c => {
-      const days = Math.floor((Date.now() - new Date(c.last_active || 0)) / 86400000);
-      return days >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
-    });
-    const lines = overdue.map(c => {
-      const days = Math.floor((Date.now() - new Date(c.last_active || 0)) / 86400000);
-      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
-      return `${c.name} · ${days}d silent · ${[deal?.brand, deal?.model].filter(Boolean).join(" ") || "open deal"} · ${deal?.stage || ""} · ${deal?.budget ? "AED " + deal.budget : "no budget"}`;
-    }).join("\n");
-    return `OVERDUE FOLLOW UPS (${overdue.length}):\n${lines || "(none — all clients active)"}`;
-  }
-
-  async function buildRevenueContext() {
-    const monthStart = new Date();
-    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-    const { data: deals } = await supabase
-      .from("deals")
-      .select("value, sale_type, closed_at, brand, model, walk_in_name")
-      .eq("stage", "closed")
-      .gte("closed_at", monthStart.toISOString())
-      .order("closed_at", { ascending: false });
-    const total = (deals || []).reduce((s, d) => s + (Number(d.value) || 0), 0);
-    const walkin = (deals || []).filter(d => d.sale_type === "walkin");
-    const whatsapp = (deals || []).filter(d => !d.sale_type || d.sale_type === "whatsapp");
-    const lines = (deals || []).slice(0, 20).map(d => {
-      const date = new Date(d.closed_at).toLocaleDateString("en-GB");
-      const device = [d.brand, d.model].filter(Boolean).join(" ") || "Device";
-      return `${date} · ${device} · AED${d.value || 0} · ${d.sale_type || "whatsapp"}`;
-    }).join("\n");
-    return `REVENUE THIS MONTH:\nTotal: AED ${total.toLocaleString()}\nDeals: ${(deals || []).length} (${whatsapp.length} WhatsApp · ${walkin.length} Walk-in)\n\nRECENT SALES:\n${lines || "(none)"}`;
-  }
-
-  async function buildPartsContext() {
-    const { data: parts } = await supabase
-      .from("stock_parts")
-      .select("category, specs, compatible_with, quantity, cost_price, sell_price")
-      .gt("quantity", 0)
-      .order("category");
-    const lines = (parts || []).map((p, i) =>
-      `${i + 1}. ${p.category} ${p.specs || ""} ${p.compatible_with || ""} ×${p.quantity} AED${p.sell_price || 0}`
-    ).join("\n");
-    return `SPARE PARTS (${(parts || []).length} types):\n${lines || "(none)"}`;
-  }
-
-  async function buildSmartContext(question) {
-    const type = detectQueryType(question);
-    const date = new Date().toLocaleDateString("en-GB", {
-      weekday: "long", day: "numeric", month: "long", year: "numeric",
-    });
-    let context = `Date: ${date}\nBusiness: Laptop for Less, Sharjah UAE\n\n`;
-    switch (type) {
-      case "contacts":
-        context += await buildContactsContext();
-        break;
-      case "stock":
-        context += await buildStockContext();
-        break;
-      case "margins":
-        context += await buildMarginsContext();
-        break;
-      case "followups":
-        context += await buildFollowupsContext();
-        break;
-      case "revenue":
-        context += await buildRevenueContext();
-        break;
-      case "parts":
-        context += await buildPartsContext();
-        break;
-      case "sourcing":
-        context += "Sourcing data: Check the Sourcing tab for active deals.";
-        break;
-      default: {
-        const [stockCtx, followupsCtx, revenueCtx] = await Promise.all([
-          buildStockContext(),
-          buildFollowupsContext(),
-          buildRevenueContext(),
-        ]);
-        context += [stockCtx, followupsCtx, revenueCtx].join("\n\n");
-      }
-    }
-    return context;
-  }
-
-  // ── ask claude ──
-  async function sendAskMessage(msg) {
-    const trimmed = (msg || "").trim();
-    if (!trimmed || askLoading) return;
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setAskInput("");
-    setAskMessages(prev => [...prev, { role: "owner", content: trimmed }]);
-    setAskLoading(true);
-    try {
-      const context = await buildSmartContext(trimmed);
-      const system = `You are a business analyst assistant for "Laptop for Less", a UAE laptop reselling business. The owner is asking about their business. Answer accurately using only the data provided. Be concise and direct. Format numbers with AED currency. Use emojis for readability. When recommending actions be specific.\n\n${context}`;
-      const history = askMessages
-        .map(m => ({ role: m.role === "owner" ? "user" : "assistant", content: m.content }))
-        .concat([{ role: "user", content: trimmed }]);
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system, messages: history }),
-      });
-      const data = await res.json();
-      setAskMessages(prev => [...prev, { role: "claude", content: data?.content?.[0]?.text || "No response." }]);
-    } catch {
-      setAskMessages(prev => [...prev, { role: "claude", content: "⚠️ Error. Check your API key in Settings." }]);
-    }
-    setAskLoading(false);
-  }
-
-
-
-  // ── broadcast ──
-  function openBroadcast(item) {
-    const matches = customers.filter(c =>
-      (c.deals || []).some(d => {
-        if (d.stage === "closed" || d.stage === "lost") return false;
-        const brandMatch = !item.brand || !d.brand || d.brand.toLowerCase() === item.brand.toLowerCase();
-        const budgetOk = !item.min_price || !d.budget || Number(d.budget) >= Number(item.min_price);
-        return brandMatch || budgetOk;
-      })
-    );
-    setBroadcastItem(item);
-    setBroadcastClients(matches);
-    setBroadcastSelected(new Set(matches.map(c => c.id)));
-    setBroadcastMessages([]); setBroadcastStep("clients"); setBroadcastSent(new Set());
-    setShowBroadcast(true);
-  }
-
-  async function generateBroadcastMessages() {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setBroadcastLoading(true);
-    const selected = broadcastClients.filter(c => broadcastSelected.has(c.id));
-    const device = [broadcastItem?.brand, broadcastItem?.model].filter(Boolean).join(" ");
-    const specs = [broadcastItem?.ram, broadcastItem?.ssd, broadcastItem?.condition].filter(Boolean).join(", ");
-    const msgs = await Promise.all(selected.map(async c => {
-      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
-      const prompt = `Write a short WhatsApp message to ${c.name} about: ${device} ${specs} AED ${broadcastItem?.max_price}. Their interest: ${deal?.brand || "laptop"} budget AED ${deal?.budget || "unknown"}. Personal, friendly, under 40 words, 1-2 emojis. Return message text only.`;
-      try {
-        const text = await callClaude(anthropicKey, [{ role: "user", content: prompt }], "You write short friendly WhatsApp messages for Laptop for Less UAE.");
-        return { client: c, message: text.trim(), deal };
-      } catch {
-        return { client: c, message: `Hey ${c.name}! 👋 Just got a ${device} — ${specs}. AED ${broadcastItem?.max_price}. Interested? 😊`, deal };
-      }
-    }));
-    setBroadcastMessages(msgs); setBroadcastStep("messages"); setBroadcastLoading(false);
-  }
 
   // ── nav tabs (used by both sidebar instances) ──
   const NAV_TABS = [
@@ -1471,7 +665,7 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
         <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>ACCOUNT</div>
           <div style={{ fontSize: 13, color: "#64748B", marginBottom: 12 }}>{session?.user?.email}</div>
-          <button onClick={handleLogout}
+          <button onClick={handleLogoutWithUI}
             style={{ width: "100%", padding: 11, borderRadius: 10, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
             Sign Out
           </button>
@@ -1882,7 +1076,7 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
       />
 
       {/* ── SIDE DRAWER ── */}
-      <SideDrawer handleLogout={handleLogout} />
+      <SideDrawer handleLogout={handleLogoutWithUI} />
 
       {/* ── SALE RECEIPT MODAL ── */}
       <ReceiptModal />
