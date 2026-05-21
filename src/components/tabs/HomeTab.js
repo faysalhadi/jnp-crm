@@ -2,19 +2,22 @@ import React from "react";
 import { STAGES, EMPTY_STOCK } from "../../constants";
 import { daysSince, timeAgo, getGreeting } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
+import { useCustomers } from "../../context/CustomerContext";
+import { useStock } from "../../context/StockContext";
 import { useSales } from "../../context/SalesContext";
 import { useParts } from "../../context/PartsContext";
 
 export default function HomeTab({
-  customers, stock, tasks,
-  sourcingAlerts, setView,
-  setActiveCustomerId, setActiveDealId, setPendingSuggestion,
-  setShowQuickSale, setStockFilter, setFilter,
-  setShowAddStock, setEditingStock, setStockForm,
+  tasks, sourcingAlerts,
   openDeals, closedDeals, revenue,
-  setSearch,
 }) {
   const { activeTab, setActiveTab, isMobile } = useUI();
+  const {
+    customers,
+    setView, setActiveCustomerId, setActiveDealId, setPendingSuggestion,
+    setFilter, setSearch,
+  } = useCustomers();
+  const { stock, setStockFilter, setShowAddStock, setEditingStock, setStockForm, setShowQuickSale } = useStock();
   const { todaySales, openComplaints } = useSales();
   const { partsRevMTD } = useParts();
   const followUpsDue = tasks.filter(t => t.days >= 1).length;

@@ -30,6 +30,8 @@ import CustomersTab from "./components/tabs/CustomersTab";
 import TradersTab from "./components/tabs/TradersTab";
 import StockTab from "./components/tabs/StockTab";
 import ChatDetailView from "./components/chat/ChatDetailView";
+import DesktopSidebar from "./components/layout/DesktopSidebar";
+import TopBar from "./components/layout/TopBar";
 import SideDrawer from "./components/layout/SideDrawer";
 import BottomNav from "./components/layout/BottomNav";
 import ToastNotification from "./components/layout/ToastNotification";
@@ -50,10 +52,6 @@ export default function App() {
     activeCustomer,
     activeDeal,
     view, setView,
-    filter, setFilter,
-    search, setSearch,
-    contactTypeFilter, setContactTypeFilter,
-    pendingSuggestion, setPendingSuggestion,
     showContactModal, setShowContactModal,
     contactModalPreType, setContactModalPreType,
     newCustomer, setNewCustomer,
@@ -62,93 +60,44 @@ export default function App() {
   } = useCustomers();
 
   const {
-    stock, setStock,
-    stockLoading,
-    cachedStock, setCachedStock,
+    stock,
     stockFilter, setStockFilter,
-    stockSearch, setStockSearch,
-    stockView, setStockView,
-    showAddStock, setShowAddStock,
-    editingStock, setEditingStock,
-    stockForm, setStockForm,
-    expandedStockId, setExpandedStockId,
-    stockPhotoUploading,
-    showImportStock, setShowImportStock,
-    importPreview, setImportPreview,
-    importingStock,
-    importStockResult, setImportStockResult,
+    stockSearch,
     soldDealMap, setSoldDealMap,
     showQuickSale, setShowQuickSale,
     quickSalePrefill, setQuickSalePrefill,
     showUpgrade, setShowUpgrade,
     upgradeTarget, setUpgradeTarget,
-    stockFileInputRef,
-    importStockFileRef,
     loadStock,
     refreshCachedStock,
-    saveStock,
-    deleteStockItem,
-    toggleStockStatus,
-    uploadStockPhoto,
-    downloadStockTemplate,
-    handleStockFileSelect,
-    importStockItems,
   } = useStock();
 
   const {
     activeTab, setActiveTab,
-    isMobile, setIsMobile,
-    showSideDrawer, setShowSideDrawer,
-    toast, setToast,
+    isMobile,
     showToast,
     installPromptEvent, setInstallPromptEvent,
     showInstallBanner, setShowInstallBanner,
-    activeMarketingTab, setActiveMarketingTab,
   } = useUI();
 
   const {
-    todaySales, setTodaySales,
-    salesHistory,
-    salesHistoryLoading,
-    salesFilter, setSalesFilter,
-    showSaleReceipt, setShowSaleReceipt,
-    saleReceiptData, setSaleReceiptData,
-    receiptEditName, setReceiptEditName,
-    openComplaints,
+    salesFilter,
+    setSaleReceiptData,
+    setReceiptEditName,
+    setShowSaleReceipt,
     loadTodaySales,
     loadSalesHistory,
-    buildSaleReceiptText,
-    loadOpenComplaints,
   } = useSales();
 
   const {
-    parts, setParts,
-    partsLoading,
-    showAddPart, setShowAddPart,
-    editingPart, setEditingPart,
-    partForm, setPartForm,
     showPartSale, setShowPartSale,
     partSaleTarget, setPartSaleTarget,
-    partsSold, setPartsSold,
-    partsSoldLoading,
-    partsRevMTD,
     loadParts,
-    savePart,
-    deletePart,
     loadPartsRevMTD,
     loadPartsSold,
   } = useParts();
 
   const {
-    reservedDeals, setReservedDeals,
-    reservedDealsLoading,
-    expandedReservedDeal, setExpandedReservedDeal,
-    showCompleteReservation, setShowCompleteReservation,
-    completingDeal, setCompletingDeal,
-    completionPaymentMethod, setCompletionPaymentMethod,
-    showEditReservation, setShowEditReservation,
-    editReservationItem, setEditReservationItem,
-    editReservationForm, setEditReservationForm,
     showLinkStock, setShowLinkStock,
     linkStockDeal, setLinkStockDeal,
     showReservation, setShowReservation,
@@ -338,25 +287,6 @@ export default function App() {
   const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
   const revenue = monthRevenue(customers);
 
-  const filtered = customers
-    .filter(c => {
-      const cType = c.contact_type || "client";
-      if (contactTypeFilter !== "all" && cType !== contactTypeFilter) return false;
-      if (search) return c.name.toLowerCase().includes(search.toLowerCase()) || (c.number || "").includes(search);
-      if (filter === "urgent") return c.urgent;
-      if (filter === "overdue") return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
-      if (filter === "vip") return c.tier === "vip";
-      if (filter === "cold") return c.tier === "cold";
-      return true;
-    })
-    .sort((a, b) => {
-      if (a.urgent && !b.urgent) return -1;
-      if (!a.urgent && b.urgent) return 1;
-      const aTime = a.last_activity_at || a.last_active;
-      const bTime = b.last_activity_at || b.last_active;
-      return new Date(bTime) - new Date(aTime);
-    });
-
   const filteredStock = stock.filter(item => {
     if (stockSearch) {
       const q = stockSearch.toLowerCase();
@@ -453,45 +383,7 @@ export default function App() {
       : { minHeight: "100vh", background: "#F8FAFC", display: "flex" }}>
 
       {/* ── Desktop sidebar ── */}
-      {!isMobile && (
-        <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRight: "1px solid #F1F5F9", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 40 }}>
-          {/* Logo */}
-          <div style={{ padding: "22px 20px 18px", borderBottom: "1px solid #F1F5F9" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 12, background: "linear-gradient(135deg,#6366F1,#8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>💻</div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>JNP CRM</div>
-                <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, letterSpacing: 0.5 }}>LAPTOP FOR LESS</div>
-              </div>
-            </div>
-          </div>
-          {/* Nav items */}
-          <div style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
-            {NAV_TABS.map(t => (
-              <button key={t.key}
-                onClick={() => { setActiveTab(t.key); setView("list"); setActiveCustomerId(null); setActiveDealId(null); }}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", width: "100%", fontSize: 14,
-                         fontWeight: activeTab === t.key ? 700 : 500, background: activeTab === t.key ? "#EEF2FF" : "transparent",
-                         color: activeTab === t.key ? "#6366F1" : "#64748B", transition: "all 0.15s" }}>
-                <span style={{ fontSize: 19 }}>{t.icon}</span>
-                <span style={{ flex: 1 }}>{t.label}</span>
-                {activeTab === t.key && <div style={{ width: 4, height: 20, borderRadius: 2, background: "#6366F1" }} />}
-              </button>
-            ))}
-          </div>
-          {/* User info */}
-          <div style={{ padding: "16px 20px", borderTop: "1px solid #F1F5F9" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, color: "#6366F1" }}>F</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>Faisal</div>
-                <div style={{ fontSize: 10, color: "#94A3B8" }}>Owner</div>
-              </div>
-              <button onClick={() => setView("settings")} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }}>⚙️</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {!isMobile && <DesktopSidebar NAV_TABS={NAV_TABS} />}
 
       {/* ── Content area ── */}
       <div style={isMobile
@@ -527,56 +419,16 @@ export default function App() {
           }}>Dismiss</button>
         </div>
       )}
-      {/* top bar — contacts/traders header (hidden on desktop for other tabs) */}
-      {(isMobile || activeTab === "customers" || activeTab === "traders") && (
-      <div style={{ background: "#fff", padding: "16px 14px 0", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>
-              {activeTab === "customers" ? "Contacts" : "Ask Claude"}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={() => setShowSideDrawer(true)} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>📊</button>
-            <button onClick={() => setView("settings")} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>⚙️</button>
-            {activeTab === "customers" && (
-              <button onClick={() => { setContactModalPreType("client"); setShowContactModal(true); }}
-                style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                + Add Client
-              </button>
-            )}
-            {activeTab === "traders" && (
-              <button onClick={() => { setContactModalPreType("trader"); setShowContactModal(true); }}
-                style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#D97706", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                + Add Trader
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      )}
+      {/* top bar — contacts/traders header */}
+      <TopBar />
       {/* ── HOME / DASHBOARD TAB ── */}
       {activeTab === "home" && (
         <HomeTab
-          customers={customers}
-          stock={stock}
           tasks={tasks}
           sourcingAlerts={sourcingAlerts}
-          setView={setView}
-          setActiveCustomerId={setActiveCustomerId}
-          setActiveDealId={setActiveDealId}
-          setPendingSuggestion={setPendingSuggestion}
-          setShowQuickSale={setShowQuickSale}
-          setStockFilter={setStockFilter}
-          setFilter={setFilter}
-          setShowAddStock={setShowAddStock}
-          setEditingStock={setEditingStock}
-          setStockForm={setStockForm}
           openDeals={openDeals}
           closedDeals={closedDeals}
           revenue={revenue}
-          setSearch={setSearch}
         />
       )}
 
@@ -605,8 +457,6 @@ export default function App() {
       )}
 
       {/* ── TRADERS TAB ── */}
-
-            {/* ── TRADERS TAB ── */}
       {activeTab === "traders" && (
         <TradersTab
           anthropicKey={anthropicKey}
