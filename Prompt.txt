@@ -1,469 +1,169 @@
 Read src/App.js fully before making any changes.
 
-This is architecture rewrite Step 12 continued.
-We are moving remaining business logic out of App.js.
+We are moving remaining state out of App.js into contexts.
 
-STEP 12A — Create src/services/chatService.js
+STEP A — Create src/context/ChatContext.js
 
-Move these functions from App.js into chatService.js.
-They need access to supabase, contexts and claude utils.
-Since they need React state, we will create a custom hook.
+Create this file:
 
-Create src/hooks/useChat.js:
+import React, { createContext, useContext, useState } from "react";
 
-  import { useCallback } from "react";
-  import { supabase } from "../supabase";
-  import { useCustomers } from "../context/CustomerContext";
-  import { useStock } from "../context/StockContext";
-  import { useReservations } from "../context/ReservationsContext";
-  import { useSales } from "../context/SalesContext";
-  import { callClaude, buildSystemPromptFromCache } 
-    from "../utils/claude";
+const ChatContext = createContext(null);
 
-  export function useChat(
-    messages, setMessages,
-    setMsgLoading,
-    incomingText, setIncomingText,
-    replyMode, setReplyMode,
-    replyingToId, setReplyingToId,
-    directReplyText, setDirectReplyText,
-    generatedReply, setGeneratedReply,
-    setGeneratedReplyLoading,
-    setEditingGenerated,
-    copied, setCopied,
-    setEditSent,
-    anthropicKey,
-  ) {
-    const { activeCustomer, activeDeal, activeDealId,
-      setActiveDealId, loadCustomers, updateDeal } = useCustomers();
-    const { cachedStock, loadStock, refreshCachedStock } = useStock();
-    const { loadTodaySales } = useSales();
-    const { 
-      setShowLinkStock, setLinkStockDeal,
-      setShowReservation,
-    } = useReservations();
+export function ChatProvider({ children }) {
+  const [messages, setMessages] = useState([]);
+  const [msgLoading, setMsgLoading] = useState(false);
+  const [msgInput, setMsgInput] = useState("");
+  const [incomingText, setIncomingText] = useState("");
+  const [replyMode, setReplyMode] = useState(null);
+  const [replyingToId, setReplyingToId] = useState(null);
+  const [directReplyText, setDirectReplyText] = useState("");
+  const [generatedReply, setGeneratedReply] = useState("");
+  const [generatedReplyLoading, setGeneratedReplyLoading] = useState(false);
+  const [editingGenerated, setEditingGenerated] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const [editSent, setEditSent] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberInput, setNumberInput] = useState("");
+  const [outreachMode, setOutreachMode] = useState(false);
+  const [outreachReason, setOutreachReason] = useState("");
+  const [outreachCustom, setOutreachCustom] = useState("");
+  const [showSupplierReply, setShowSupplierReply] = useState(false);
+  const [supplierReplyCtx, setSupplierReplyCtx] = useState("");
+  const [supplierReplyGmail, setSupplierReplyGmail] = useState("");
+  const [supplierReplyWA, setSupplierReplyWA] = useState("");
+  const [supplierReplyLoading, setSupplierReplyLoading] = useState(false);
+  const [copiedSupGmail, setCopiedSupGmail] = useState(false);
+  const [copiedSupWA, setCopiedSupWA] = useState(false);
 
-    async function handleReserveDevice() {
-      // exact same code from App.js
-    }
-
-    async function handleConfirmSale() {
-      // exact same code from App.js
-    }
-
-    async function moveStage(stageId) {
-      // exact same code from App.js
-    }
-
-    async function addIncomingMessage() {
-      // exact same code from App.js
-    }
-
-    async function generateAIReply(triggerMsgId) {
-      // exact same code from App.js
-    }
-
-    async function sendAIReply() {
-      // exact same code from App.js
-    }
-
-    async function sendDirectReply() {
-      // exact same code from App.js
-    }
-
-    async function generateOpeningMessage() {
-      // exact same code from App.js
-    }
-
-    async function confirmSent(msgId, text) {
-      // exact same code from App.js
-    }
-
-    async function markNotSent(msgId) {
-      // exact same code from App.js
-    }
-
-    function copyMsg(text, id) {
-      // exact same code from App.js
-    }
-
-    async function generateOutreach(
-      outreachReason, outreachCustom, setOutreachMode
-    ) {
-      // exact same code from App.js
-    }
-
-    async function generateSupplierReply(
-      supplierReplyCtx,
-      setSupplierReplyGmail,
-      setSupplierReplyWA,
-      setSupplierReplyLoading,
-    ) {
-      // exact same code from App.js
-    }
-
-    return {
-      handleReserveDevice,
-      handleConfirmSale,
-      moveStage,
-      addIncomingMessage,
-      generateAIReply,
-      sendAIReply,
-      sendDirectReply,
-      generateOpeningMessage,
-      confirmSent,
-      markNotSent,
-      copyMsg,
-      generateOutreach,
-      generateSupplierReply,
-    };
-  }
-
-STEP 12B — Create src/hooks/useAskClaude.js
-
-Move the Ask Claude functions into a custom hook:
-
-  import { useCallback } from "react";
-  import { supabase } from "../supabase";
-  import { useCustomers } from "../context/CustomerContext";
-  import { useStock } from "../context/StockContext";
-  import { useParts } from "../context/PartsContext";
-  import { useSales } from "../context/SalesContext";
-
-  export function useAskClaude(anthropicKey) {
-    const { customers } = useCustomers();
-    const { stock, cachedStock } = useStock();
-    const { parts } = useParts();
-    const { salesHistory } = useSales();
-
-    function detectQueryType(question) {
-      // exact same code from App.js
-    }
-
-    async function buildContactsContext() {
-      // exact same code from App.js
-    }
-
-    async function buildStockContext() {
-      // exact same code from App.js
-    }
-
-    async function buildMarginsContext() {
-      // exact same code from App.js
-    }
-
-    async function buildFollowupsContext() {
-      // exact same code from App.js
-    }
-
-    async function buildRevenueContext() {
-      // exact same code from App.js
-    }
-
-    async function buildPartsContext() {
-      // exact same code from App.js
-    }
-
-    async function buildSmartContext(question) {
-      // exact same code from App.js
-    }
-
-    async function sendAskMessage(
-      msg, askMessages, setAskMessages,
-      setAskInput, setAskLoading
-    ) {
-      // exact same code from App.js
-    }
-
-    return {
-      detectQueryType,
-      buildSmartContext,
-      sendAskMessage,
-    };
-  }
-
-STEP 12C — Create src/hooks/useImport.js
-
-Move the import/export functions into a custom hook:
-
-  import { useState } from "react";
-  import { supabase } from "../supabase";
-  import { useCustomers } from "../context/CustomerContext";
-  import { cleanWhatsAppText } from "../utils/helpers";
-
-  export function useImport(anthropicKey) {
-    const { loadCustomers, activeCustomerId, 
-      activeDealId } = useCustomers();
-
-    async function importChatFile(file) {
-      // exact same code from App.js
-    }
-
-    async function importSingleChatFile(file) {
-      // exact same code from App.js
-    }
-
-    async function importMultipleChatFiles(files) {
-      // exact same code from App.js
-    }
-
-    async function importWhatsAppChat(
-      importText, setImporting, setImportResult,
-      setMessages
-    ) {
-      // exact same code from App.js
-    }
-
-    async function exportData(setExporting) {
-      // exact same code from App.js
-    }
-
-    return {
-      importChatFile,
-      importSingleChatFile,
-      importMultipleChatFiles,
-      importWhatsAppChat,
-      exportData,
-    };
-  }
-
-STEP 12D — Create src/hooks/useBroadcast.js
-
-Move broadcast functions into a custom hook:
-
-  import { useState } from "react";
-  import { useCustomers } from "../context/CustomerContext";
-  import { useStock } from "../context/StockContext";
-  import { getMatchingClients, generateBroadcastMessages } 
-    from "../services/broadcastService";
-
-  export function useBroadcast(anthropicKey) {
-    const [showBroadcast, setShowBroadcast] = useState(false);
-    const [broadcastItem, setBroadcastItem] = useState(null);
-    const [broadcastClients, setBroadcastClients] = useState([]);
-    const [broadcastSelected, setBroadcastSelected] = 
-      useState(new Set());
-    const [broadcastMessages, setBroadcastMessages] = useState([]);
-    const [broadcastLoading, setBroadcastLoading] = useState(false);
-    const [broadcastStep, setBroadcastStep] = useState("clients");
-    const [broadcastSent, setBroadcastSent] = useState(new Set());
-
-    const { customers } = useCustomers();
-    const { stock } = useStock();
-
-    function openBroadcast(item) {
-      // exact same code from App.js
-    }
-
-    async function handleGenerateBroadcastMessages() {
-      // exact same code from App.js
-      // rename generateBroadcastMessages to 
-      // handleGenerateBroadcastMessages to avoid conflict
-      // with the imported service function
-    }
-
-    return {
-      showBroadcast, setShowBroadcast,
-      broadcastItem, setBroadcastItem,
-      broadcastClients, setBroadcastClients,
-      broadcastSelected, setBroadcastSelected,
-      broadcastMessages, setBroadcastMessages,
-      broadcastLoading, setBroadcastLoading,
-      broadcastStep, setBroadcastStep,
-      broadcastSent, setBroadcastSent,
-      openBroadcast,
-      generateBroadcastMessages: handleGenerateBroadcastMessages,
-    };
-  }
-
-STEP 12E — Update App.js to use all new hooks
-
-In App.js replace the functions with hook calls:
-
-  import { useChat } from "./hooks/useChat";
-  import { useAskClaude } from "./hooks/useAskClaude";
-  import { useImport } from "./hooks/useImport";
-  import { useBroadcast } from "./hooks/useBroadcast";
-
-At top of App() function add:
-
-  const {
-    handleReserveDevice, handleConfirmSale, moveStage,
-    addIncomingMessage, generateAIReply, sendAIReply,
-    sendDirectReply, generateOpeningMessage,
-    confirmSent, markNotSent, copyMsg,
-    generateOutreach, generateSupplierReply,
-  } = useChat(
-    messages, setMessages,
-    setMsgLoading,
-    incomingText, setIncomingText,
-    replyMode, setReplyMode,
-    replyingToId, setReplyingToId,
-    directReplyText, setDirectReplyText,
-    generatedReply, setGeneratedReply,
-    setGeneratedReplyLoading,
-    setEditingGenerated,
-    copied, setCopied,
-    setEditSent,
-    anthropicKey,
+  return (
+    <ChatContext.Provider value={{
+      messages, setMessages,
+      msgLoading, setMsgLoading,
+      msgInput, setMsgInput,
+      incomingText, setIncomingText,
+      replyMode, setReplyMode,
+      replyingToId, setReplyingToId,
+      directReplyText, setDirectReplyText,
+      generatedReply, setGeneratedReply,
+      generatedReplyLoading, setGeneratedReplyLoading,
+      editingGenerated, setEditingGenerated,
+      copied, setCopied,
+      editSent, setEditSent,
+      editingName, setEditingName,
+      nameInput, setNameInput,
+      editingNumber, setEditingNumber,
+      numberInput, setNumberInput,
+      outreachMode, setOutreachMode,
+      outreachReason, setOutreachReason,
+      outreachCustom, setOutreachCustom,
+      showSupplierReply, setShowSupplierReply,
+      supplierReplyCtx, setSupplierReplyCtx,
+      supplierReplyGmail, setSupplierReplyGmail,
+      supplierReplyWA, setSupplierReplyWA,
+      supplierReplyLoading, setSupplierReplyLoading,
+      copiedSupGmail, setCopiedSupGmail,
+      copiedSupWA, setCopiedSupWA,
+    }}>
+      {children}
+    </ChatContext.Provider>
   );
+}
 
-  const { buildSmartContext, sendAskMessage } = 
-    useAskClaude(anthropicKey);
+export function useChat() {
+  const context = useContext(ChatContext);
+  if (!context) throw new Error(
+    "useChat must be used within ChatProvider"
+  );
+  return context;
+}
 
-  const { 
-    importChatFile, importSingleChatFile,
-    importMultipleChatFiles, importWhatsAppChat,
-    exportData,
-  } = useImport(anthropicKey);
+STEP B — Create src/context/ImportContext.js
 
-  const {
-    showBroadcast, setShowBroadcast,
-    broadcastItem, setBroadcastItem,
-    broadcastClients, setBroadcastClients,
-    broadcastSelected, setBroadcastSelected,
-    broadcastMessages, setBroadcastMessages,
-    broadcastLoading, setBroadcastLoading,
-    broadcastStep, setBroadcastStep,
-    broadcastSent, setBroadcastSent,
-    openBroadcast,
-    generateBroadcastMessages,
-  } = useBroadcast(anthropicKey);
+Create this file:
 
-Then DELETE from App.js:
-- handleReserveDevice function
-- handleConfirmSale function
-- moveStage function
-- addIncomingMessage function
-- generateAIReply function
-- sendAIReply function
-- sendDirectReply function
-- generateOpeningMessage function
-- sendDirectMessage function (if separate)
-- confirmSent function
-- markNotSent function
-- copyMsg function
-- generateOutreach function
-- generateSupplierReply function
-- detectQueryType function
-- buildContactsContext function
-- buildStockContext function
-- buildMarginsContext function
-- buildFollowupsContext function
-- buildRevenueContext function
-- buildPartsContext function
-- buildSmartContext function
-- sendAskMessage function
-- importChatFile function
-- importSingleChatFile function
-- importMultipleChatFiles function
-- importWhatsAppChat function
-- exportData function
-- openBroadcast function
-- generateBroadcastMessages function
-- showBroadcast, setBroadcast states (now in hook)
-- broadcastItem, setBroadcastItem states
-- broadcastClients, setBroadcastClients states
-- broadcastSelected, setBroadcastSelected states
-- broadcastMessages, setBroadcastMessages states
-- broadcastLoading, setBroadcastLoading states
-- broadcastStep, setBroadcastStep states
-- broadcastSent, setBroadcastSent states
+import React, { createContext, useContext, useState } from "react";
 
-STEP 12F — Move auth state to AuthContext
+const ImportContext = createContext(null);
 
-Create src/context/AuthContext.js:
+export function ImportProvider({ children }) {
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importingMultiple, setImportingMultiple] = useState(false);
+  const [importMultipleProgress, setImportMultipleProgress] = 
+    useState({ current: 0, total: 0 });
+  const [importMultipleResult, setImportMultipleResult] = 
+    useState(null);
+  const [exporting, setExporting] = useState(false);
 
-  import React, { createContext, useContext, 
-    useState, useEffect } from "react";
-  import { supabase } from "../supabase";
-  import { getAnthropicKey, saveAnthropicKey } 
-    from "../utils/helpers";
+  return (
+    <ImportContext.Provider value={{
+      importText, setImportText,
+      importing, setImporting,
+      importResult, setImportResult,
+      importingMultiple, setImportingMultiple,
+      importMultipleProgress, setImportMultipleProgress,
+      importMultipleResult, setImportMultipleResult,
+      exporting, setExporting,
+    }}>
+      {children}
+    </ImportContext.Provider>
+  );
+}
 
-  const AuthContext = createContext(null);
+export function useImportContext() {
+  const context = useContext(ImportContext);
+  if (!context) throw new Error(
+    "useImportContext must be used within ImportProvider"
+  );
+  return context;
+}
 
-  export function AuthProvider({ children }) {
-    const [session, setSession] = useState(null);
-    const [authLoading, setAuthLoading] = useState(true);
-    const [authMode, setAuthMode] = useState("login");
-    const [authEmail, setAuthEmail] = useState("");
-    const [authPassword, setAuthPassword] = useState("");
-    const [authError, setAuthError] = useState("");
-    const [authBusy, setAuthBusy] = useState(false);
-    const [anthropicKey, setAnthropicKey] = 
-      useState(getAnthropicKey);
-    const [keyInput, setKeyInput] = useState("");
+STEP C — Create src/context/AskClaudeContext.js
 
-    useEffect(() => {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session);
-        setAuthLoading(false);
-      });
-      const { data: { subscription } } = 
-        supabase.auth.onAuthStateChange((_event, session) => {
-          setSession(session);
-        });
-      return () => subscription.unsubscribe();
-    }, []);
+Create this file:
 
-    async function handleLogin() {
-      setAuthBusy(true);
-      setAuthError("");
-      const { error } = await supabase.auth.signInWithPassword({
-        email: authEmail.trim(),
-        password: authPassword,
-      });
-      if (error) setAuthError(error.message);
-      setAuthBusy(false);
-    }
+import React, { createContext, useContext, useState } from "react";
 
-    async function handleSignup() {
-      setAuthBusy(true);
-      setAuthError("");
-      const { error } = await supabase.auth.signUp({
-        email: authEmail.trim(),
-        password: authPassword,
-      });
-      if (error) setAuthError(error.message);
-      else setAuthMode("login");
-      setAuthBusy(false);
-    }
+const AskClaudeContext = createContext(null);
 
-    async function handleLogout() {
-      await supabase.auth.signOut();
-      setSession(null);
-    }
+export function AskClaudeProvider({ children }) {
+  const [askMessages, setAskMessages] = useState([]);
+  const [askInput, setAskInput] = useState("");
+  const [askLoading, setAskLoading] = useState(false);
+  const [expandedSaleId, setExpandedSaleId] = useState(null);
+  const [marketingDevices, setMarketingDevices] = useState([]);
 
-    return (
-      <AuthContext.Provider value={{
-        session, setSession,
-        authLoading,
-        authMode, setAuthMode,
-        authEmail, setAuthEmail,
-        authPassword, setAuthPassword,
-        authError, setAuthError,
-        authBusy,
-        anthropicKey, setAnthropicKey,
-        keyInput, setKeyInput,
-        handleLogin,
-        handleSignup,
-        handleLogout,
-      }}>
-        {children}
-      </AuthContext.Provider>
-    );
-  }
+  return (
+    <AskClaudeContext.Provider value={{
+      askMessages, setAskMessages,
+      askInput, setAskInput,
+      askLoading, setAskLoading,
+      expandedSaleId, setExpandedSaleId,
+      marketingDevices, setMarketingDevices,
+    }}>
+      {children}
+    </AskClaudeContext.Provider>
+  );
+}
 
-  export function useAuth() {
-    const context = useContext(AuthContext);
-    if (!context) throw new Error(
-      "useAuth must be used within AuthProvider"
-    );
-    return context;
-  }
+export function useAskClaudeContext() {
+  const context = useContext(AskClaudeContext);
+  if (!context) throw new Error(
+    "useAskClaudeContext must be used within AskClaudeProvider"
+  );
+  return context;
+}
 
-Add AuthProvider to index.js as the outermost wrapper:
-  import { AuthProvider } from './context/AuthContext';
+STEP D — Add new providers to index.js
+
+In src/index.js add:
+  import { ChatProvider } from './context/ChatContext';
+  import { ImportProvider } from './context/ImportContext';
+  import { AskClaudeProvider } from './context/AskClaudeContext';
 
   root.render(
     <AuthProvider>
@@ -476,7 +176,13 @@ Add AuthProvider to index.js as the outermost wrapper:
               }>
                 <ReservationsProvider>
                   <StockProvider>
-                    <App />
+                    <ChatProvider>
+                      <ImportProvider>
+                        <AskClaudeProvider>
+                          <App />
+                        </AskClaudeProvider>
+                      </ImportProvider>
+                    </ChatProvider>
                   </StockProvider>
                 </ReservationsProvider>
               </TradersProvider>
@@ -487,57 +193,172 @@ Add AuthProvider to index.js as the outermost wrapper:
     </AuthProvider>
   );
 
-In App.js add:
-  import { useAuth } from "./context/AuthContext";
+STEP E — Update App.js to use new contexts
+
+In App.js add imports:
+  import { useChat } from "./context/ChatContext";
+  import { useImportContext } from "./context/ImportContext";
+  import { useAskClaudeContext } from "./context/AskClaudeContext";
+
+Add at top of App() function:
+  const {
+    messages, setMessages,
+    msgLoading, setMsgLoading,
+    msgInput, setMsgInput,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    generatedReplyLoading, setGeneratedReplyLoading,
+    editingGenerated, setEditingGenerated,
+    copied, setCopied,
+    editSent, setEditSent,
+    editingName, setEditingName,
+    nameInput, setNameInput,
+    editingNumber, setEditingNumber,
+    numberInput, setNumberInput,
+    outreachMode, setOutreachMode,
+    outreachReason, setOutreachReason,
+    outreachCustom, setOutreachCustom,
+    showSupplierReply, setShowSupplierReply,
+    supplierReplyCtx, setSupplierReplyCtx,
+    supplierReplyGmail, setSupplierReplyGmail,
+    supplierReplyWA, setSupplierReplyWA,
+    supplierReplyLoading, setSupplierReplyLoading,
+    copiedSupGmail, setCopiedSupGmail,
+    copiedSupWA, setCopiedSupWA,
+  } = useChat();
 
   const {
-    session, authLoading,
-    authMode, setAuthMode,
-    authEmail, setAuthEmail,
-    authPassword, setAuthPassword,
-    authError, setAuthError,
-    authBusy,
-    anthropicKey, setAnthropicKey,
-    keyInput, setKeyInput,
-    handleLogin, handleSignup, handleLogout,
-  } = useAuth();
+    importText, setImportText,
+    importing, setImporting,
+    importResult, setImportResult,
+    importingMultiple, setImportingMultiple,
+    importMultipleProgress, setImportMultipleProgress,
+    importMultipleResult, setImportMultipleResult,
+    exporting, setExporting,
+  } = useImportContext();
 
-Then DELETE from App.js:
-- const [session, setSession] = useState(null);
-- const [authLoading, setAuthLoading] = useState(true);
-- const [authMode, setAuthMode] = useState("login");
-- const [authEmail, setAuthEmail] = useState("");
-- const [authPassword, setAuthPassword] = useState("");
-- const [authError, setAuthError] = useState("");
-- const [authBusy, setAuthBusy] = useState(false);
-- const [anthropicKey, setAnthropicKey] = useState(...);
-- const [keyInput, setKeyInput] = useState("");
-- handleAuth function
-- handleLogout function
-- The useEffect for session management
+  const {
+    askMessages, setAskMessages,
+    askInput, setAskInput,
+    askLoading, setAskLoading,
+    expandedSaleId, setExpandedSaleId,
+    marketingDevices, setMarketingDevices,
+  } = useAskClaudeContext();
 
-IMPORTANT RULES:
-- Do not change any logic
-- Every new file needs import React from "react"
-- Make sure session check still works in App.js
-  App.js should use: const { session } = useAuth();
-- Make sure anthropicKey is accessible in all hooks
-  that need it via useAuth()
+Then DELETE all these from App.js since they 
+now come from contexts:
+- const [messages, setMessages] = useState([]);
+- const [msgLoading, setMsgLoading] = useState(false);
+- const [msgInput, setMsgInput] = useState("");
+- const [chatMode, setChatMode] = useState("type");
+- const [incomingText, ...] = useState("");
+- const [replyMode, ...] = useState(null);
+- const [replyingToId, ...] = useState(null);
+- const [directReplyText, ...] = useState("");
+- const [generatedReply, ...] = useState("");
+- const [generatedReplyLoading, ...] = useState(false);
+- const [editingGenerated, ...] = useState(false);
+- const [copied, setCopied] = useState(null);
+- const [editSent, setEditSent] = useState(null);
+- const [editingName, ...] = useState(false);
+- const [nameInput, ...] = useState('');
+- const [editingNumber, ...] = useState(false);
+- const [numberInput, ...] = useState('');
+- const [outreachMode, ...] = useState(false);
+- const [outreachReason, ...] = useState("");
+- const [outreachCustom, ...] = useState("");
+- const [importText, ...] = useState("");
+- const [importing, ...] = useState(false);
+- const [importResult, ...] = useState(null);
+- const [importingMultiple, ...] = useState(false);
+- const [importMultipleProgress, ...] = useState({...});
+- const [importMultipleResult, ...] = useState(null);
+- const [exporting, ...] = useState(false);
+- const [askMessages, ...] = useState([]);
+- const [askInput, ...] = useState("");
+- const [askLoading, ...] = useState(false);
+- const [marketingDevices, ...] = useState([]);
+- const [expandedSaleId, ...] = useState(null);
+- const [showSupplierReply, ...] = useState(false);
+- const [supplierReplyCtx, ...] = useState("");
+- const [supplierReplyGmail, ...] = useState("");
+- const [supplierReplyWA, ...] = useState("");
+- const [supplierReplyLoading, ...] = useState(false);
+- const [copiedSupGmail, ...] = useState(false);
+- const [copiedSupWA, ...] = useState(false);
+
+STEP F — Update hooks to use new contexts
+
+In src/hooks/useChat.js rename it to avoid 
+conflict with ChatContext.
+
+The file src/hooks/useChat.js currently exports 
+useChat function. But we now have a context also 
+called useChat. 
+
+Rename src/hooks/useChat.js to 
+src/hooks/useChatActions.js and rename the 
+exported function to useChatActions.
+
+Update the import in App.js:
+  import { useChatActions } from "./hooks/useChatActions";
+
+In useChatActions.js replace the parameters with 
+context hooks directly:
+
+  import { useChat } from "../context/ChatContext";
+  import { useAuth } from "../context/AuthContext";
+
+  export function useChatActions() {
+    const {
+      messages, setMessages, setMsgLoading,
+      incomingText, setIncomingText,
+      replyMode, setReplyMode,
+      replyingToId, setReplyingToId,
+      directReplyText, setDirectReplyText,
+      generatedReply, setGeneratedReply,
+      setGeneratedReplyLoading, setEditingGenerated,
+      copied, setCopied, setEditSent,
+      outreachReason, outreachCustom, setOutreachMode,
+      supplierReplyCtx, setSupplierReplyGmail,
+      setSupplierReplyWA, setSupplierReplyLoading,
+    } = useChat();
+    const { anthropicKey } = useAuth();
+
+    // all the same functions but now using 
+    // context values instead of parameters
+  }
+
+Update useChatActions call in App.js:
+  const {
+    handleReserveDevice, handleConfirmSale, moveStage,
+    addIncomingMessage, generateAIReply, sendAIReply,
+    sendDirectReply, generateOpeningMessage,
+    confirmSent, markNotSent, copyMsg,
+    generateOutreach, generateSupplierReply,
+  } = useChatActions();
+
+Also update useAskClaude.js to get anthropicKey 
+from useAuth() instead of parameter:
+  import { useAuth } from "../context/AuthContext";
+  export function useAskClaude() {
+    const { anthropicKey } = useAuth();
+    // rest of code same
+  }
+
+Update useAskClaude call in App.js:
+  const { buildSmartContext, sendAskMessage } = useAskClaude();
 
 After ALL changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean:
-   git add -A && git commit -m "architecture step 12: extract hooks and AuthContext" 
+   git add -A && git commit -m "architecture step 13: ChatContext, ImportContext, AskClaudeContext" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test EVERYTHING:
-   - Login works?
-   - All tabs work?
-   - Send message works?
-   - AI reply works?
-   - Import WhatsApp works?
-   - Broadcast works?
-   - Ask Claude works?
+6. Test EVERYTHING thoroughly
 7. Tell me new App.js line count

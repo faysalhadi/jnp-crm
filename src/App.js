@@ -33,9 +33,12 @@ import { useReservations } from "./context/ReservationsContext";
 import { moveStage as moveStageService, buildReceiptText as buildReceiptTextService, saveReceiptNumber as saveReceiptNumberService } from "./services/dealService";
 import { loadMessages as loadMessagesService, saveMessage as saveMessageService, generateReply as generateReplyService } from "./services/messageService";
 import { getMatchingClients as getMatchingClientsService } from "./services/broadcastService";
-import { useChat } from "./hooks/useChat";
+import { useChatActions } from "./hooks/useChatActions";
 import { useAskClaude } from "./hooks/useAskClaude";
 import { useImport } from "./hooks/useImport";
+import { useChat } from "./context/ChatContext";
+import { useImportContext } from "./context/ImportContext";
+import { useAskClaudeContext } from "./context/AskClaudeContext";
 import { useBroadcast } from "./hooks/useBroadcast";
 
 import { saveImportedMessages } from "./utils/whatsapp";
@@ -195,52 +198,57 @@ export default function App() {
     handleAuth, handleLogout,
   } = useAuth();
 
-  const [messages, setMessages] = useState([]);
-  const [msgLoading, setMsgLoading] = useState(false);
-  const [msgInput, setMsgInput] = useState("");
-  const [chatMode, setChatMode] = useState("type"); // kept for compat
-  // ── new chat flow ──
-  const [incomingText,         setIncomingText]         = useState("");
-  const [replyMode,            setReplyMode]            = useState(null); // null | "myself" | "ai"
-  const [replyingToId,         setReplyingToId]         = useState(null);
-  const [directReplyText,      setDirectReplyText]      = useState("");
-  const [generatedReply,       setGeneratedReply]       = useState("");
-  const [generatedReplyLoading,setGeneratedReplyLoading]= useState(false);
-  const [editingGenerated,     setEditingGenerated]     = useState(false);
-  const [copied, setCopied] = useState(null);
-  const [editSent, setEditSent] = useState(null);
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState('');
-  const [editingNumber, setEditingNumber] = useState(false);
-  const [numberInput, setNumberInput] = useState('');
-  const [outreachMode, setOutreachMode] = useState(false);
-  const [outreachReason, setOutreachReason] = useState("");
-  const [outreachCustom, setOutreachCustom] = useState("");
-  const [importText, setImportText] = useState("");
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null);
-  const [importingMultiple, setImportingMultiple] = useState(false);
-  const [importMultipleProgress, setImportMultipleProgress] = useState({ current: 0, total: 0 });
-  const [importMultipleResult, setImportMultipleResult] = useState(null);
+  const {
+    messages, setMessages,
+    msgLoading, setMsgLoading,
+    msgInput, setMsgInput,
+    incomingText, setIncomingText,
+    replyMode, setReplyMode,
+    replyingToId, setReplyingToId,
+    directReplyText, setDirectReplyText,
+    generatedReply, setGeneratedReply,
+    generatedReplyLoading, setGeneratedReplyLoading,
+    editingGenerated, setEditingGenerated,
+    copied, setCopied,
+    editSent, setEditSent,
+    editingName, setEditingName,
+    nameInput, setNameInput,
+    editingNumber, setEditingNumber,
+    numberInput, setNumberInput,
+    outreachMode, setOutreachMode,
+    outreachReason, setOutreachReason,
+    outreachCustom, setOutreachCustom,
+    showSupplierReply, setShowSupplierReply,
+    supplierReplyCtx, setSupplierReplyCtx,
+    supplierReplyGmail, setSupplierReplyGmail,
+    supplierReplyWA, setSupplierReplyWA,
+    supplierReplyLoading, setSupplierReplyLoading,
+    copiedSupGmail, setCopiedSupGmail,
+    copiedSupWA, setCopiedSupWA,
+  } = useChat();
+
+  const {
+    importText, setImportText,
+    importing, setImporting,
+    importResult, setImportResult,
+    importingMultiple, setImportingMultiple,
+    importMultipleProgress, setImportMultipleProgress,
+    importMultipleResult, setImportMultipleResult,
+    exporting, setExporting,
+  } = useImportContext();
+
+  const {
+    askMessages, setAskMessages,
+    askInput, setAskInput,
+    askLoading, setAskLoading,
+    expandedSaleId, setExpandedSaleId,
+    marketingDevices, setMarketingDevices,
+  } = useAskClaudeContext();
   const chatFileInputRef = useRef(null);
   const chatFilesInputRef = useRef(null);
-  const [exporting, setExporting] = useState(false);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
-  const PART_CATEGORIES = ["RAM", "SSD", "HDD", "Screen", "Battery", "Charger", "Keyboard", "Trackpad", "Other"];
-  const PART_ICONS = { RAM: "🧠", SSD: "💾", HDD: "💿", Screen: "🖥️", Battery: "🔋", Charger: "🔌", Keyboard: "⌨️", Trackpad: "🖱️", Other: "🔧" };
-  const [askMessages, setAskMessages] = useState([]);
-  const [askInput, setAskInput] = useState("");
-  const [askLoading, setAskLoading] = useState(false);
   const askBottomRef = useRef(null);
-  // ── marketing ──
-  const [marketingDevices, setMarketingDevices] = useState([]);
-
-
-
-
-  // ── side drawer / sales history ──
-  const [expandedSaleId,       setExpandedSaleId]       = useState(null);
 
   // ── broadcast ── (managed by useBroadcast hook, initialized below after messages state)
 
@@ -258,47 +266,16 @@ export default function App() {
   // ── sourcing alerts for dashboard ──
   const sourcingAlerts = useSourcingAlerts();
 
-  // ── supplier reply generator ──
-  const [showSupplierReply,   setShowSupplierReply]   = useState(false);
-  const [supplierReplyCtx,    setSupplierReplyCtx]    = useState("");
-  const [supplierReplyGmail,  setSupplierReplyGmail]  = useState("");
-  const [supplierReplyWA,     setSupplierReplyWA]     = useState("");
-  const [supplierReplyLoading,setSupplierReplyLoading]= useState(false);
-  const [copiedSupGmail,      setCopiedSupGmail]      = useState(false);
-  const [copiedSupWA,         setCopiedSupWA]         = useState(false);
-
   // ── hooks ──
   const {
     handleReserveDevice, handleConfirmSale, moveStage,
     addIncomingMessage, generateAIReply, sendAIReply,
     sendDirectReply, generateOpeningMessage,
     confirmSent, markNotSent, copyMsg,
-    generateOutreach: _generateOutreach,
-    generateSupplierReply: _generateSupplierReply,
-  } = useChat(
-    messages, setMessages,
-    setMsgLoading,
-    incomingText, setIncomingText,
-    replyMode, setReplyMode,
-    replyingToId, setReplyingToId,
-    directReplyText, setDirectReplyText,
-    generatedReply, setGeneratedReply,
-    setGeneratedReplyLoading,
-    setEditingGenerated,
-    copied, setCopied,
-    setEditSent,
-    anthropicKey,
-  );
+    generateOutreach, generateSupplierReply,
+  } = useChatActions();
 
-  function generateOutreach() {
-    return _generateOutreach(outreachReason, outreachCustom, setOutreachMode, setOutreachReason, setOutreachCustom);
-  }
-
-  function generateSupplierReply() {
-    return _generateSupplierReply(supplierReplyCtx, setSupplierReplyGmail, setSupplierReplyWA, setSupplierReplyLoading);
-  }
-
-  const { buildSmartContext, sendAskMessage: _sendAskMessage } = useAskClaude(anthropicKey);
+  const { buildSmartContext, sendAskMessage: _sendAskMessage } = useAskClaude();
 
   function sendAskMessage(msg) {
     return _sendAskMessage(msg, askMessages, setAskMessages, setAskInput, setAskLoading);

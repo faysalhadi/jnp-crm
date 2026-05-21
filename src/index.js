@@ -9,6 +9,9 @@ import { SalesProvider } from './context/SalesContext';
 import { PartsProvider } from './context/PartsContext';
 import { TradersProvider } from './context/TradersContext';
 import { ReservationsProvider } from './context/ReservationsContext';
+import { ChatProvider } from './context/ChatContext';
+import { ImportProvider } from './context/ImportContext';
+import { AskClaudeProvider } from './context/AskClaudeContext';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
@@ -22,7 +25,13 @@ root.render(
               <TradersProvider anthropicKey={localStorage.getItem("jnp_anthropic_key") || ""}>
                 <ReservationsProvider>
                   <StockProvider>
-                    <App />
+                    <ChatProvider>
+                      <ImportProvider>
+                        <AskClaudeProvider>
+                          <App />
+                        </AskClaudeProvider>
+                      </ImportProvider>
+                    </ChatProvider>
                   </StockProvider>
                 </ReservationsProvider>
               </TradersProvider>

@@ -4,8 +4,10 @@ import { useCustomers } from "../context/CustomerContext";
 import { useStock } from "../context/StockContext";
 import { useParts } from "../context/PartsContext";
 import { useSales } from "../context/SalesContext";
+import { useAuth } from "../context/AuthContext";
 
-export function useAskClaude(anthropicKey) {
+export function useAskClaude() {
+  const { anthropicKey } = useAuth();
   const { customers } = useCustomers();
   const { stock, cachedStock } = useStock();
   const { parts } = useParts();
