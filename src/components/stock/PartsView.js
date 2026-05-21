@@ -16,6 +16,7 @@ export default function PartsView() {
     partsSold, partsSoldLoading,
     partsRevMTD, loadPartsRevMTD,
     savePart, deletePart,
+    loadPartsSold,
   } = useParts();
   const { showToast } = useUI();
 

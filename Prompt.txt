@@ -1,200 +1,72 @@
-Read src/components/tabs/StockTab.js fully before making changes.
+Read src/App.js and src/context/PartsContext.js 
+fully before making any changes.
 
-This is architecture rewrite Step 10.
-We are splitting StockTab into smaller sub-components.
-Do NOT change any logic. Only split into separate files.
+CHANGE 1 — Move parts sold loading to PartsContext
 
-First run this in PowerShell to see the structure:
-$lines = Get-Content "C:\Users\Faisal\jnp-crm\src\components\tabs\StockTab.js"
-$lines | Select-String -Pattern "^\s*{/\* ──" | Select-Object LineNumber, Line
+In src/context/PartsContext.js add a new function
+loadPartsSold inside PartsProvider:
 
-STEP 10A — Create src/components/stock/DevicesView.js
-
-Find the devices view section in StockTab.js.
-It renders when stockView === "devices" and 
-stockFilter !== "reserved".
-It shows the list of available/sold stock cards.
-
-Extract this entire section into:
-
-  import React from "react";
-  import { useStock } from "../../context/StockContext";
-  import { useReservations } from "../../context/ReservationsContext";
-  import { useSales } from "../../context/SalesContext";
-  import { useParts } from "../../context/PartsContext";
-  import { useCustomers } from "../../context/CustomerContext";
-  import { useUI } from "../../context/UIContext";
-  import Badge from "../ui/Badge";
-  import Spinner from "../ui/Spinner";
-  import SpecUpgradeModal from "../modals/SpecUpgradeModal";
-  import { BRANDS, EMPTY_STOCK, PART_ICONS, 
-    PART_CATEGORIES, EMPTY_PART } from "../../constants";
-  import { daysSince, timeAgo, parseGB, labelGB } 
-    from "../../utils/helpers";
-
-  export default function DevicesView({
-    filteredStock,
-    openBroadcast,
-    handleUpgradeApply,
-    loadTodaySales,
-    setSaleReceiptData,
-    setReceiptEditName,
-    setShowSaleReceipt,
-    showUpgrade, setShowUpgrade,
-    upgradeTarget, setUpgradeTarget,
-    showQuickSale, setShowQuickSale,
-    quickSalePrefill, setQuickSalePrefill,
-  }) {
-    const { 
-      stock, loadStock, refreshCachedStock,
-      stockFilter, stockSearch, 
-      expandedStockId, setExpandedStockId,
-      editingStock, setEditingStock,
-      stockForm, setStockForm,
-      stockPhotoUploading,
-      showAddStock, setShowAddStock,
-      saveStock, deleteStockItem, toggleStockStatus,
-      uploadStockPhoto, soldDealMap, setSoldDealMap,
-    } = useStock();
-    const { loadCustomers } = useCustomers();
-    const { showToast } = useUI();
-
-    // exact same JSX for devices list
+  async function loadPartsSold() {
+    setPartsSoldLoading(true);
+    const { data } = await supabase
+      .from("parts_sales")
+      .select("*")
+      .order("sold_at", { ascending: false });
+    setPartsSold(data || []);
+    setPartsSoldLoading(false);
   }
 
-STEP 10B — Create src/components/stock/ReservedView.js
+Add loadPartsSold to the context Provider value:
+  loadPartsSold,
 
-Find the reserved view section in StockTab.js.
-It renders when stockFilter === "reserved".
-It shows the deal-centric reservation cards.
+Export it from the context.
 
-Extract this entire section into:
+CHANGE 2 — Update App.js to use loadPartsSold from context
 
-  import React from "react";
-  import { useStock } from "../../context/StockContext";
-  import { useReservations } from "../../context/ReservationsContext";
-  import { useCustomers } from "../../context/CustomerContext";
-  import { useSales } from "../../context/SalesContext";
-  import Spinner from "../ui/Spinner";
+In App.js add loadPartsSold to the useParts destructuring:
+  const {
+    ...existing,
+    loadPartsSold,
+  } = useParts();
 
-  export default function ReservedView({
-    setSaleReceiptData,
-    setReceiptEditName,
-    setShowSaleReceipt,
-    loadTodaySales,
-  }) {
-    const { loadStock } = useStock();
-    const { loadCustomers } = useCustomers();
-    const {
-      reservedDeals, reservedDealsLoading,
-      loadReservedDeals,
-      expandedReservedDeal, setExpandedReservedDeal,
-      showCompleteReservation, setShowCompleteReservation,
-      completingDeal, setCompletingDeal,
-      completionPaymentMethod, setCompletionPaymentMethod,
-      showEditReservation, setShowEditReservation,
-      editReservationItem, setEditReservationItem,
-      editReservationForm, setEditReservationForm,
-    } = useReservations();
+Find this useEffect in App.js:
+  useEffect(() => {
+    if (stockFilter !== "parts_sold") return;
+    setPartsSoldLoading(true);
+    supabase.from("parts_sales").select("*")
+      .order("sold_at", { ascending: false })
+      .then(({ data }) => { 
+        setPartsSold(data || []); 
+        setPartsSoldLoading(false); 
+      });
+  }, [stockFilter]);
 
-    // exact same JSX for reserved deals view
-  }
+Replace with:
+  useEffect(() => {
+    if (stockFilter !== "parts_sold") return;
+    loadPartsSold();
+  }, [stockFilter, loadPartsSold]);
 
-STEP 10C — Create src/components/stock/PartsView.js
+CHANGE 3 — Update PartsView to use loadPartsSold
 
-Find the parts view section in StockTab.js.
-It renders when stockView === "parts".
-It shows parts inventory and parts sold.
+In src/components/stock/PartsView.js find where
+parts sold data is loaded. Make sure it calls
+loadPartsSold from useParts() context instead of
+trying to use setPartsSoldLoading directly.
 
-Extract this entire section into:
-
-  import React from "react";
-  import { useParts } from "../../context/PartsContext";
-  import { useUI } from "../../context/UIContext";
-  import Spinner from "../ui/Spinner";
-  import PartSaleModal from "../modals/PartSaleModal";
-  import { PART_ICONS, PART_CATEGORIES, EMPTY_PART } 
-    from "../../constants";
-
-  export default function PartsView() {
-    const {
-      parts, partsLoading, loadParts,
-      showAddPart, setShowAddPart,
-      editingPart, setEditingPart,
-      partForm, setPartForm,
-      showPartSale, setShowPartSale,
-      partSaleTarget, setPartSaleTarget,
-      partsSold, partsSoldLoading,
-      partsRevMTD, loadPartsRevMTD,
-      savePart, deletePart,
-    } = useParts();
-    const { showToast } = useUI();
-
-    // exact same JSX for parts view
-  }
-
-STEP 10D — Update StockTab.js to use sub-components
-
-In StockTab.js replace the extracted sections with:
-
-  import DevicesView from "../stock/DevicesView";
-  import ReservedView from "../stock/ReservedView";
-  import PartsView from "../stock/PartsView";
-
-Replace each section JSX with the component:
-
-  {stockView === "devices" && stockFilter !== "reserved" && (
-    <DevicesView
-      filteredStock={filteredStock}
-      openBroadcast={openBroadcast}
-      handleUpgradeApply={handleUpgradeApply}
-      loadTodaySales={loadTodaySales}
-      setSaleReceiptData={setSaleReceiptData}
-      setReceiptEditName={setReceiptEditName}
-      setShowSaleReceipt={setShowSaleReceipt}
-      showUpgrade={showUpgrade}
-      setShowUpgrade={setShowUpgrade}
-      upgradeTarget={upgradeTarget}
-      setUpgradeTarget={setUpgradeTarget}
-      showQuickSale={showQuickSale}
-      setShowQuickSale={setShowQuickSale}
-      quickSalePrefill={quickSalePrefill}
-      setQuickSalePrefill={setQuickSalePrefill}
-    />
-  )}
-
-  {stockFilter === "reserved" && (
-    <ReservedView
-      setSaleReceiptData={setSaleReceiptData}
-      setReceiptEditName={setReceiptEditName}
-      setShowSaleReceipt={setShowSaleReceipt}
-      loadTodaySales={loadTodaySales}
-    />
-  )}
-
-  {stockView === "parts" && (
-    <PartsView />
-  )}
-
-IMPORTANT RULES:
-- Every new file must have import React from "react" at top
-- Do not change any logic
-- Each sub-component gets state from context hooks directly
-- Only pass props that cannot come from context
-- Make sure QuickSaleModal and PartSaleModal still work
+Add loadPartsSold to the useParts destructuring 
+in PartsView.js:
+  const { 
+    ...existing,
+    loadPartsSold,
+  } = useParts();
 
 After changes:
 1. Run npm run build
-2. Fix ALL errors one by one
-3. Only when build is clean:
-   git add -A && git commit -m "architecture step 10: split StockTab into sub-components" 
+2. Fix any errors
+3. git add -A && git commit -m "fix: parts sold loading moved to PartsContext" 
    && git push origin main --force
-4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app
-6. Test Stock tab thoroughly:
-   - Devices show correctly?
-   - Can add/edit/delete device?
-   - Reserved tab shows correctly?
-   - Parts tab works?
-   - Can sell a part?
-7. Tell me new StockTab.js line count
+4. Test:
+   - Stock tab → Parts toggle → Parts Sold filter
+   - Does it show without blank screen?
+5. Tell me if it works and new StockTab.js line count

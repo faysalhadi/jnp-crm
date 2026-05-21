@@ -152,6 +152,7 @@ export default function App() {
     savePart,
     deletePart,
     loadPartsRevMTD,
+    loadPartsSold,
   } = useParts();
 
   const {
@@ -762,11 +763,8 @@ Return JSON with only a "reply" field containing the message.`;
 
   useEffect(() => {
     if (stockFilter !== "parts_sold") return;
-    setPartsSoldLoading(true);
-    supabase.from("parts_sales").select("*")
-      .order("sold_at", { ascending: false })
-      .then(({ data }) => { setPartsSold(data || []); setPartsSoldLoading(false); });
-  }, [stockFilter]);
+    loadPartsSold();
+  }, [stockFilter, loadPartsSold]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTab === "sales") loadSalesHistory();
