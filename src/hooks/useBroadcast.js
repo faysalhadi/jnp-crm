@@ -1,18 +1,21 @@
-import { useState } from "react";
 import { useCustomers } from "../context/CustomerContext";
+import { useAuth } from "../context/AuthContext";
+import { useBroadcastCtx } from "../context/BroadcastContext";
 import { callClaude } from "../utils/claude";
 
-export function useBroadcast(anthropicKey) {
-  const [showBroadcast, setShowBroadcast] = useState(false);
-  const [broadcastItem, setBroadcastItem] = useState(null);
-  const [broadcastClients, setBroadcastClients] = useState([]);
-  const [broadcastSelected, setBroadcastSelected] = useState(new Set());
-  const [broadcastMessages, setBroadcastMessages] = useState([]);
-  const [broadcastLoading, setBroadcastLoading] = useState(false);
-  const [broadcastStep, setBroadcastStep] = useState("clients");
-  const [broadcastSent, setBroadcastSent] = useState(new Set());
-
+export function useBroadcast() {
+  const { anthropicKey } = useAuth();
   const { customers } = useCustomers();
+  const {
+    showBroadcast, setShowBroadcast,
+    broadcastItem, setBroadcastItem,
+    broadcastClients, setBroadcastClients,
+    broadcastSelected, setBroadcastSelected,
+    broadcastMessages, setBroadcastMessages,
+    broadcastLoading, setBroadcastLoading,
+    broadcastStep, setBroadcastStep,
+    broadcastSent, setBroadcastSent,
+  } = useBroadcastCtx();
 
   function openBroadcast(item) {
     const matches = customers.filter(c =>

@@ -1,19 +1,21 @@
 import React from "react";
 import { useUI } from "../../context/UIContext";
+import { useBroadcast } from "../../hooks/useBroadcast";
 import { daysSince } from "../../utils/helpers";
 
-export default function BroadcastModal({
-  showBroadcast, setShowBroadcast,
-  broadcastItem, setBroadcastItem,
-  broadcastClients, setBroadcastClients,
-  broadcastSelected, setBroadcastSelected,
-  broadcastMessages, setBroadcastMessages,
-  broadcastLoading,
-  broadcastStep, setBroadcastStep,
-  broadcastSent, setBroadcastSent,
-  generateBroadcastMessages,
-}) {
+export default function BroadcastModal() {
   const { isMobile } = useUI();
+  const {
+    showBroadcast, setShowBroadcast,
+    broadcastItem,
+    broadcastClients,
+    broadcastSelected, setBroadcastSelected,
+    broadcastMessages,
+    broadcastLoading,
+    broadcastStep, setBroadcastStep,
+    broadcastSent, setBroadcastSent,
+    generateBroadcastMessages,
+  } = useBroadcast();
   if (!showBroadcast || !broadcastItem) return null;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>

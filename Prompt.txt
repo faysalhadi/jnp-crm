@@ -1,217 +1,213 @@
-Read src/App.js fully before making any changes.
+Read src/App.js and src/components/layout/BroadcastModal.js
+fully before making any changes.
 
-CHANGE 1 — Remove "add" view from App.js
+CHANGE 1 — Update BroadcastModal to use contexts
 
-Find and DELETE this entire block:
-  if (view === "add") return (
-    <div style={{ minHeight: "100vh"...}>
-      ...
-    </div>
+In src/components/layout/BroadcastModal.js add:
+  import { useUI } from "../../context/UIContext";
+  import { useCustomers } from "../../context/CustomerContext";
+
+Create a useBroadcast context OR move broadcast state
+to UIContext.
+
+Actually — simplest fix is to move broadcast state
+to a new file src/context/BroadcastContext.js:
+
+  import React, { createContext, useContext, 
+    useState } from "react";
+
+  const BroadcastContext = createContext(null);
+
+  export function BroadcastProvider({ children }) {
+    const [showBroadcast, setShowBroadcast] = useState(false);
+    const [broadcastItem, setBroadcastItem] = useState(null);
+    const [broadcastClients, setBroadcastClients] = useState([]);
+    const [broadcastSelected, setBroadcastSelected] = 
+      useState(new Set());
+    const [broadcastMessages, setBroadcastMessages] = useState([]);
+    const [broadcastLoading, setBroadcastLoading] = useState(false);
+    const [broadcastStep, setBroadcastStep] = useState("clients");
+    const [broadcastSent, setBroadcastSent] = useState(new Set());
+
+    return (
+      <BroadcastContext.Provider value={{
+        showBroadcast, setShowBroadcast,
+        broadcastItem, setBroadcastItem,
+        broadcastClients, setBroadcastClients,
+        broadcastSelected, setBroadcastSelected,
+        broadcastMessages, setBroadcastMessages,
+        broadcastLoading, setBroadcastLoading,
+        broadcastStep, setBroadcastStep,
+        broadcastSent, setBroadcastSent,
+      }}>
+        {children}
+      </BroadcastContext.Provider>
+    );
+  }
+
+  export function useBroadcast() {
+    const context = useContext(BroadcastContext);
+    if (!context) throw new Error(
+      "useBroadcast must be used within BroadcastProvider"
+    );
+    return context;
+  }
+
+Add BroadcastProvider to index.js:
+  import { BroadcastContext } from './context/BroadcastContext';
+
+  root.render(
+    <AuthProvider>
+      <UIProvider>
+        <BroadcastProvider>
+          <SalesProvider>
+            <PartsProvider>
+              <CustomerProvider>
+                <TradersProvider anthropicKey={
+                  localStorage.getItem("jnp_anthropic_key") || ""
+                }>
+                  <ReservationsProvider>
+                    <StockProvider>
+                      <ChatProvider>
+                        <ImportProvider>
+                          <AskClaudeProvider>
+                            <App />
+                          </AskClaudeProvider>
+                        </ImportProvider>
+                      </ChatProvider>
+                    </StockProvider>
+                  </ReservationsProvider>
+                </TradersProvider>
+              </CustomerProvider>
+            </PartsProvider>
+          </SalesProvider>
+        </BroadcastProvider>
+      </UIProvider>
+    </AuthProvider>
   );
 
-This is no longer used. ContactModal handles 
-adding customers now.
+In BroadcastModal.js:
+  import { useBroadcast } from "../../context/BroadcastContext";
+  
+  Add at top of component:
+    const {
+      showBroadcast, setShowBroadcast,
+      broadcastItem, setBroadcastItem,
+      broadcastClients, setBroadcastClients,
+      broadcastSelected, setBroadcastSelected,
+      broadcastMessages, setBroadcastMessages,
+      broadcastLoading, setBroadcastLoading,
+      broadcastStep, setBroadcastStep,
+      broadcastSent, setBroadcastSent,
+    } = useBroadcast();
 
-CHANGE 2 — Update AuthScreen to use AuthContext directly
+  Remove ALL props from BroadcastModal.
+  Keep generateBroadcastMessages as a prop since
+  it comes from useBroadcast hook in App.js.
 
-In src/components/layout/AuthScreen.js add:
-  import { useAuth } from "../../context/AuthContext";
-
-Add at top of AuthScreen component:
-  const {
-    authMode, setAuthMode,
-    authEmail, setAuthEmail,
-    authPassword, setAuthPassword,
-    authError, setAuthError,
-    authBusy,
-    handleLogin,
-    handleSignup,
-  } = useAuth();
-
-Remove ALL props from AuthScreen destructuring.
+  Actually move generateBroadcastMessages to 
+  BroadcastContext too — import useBroadcast hook
+  from hooks/useBroadcast.js inside BroadcastModal.
 
 In App.js replace:
-  if (!session) return (
-    <AuthScreen
-      authMode={authMode} setAuthMode={setAuthMode}
-      ...many props...
+  <BroadcastModal
+    showBroadcast={showBroadcast} ...many props...
+    generateBroadcastMessages={generateBroadcastMessages}
+  />
+
+With just:
+  <BroadcastModal />
+
+Remove all broadcast state from App.js useHook 
+destructuring since BroadcastModal now gets them 
+directly from context.
+
+CHANGE 2 — Move ContactModal logic to context
+
+In App.js find ContactModal usage:
+  {showContactModal && (
+    <ContactModal
+      defaultType={contactModalPreType}
+      onClose={() => {...}}
+      onCreated={async (customer, deal) => {...}}
     />
-  );
+  )}
 
-With:
-  if (!session) return <AuthScreen />;
+The onCreated callback uses setActiveCustomerId,
+setActiveDealId, setView, setActiveTab, loadCustomers.
+All of these are now in contexts.
 
-CHANGE 3 — Move openDeals, closedDeals, revenue 
-to CustomerContext
+Extract ContactModal into its own wrapper component
+src/components/modals/ContactModalWrapper.js:
 
-In src/context/CustomerContext.js add these 
-computed values inside CustomerProvider:
-
-  import { monthRevenue } from "../utils/helpers";
-
-  const openDeals = customers.reduce((a, c) => 
-    a + (c.deals || []).filter(d => 
-      d.stage !== "closed" && d.stage !== "lost"
-    ).length, 0);
-  
-  const closedDeals = customers.reduce((a, c) => 
-    a + (c.deals || []).filter(d => 
-      d.stage === "closed"
-    ).length, 0);
-  
-  const revenue = monthRevenue(customers);
-
-Add them to the Provider value:
-  openDeals,
-  closedDeals,
-  revenue,
-
-In App.js remove:
-  const openDeals = customers.reduce(...);
-  const closedDeals = customers.reduce(...);
-  const revenue = monthRevenue(customers);
-
-Add to useCustomers() destructuring in App.js:
-  openDeals, closedDeals, revenue,
-
-In HomeTab.js add to useCustomers() destructuring:
-  const { ..., openDeals, closedDeals, revenue } = useCustomers();
-Remove these from HomeTab props.
-
-In CustomersTab.js add to useCustomers() destructuring:
-  const { ..., openDeals, closedDeals, revenue } = useCustomers();
-Remove these from CustomersTab props.
-
-In App.js remove these from HomeTab and CustomersTab usage:
-  openDeals={openDeals}
-  closedDeals={closedDeals}
-  revenue={revenue}
-
-CHANGE 4 — Update StockTab to use contexts directly
-
-In src/components/tabs/StockTab.js add:
+  import React from "react";
   import { useCustomers } from "../../context/CustomerContext";
-  import { useSales } from "../../context/SalesContext";
+  import { useUI } from "../../context/UIContext";
+  import ContactModal from "../ContactModal";
 
-Add at top of StockTab:
-  const { customers, loadCustomers } = useCustomers();
-  const { loadTodaySales, setSaleReceiptData,
-    setReceiptEditName, setShowSaleReceipt } = useSales();
+  Wait — ContactModal.js is at src/ContactModal.js
+  So import path would be:
+  import ContactModal from "../../ContactModal";
 
-Remove these from StockTab props destructuring:
-  customers, loadCustomers, loadTodaySales,
-  setSaleReceiptData, setReceiptEditName, setShowSaleReceipt,
+  export default function ContactModalWrapper() {
+    const { 
+      showContactModal, setShowContactModal,
+      contactModalPreType, setContactModalPreType,
+      setActiveCustomerId, setActiveDealId,
+      loadCustomers, setView,
+    } = useCustomers();
+    const { setActiveTab } = useUI();
 
-In App.js find where StockTab is rendered.
-Remove these props:
-  customers={customers}
-  loadCustomers={loadCustomers}
-  loadTodaySales={loadTodaySales}
-  setSaleReceiptData={setSaleReceiptData}
-  setReceiptEditName={setReceiptEditName}
-  setShowSaleReceipt={setShowSaleReceipt}
+    if (!showContactModal) return null;
 
-CHANGE 5 — Move filtered and filteredStock 
-to their contexts
+    return (
+      <ContactModal
+        defaultType={contactModalPreType}
+        onClose={() => { 
+          setShowContactModal(false); 
+          setContactModalPreType(null); 
+        }}
+        onCreated={async (customer, deal) => {
+          await loadCustomers();
+          setShowContactModal(false);
+          setContactModalPreType(null);
+          if (customer) {
+            setActiveCustomerId(customer.id);
+            setActiveDealId(deal?.id || null);
+            setView("detail");
+            setActiveTab("customers");
+          }
+        }}
+      />
+    );
+  }
 
-In CustomerContext.js add filtered computation:
+In App.js replace the ContactModal block with:
+  import ContactModalWrapper from 
+    "./components/modals/ContactModalWrapper";
+  
+  <ContactModalWrapper />
 
-  import { daysSince } from "../utils/helpers";
+CHANGE 3 — Remove remaining unused state from App.js
 
-  const filtered = customers
-    .filter(c => {
-      const cType = c.contact_type || "client";
-      if (contactTypeFilter !== "all" && 
-          cType !== contactTypeFilter) return false;
-      if (search) return c.name.toLowerCase()
-        .includes(search.toLowerCase()) || 
-        (c.number || "").includes(search);
-      if (filter === "urgent") return c.urgent;
-      if (filter === "overdue") return daysSince(c.last_active) >= 1 && 
-        (c.deals || []).some(d => 
-          d.stage !== "closed" && d.stage !== "lost");
-      if (filter === "vip") return c.tier === "vip";
-      if (filter === "cold") return c.tier === "cold";
-      return true;
-    })
-    .sort((a, b) => {
-      if (a.urgent && !b.urgent) return -1;
-      if (!a.urgent && b.urgent) return 1;
-      const aTime = a.last_activity_at || a.last_active;
-      const bTime = b.last_activity_at || b.last_active;
-      return new Date(bTime) - new Date(aTime);
-    });
+After all above changes check App.js for any remaining
+state declarations that are now in contexts.
+Delete any duplicates found.
 
-Add filtered to Provider value:
-  filtered,
+CHANGE 4 — Clean up unused imports in App.js
 
-In StockContext.js add filteredStock computation:
-
-  const filteredStock = stock.filter(item => {
-    if (stockSearch) {
-      const q = stockSearch.toLowerCase();
-      return (item.brand || "").toLowerCase().includes(q) ||
-             (item.model || "").toLowerCase().includes(q) ||
-             (item.processor || "").toLowerCase().includes(q) ||
-             (item.serial_number || "").toLowerCase().includes(q);
-    }
-    if (stockFilter === "available") 
-      return item.status === "available";
-    if (stockFilter === "reserved") 
-      return item.status === "reserved";
-    if (stockFilter === "sold") 
-      return item.status === "sold";
-    return true;
-  });
-
-Add filteredStock to StockContext Provider value:
-  filteredStock,
-
-In App.js remove:
-  const filtered = customers.filter(...).sort(...);
-  const filteredStock = stock.filter(...);
-
-Add to useCustomers() destructuring:
-  filtered,
-
-Add to useStock() destructuring:
-  filteredStock,
-
-CHANGE 6 — Clean up remaining props in App.js
-
-After all above changes find StockTab in App.js.
-It should now look like:
-  {activeTab === "stock" && (
-    <StockTab
-      openBroadcast={openBroadcast}
-      handleUpgradeApply={handleUpgradeApply}
-      filteredStock={filteredStock}
-    />
-  )}
-
-Update StockTab.js to get filteredStock from useStock():
-  const { ..., filteredStock } = useStock();
-Remove filteredStock from props.
-
-Final StockTab in App.js should be:
-  {activeTab === "stock" && (
-    <StockTab
-      openBroadcast={openBroadcast}
-      handleUpgradeApply={handleUpgradeApply}
-    />
-  )}
+Remove any imports in App.js that are no longer used
+after moving state and functions to contexts.
 
 After ALL changes:
 1. Run npm run build
 2. Fix ALL errors one by one
-3. git add -A && git commit -m "architecture: final App.js cleanup under 500 lines" 
+3. git add -A && git commit -m "architecture final: BroadcastContext, ContactModalWrapper" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test everything:
-   - Login works?
-   - Contacts filter works?
-   - Stock search works?
-   - Dashboard shows correct stats?
-   - All tabs work?
-7. Tell me new App.js line count
+6. Test:
+   - Add a new contact — does it work?
+   - Broadcast from stock item — does it work?
+   - All modals open correctly?
+7. Tell me final App.js line count

@@ -12,6 +12,7 @@ import { ReservationsProvider } from './context/ReservationsContext';
 import { ChatProvider } from './context/ChatContext';
 import { ImportProvider } from './context/ImportContext';
 import { AskClaudeProvider } from './context/AskClaudeContext';
+import { BroadcastProvider } from './context/BroadcastContext';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
@@ -19,6 +20,7 @@ root.render(
   <React.StrictMode>
     <AuthProvider>
       <UIProvider>
+        <BroadcastProvider>
         <SalesProvider>
           <PartsProvider>
             <CustomerProvider>
@@ -38,6 +40,7 @@ root.render(
             </CustomerProvider>
           </PartsProvider>
         </SalesProvider>
+        </BroadcastProvider>
       </UIProvider>
     </AuthProvider>
   </React.StrictMode>

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import SourcingModule, { useSourcingAlerts } from "./SourcingModule";
-import ContactModal from "./ContactModal";
+import ContactModalWrapper from "./components/modals/ContactModalWrapper";
 
 import { daysSince } from "./utils/helpers";
 
@@ -55,7 +55,6 @@ export default function App() {
     showContactModal, setShowContactModal,
     contactModalPreType, setContactModalPreType,
     loadCustomers,
-    openDeals, closedDeals, revenue,
   } = useCustomers();
 
   const {
@@ -126,18 +125,7 @@ export default function App() {
     exportData,
   } = useImport();
 
-  const {
-    showBroadcast, setShowBroadcast,
-    broadcastItem, setBroadcastItem,
-    broadcastClients, setBroadcastClients,
-    broadcastSelected, setBroadcastSelected,
-    broadcastMessages, setBroadcastMessages,
-    broadcastLoading, setBroadcastLoading,
-    broadcastStep, setBroadcastStep,
-    broadcastSent, setBroadcastSent,
-    openBroadcast,
-    generateBroadcastMessages,
-  } = useBroadcast(anthropicKey);
+  const { openBroadcast } = useBroadcast();
 
 
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
@@ -464,17 +452,7 @@ export default function App() {
       )}
 
       {/* ── BROADCAST MODAL ── */}
-      <BroadcastModal
-        showBroadcast={showBroadcast} setShowBroadcast={setShowBroadcast}
-        broadcastItem={broadcastItem} setBroadcastItem={setBroadcastItem}
-        broadcastClients={broadcastClients} setBroadcastClients={setBroadcastClients}
-        broadcastSelected={broadcastSelected} setBroadcastSelected={setBroadcastSelected}
-        broadcastMessages={broadcastMessages} setBroadcastMessages={setBroadcastMessages}
-        broadcastLoading={broadcastLoading}
-        broadcastStep={broadcastStep} setBroadcastStep={setBroadcastStep}
-        broadcastSent={broadcastSent} setBroadcastSent={setBroadcastSent}
-        generateBroadcastMessages={generateBroadcastMessages}
-      />
+      <BroadcastModal />
 
       {/* ── SIDE DRAWER ── */}
       <SideDrawer handleLogout={handleLogoutWithUI} />
@@ -506,23 +484,7 @@ export default function App() {
       >+</button>
 
       {/* ── ContactModal ── */}
-      {showContactModal && (
-        <ContactModal
-          defaultType={contactModalPreType}
-          onClose={() => { setShowContactModal(false); setContactModalPreType(null); }}
-          onCreated={async (customer, deal) => {
-            await loadCustomers();
-            setShowContactModal(false);
-            setContactModalPreType(null);
-            if (customer) {
-              setActiveCustomerId(customer.id);
-              setActiveDealId(deal?.id || null);
-              setView("detail");
-              setActiveTab("customers");
-            }
-          }}
-        />
-      )}
+      <ContactModalWrapper />
 
       {/* bottom tab bar — mobile only */}
       <BottomNav NAV_TABS={NAV_TABS} sourcingAlerts={sourcingAlerts} />
