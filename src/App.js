@@ -50,6 +50,12 @@ import CustomersTab from "./components/tabs/CustomersTab";
 import TradersTab from "./components/tabs/TradersTab";
 import StockTab from "./components/tabs/StockTab";
 import ChatDetailView from "./components/chat/ChatDetailView";
+import SideDrawer from "./components/layout/SideDrawer";
+import BottomNav from "./components/layout/BottomNav";
+import ToastNotification from "./components/layout/ToastNotification";
+import ReceiptModal from "./components/layout/ReceiptModal";
+import BroadcastModal from "./components/layout/BroadcastModal";
+import AuthScreen from "./components/layout/AuthScreen";
 
 // ── main ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -1332,42 +1338,14 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
 
   // auth screen
   if (!session) return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: 24, padding: 32, boxShadow: "0 8px 40px rgba(99,102,241,0.12)" }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>💻</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>Laptop for Less</div>
-          <div style={{ fontSize: 13, color: "#94A3B8", marginTop: 4 }}>CRM — {authMode === "login" ? "Sign in to continue" : "Create your account"}</div>
-        </div>
-
-        {authError && (
-          <div style={{ padding: "10px 14px", borderRadius: 10, background: authError.startsWith("✅") ? "#ECFDF5" : "#FEF2F2", color: authError.startsWith("✅") ? "#10B981" : "#EF4444", fontSize: 13, marginBottom: 16, fontWeight: 600 }}>
-            {authError}
-          </div>
-        )}
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-          <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="Email address" type="email"
-            style={{ padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, outline: "none", width: "100%", boxSizing: "border-box" }} />
-          <input value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Password" type="password"
-            onKeyDown={e => e.key === "Enter" && handleAuth()}
-            style={{ padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 14, outline: "none", width: "100%", boxSizing: "border-box" }} />
-        </div>
-
-        <button onClick={handleAuth} disabled={authBusy || !authEmail || !authPassword}
-          style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: authBusy ? "#C7D2FE" : "#6366F1", color: "#fff", fontWeight: 800, fontSize: 15, cursor: authBusy ? "not-allowed" : "pointer", marginBottom: 12 }}>
-          {authBusy ? "Please wait..." : authMode === "login" ? "Sign In →" : "Create Account →"}
-        </button>
-
-        <div style={{ textAlign: "center", fontSize: 13, color: "#94A3B8" }}>
-          {authMode === "login" ? "Don't have an account? " : "Already have an account? "}
-          <span onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthError(""); }}
-            style={{ color: "#6366F1", fontWeight: 700, cursor: "pointer" }}>
-            {authMode === "login" ? "Sign up" : "Sign in"}
-          </span>
-        </div>
-      </div>
-    </div>
+    <AuthScreen
+      authMode={authMode} setAuthMode={setAuthMode}
+      authEmail={authEmail} setAuthEmail={setAuthEmail}
+      authPassword={authPassword} setAuthPassword={setAuthPassword}
+      authError={authError} setAuthError={setAuthError}
+      authBusy={authBusy} setAuthBusy={setAuthBusy}
+      handleAuth={handleAuth}
+    />
   );
 
   // api key setup
@@ -1891,165 +1869,23 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
       )}
 
       {/* ── BROADCAST MODAL ── */}
-      {showBroadcast && broadcastItem && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
-          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <span style={{ fontWeight: 800, fontSize: 17, color: "#0F172A" }}>📢 Broadcast</span>
-                <button onClick={() => setShowBroadcast(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
-              </div>
-              {/* Device summary */}
-              <div style={{ background: "#EEF2FF", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: "#4338CA" }}>{[broadcastItem.brand, broadcastItem.model].filter(Boolean).join(" ")}</div>
-                <div style={{ fontSize: 12, color: "#818CF8" }}>{[broadcastItem.ram, broadcastItem.ssd, broadcastItem.condition].filter(Boolean).join(" · ")} · AED {broadcastItem.max_price?.toLocaleString()}</div>
-              </div>
-
-              {broadcastStep === "clients" && (
-                <>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10 }}>
-                    Found {broadcastClients.length} potential buyer{broadcastClients.length !== 1 ? "s" : ""}
-                  </div>
-                  {broadcastClients.length === 0
-                    ? <div style={{ textAlign: "center", padding: 30, color: "#94A3B8" }}>No matching clients found.<br/>No open deals match this device's brand/price.</div>
-                    : (
-                      <>
-                        {broadcastClients.map(c => {
-                          const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
-                          const isSelected = broadcastSelected.has(c.id);
-                          const brandMatch = !broadcastItem.brand || !deal?.brand || deal.brand.toLowerCase() === broadcastItem.brand.toLowerCase();
-                          const budgetMatch = !broadcastItem.min_price || !deal?.budget || Number(deal.budget) >= Number(broadcastItem.min_price);
-                          const strength = brandMatch && budgetMatch ? "✅ Strong" : "⚠️ Partial";
-                          return (
-                            <div key={c.id} onClick={() => setBroadcastSelected(prev => { const n = new Set(prev); isSelected ? n.delete(c.id) : n.add(c.id); return n; })}
-                              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", marginBottom: 6, borderRadius: 12, border: `1.5px solid ${isSelected ? "#6366F1" : "#F1F5F9"}`, background: isSelected ? "#EEF2FF" : "#fff", cursor: "pointer" }}>
-                              <div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{c.name}</div>
-                                <div style={{ fontSize: 11, color: "#94A3B8" }}>{[deal?.brand, deal?.model].filter(Boolean).join(" ") || "No spec"}{deal?.budget ? ` · AED ${deal.budget}` : ""} · {daysSince(c.last_active)}d ago</div>
-                              </div>
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                                <span style={{ fontSize: 10, fontWeight: 700, color: brandMatch && budgetMatch ? "#10B981" : "#F59E0B" }}>{strength}</span>
-                                <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${isSelected ? "#6366F1" : "#E2E8F0"}`, background: isSelected ? "#6366F1" : "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                  {isSelected && <span style={{ color: "#fff", fontSize: 12, lineHeight: 1 }}>✓</span>}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        <button onClick={generateBroadcastMessages} disabled={broadcastLoading || broadcastSelected.size === 0}
-                          style={{ width: "100%", marginTop: 8, padding: 13, borderRadius: 12, border: "none", background: broadcastSelected.size === 0 || broadcastLoading ? "#E2E8F0" : "#6366F1", color: broadcastSelected.size === 0 || broadcastLoading ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
-                          {broadcastLoading ? "⏳ Generating messages..." : `Generate Messages for ${broadcastSelected.size} Client${broadcastSelected.size !== 1 ? "s" : ""} →`}
-                        </button>
-                      </>
-                    )
-                  }
-                </>
-              )}
-
-              {broadcastStep === "messages" && (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8" }}>{broadcastMessages.length} messages ready</div>
-                    <button onClick={() => setBroadcastStep("clients")} style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 11, cursor: "pointer" }}>← Back</button>
-                  </div>
-                  {broadcastMessages.map((item, i) => (
-                    <div key={i} style={{ background: broadcastSent.has(i) ? "#F0FDF4" : "#F8FAFC", borderRadius: 14, padding: "12px 14px", marginBottom: 8, border: `1px solid ${broadcastSent.has(i) ? "#BBF7D0" : "#E2E8F0"}` }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{item.client.name}</span>
-                        {broadcastSent.has(i) && <span style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>✓ Sent</span>}
-                      </div>
-                      <textarea defaultValue={item.message} onChange={e => { broadcastMessages[i].message = e.target.value; }} rows={3}
-                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box", lineHeight: 1.5, background: "#fff" }} />
-                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                        <a href={`https://wa.me/${(item.client.number || "").replace(/\D/g,"")}?text=${encodeURIComponent(item.message)}`} target="_blank" rel="noreferrer"
-                          onClick={() => setBroadcastSent(prev => new Set([...prev, i]))}
-                          style={{ flex: 1, padding: "7px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
-                          📱 Open WhatsApp
-                        </a>
-                        <button onClick={() => setBroadcastSent(prev => new Set([...prev, i]))}
-                          style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #BBF7D0", background: broadcastSent.has(i) ? "#ECFDF5" : "#fff", color: "#10B981", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
-                          ✓ Sent
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <BroadcastModal
+        showBroadcast={showBroadcast} setShowBroadcast={setShowBroadcast}
+        broadcastItem={broadcastItem} setBroadcastItem={setBroadcastItem}
+        broadcastClients={broadcastClients} setBroadcastClients={setBroadcastClients}
+        broadcastSelected={broadcastSelected} setBroadcastSelected={setBroadcastSelected}
+        broadcastMessages={broadcastMessages} setBroadcastMessages={setBroadcastMessages}
+        broadcastLoading={broadcastLoading}
+        broadcastStep={broadcastStep} setBroadcastStep={setBroadcastStep}
+        broadcastSent={broadcastSent} setBroadcastSent={setBroadcastSent}
+        generateBroadcastMessages={generateBroadcastMessages}
+      />
 
       {/* ── SIDE DRAWER ── */}
-      {showSideDrawer && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
-          <div onClick={() => setShowSideDrawer(false)}
-            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} />
-          <div style={{ position: "absolute", top: 0, right: 0, width: "75%", maxWidth: 300, height: "100%", background: "#fff", display: "flex", flexDirection: "column", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)" }}>
-            <div style={{ padding: "24px 20px 16px", borderBottom: "1px solid #F1F5F9" }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>JNP CRM</div>
-              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>Laptop for Less</div>
-            </div>
-            <div style={{ flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-              <button onClick={() => { setShowSideDrawer(false); setActiveTab("marketing"); }}
-                style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#FFF7ED", color: "#D97706", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
-                📣 Marketing
-              </button>
-              <button onClick={() => { setShowSideDrawer(false); setActiveTab("sales"); }}
-                style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
-                📊 Sales History
-              </button>
-              <button onClick={() => { setShowSideDrawer(false); setView("settings"); }}
-                style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
-                ⚙️ Settings
-              </button>
-            </div>
-            <div style={{ padding: "16px 20px", borderTop: "1px solid #F1F5F9" }}>
-              <button onClick={handleLogout}
-                style={{ width: "100%", padding: "11px 16px", borderRadius: 12, border: "1.5px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
-                🚪 Sign Out
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SideDrawer handleLogout={handleLogout} />
 
       {/* ── SALE RECEIPT MODAL ── */}
-      {showSaleReceipt && saleReceiptData && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
-          <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🧾 Receipt</span>
-                <button onClick={() => setShowSaleReceipt(false)}
-                  style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>CUSTOMER NAME</div>
-                <input value={receiptEditName} onChange={e => setReceiptEditName(e.target.value)} placeholder="Customer name"
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-              </div>
-              <div style={{ background: "#F8FAFC", borderRadius: 14, padding: 16, fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#0F172A", whiteSpace: "pre-line", marginBottom: 16, border: "1px solid #E2E8F0" }}>
-                {buildSaleReceiptText(saleReceiptData, receiptEditName)}
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => navigator.clipboard.writeText(buildSaleReceiptText(saleReceiptData, receiptEditName))}
-                  style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                  📋 Copy
-                </button>
-                <button onClick={() => {
-                  const text = buildSaleReceiptText(saleReceiptData, receiptEditName);
-                  const number = saleReceiptData.customerNumber;
-                  window.open(`https://wa.me/${number ? number.replace(/\D/g,"") : ""}?text=${encodeURIComponent(text)}`, "_blank");
-                }}
-                  style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                  📱 WhatsApp
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ReceiptModal />
 
       {/* ── EDIT RESERVATION MODAL ── */}
       {showEditReservation && editReservationItem && (
@@ -2311,35 +2147,7 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
       )}
 
       {/* ── TOAST NOTIFICATION ── */}
-      {toast && (
-        <div style={{
-          position: "fixed",
-          bottom: isMobile ? 90 : 24,
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 999,
-          padding: "12px 24px",
-          borderRadius: 12,
-          background: toast.type === "success" ? "#10B981"
-            : toast.type === "error" ? "#EF4444"
-            : "#6366F1",
-          color: "#fff",
-          fontSize: 13,
-          fontWeight: 700,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-          whiteSpace: "nowrap",
-          animation: "slideUp 0.3s ease",
-        }}>
-          {toast.type === "success" ? "✅ " : toast.type === "error" ? "❌ " : "ℹ️ "}
-          {toast.message}
-          <style>{`
-            @keyframes slideUp {
-              from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-              to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-            }
-          `}</style>
-        </div>
-      )}
+      <ToastNotification />
 
       {/* ── Floating "+" button ── */}
       <button
@@ -2375,28 +2183,7 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
       )}
 
       {/* bottom tab bar — mobile only */}
-      {isMobile && (
-        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
-          {[
-            { key: "home", icon: "🏠", label: "Home" },
-            { key: "customers", icon: "👥", label: "Contacts" },
-            { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
-            { key: "sourcing", icon: "🌍", label: "Sourcing" },
-            { key: "traders", icon: "🏪", label: "Traders" },
-            { key: "ask", icon: "🤖", label: "Ask" },
-          ].map(t => (
-            <button key={t.key} onClick={() => setActiveTab(t.key)}
-              style={{ flex: 1, padding: "8px 2px 12px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position: "relative" }}>
-              {t.badge > 0 && (
-                <div style={{ position: "absolute", top: 6, right: "25%", width: 16, height: 16, borderRadius: "50%", background: "#EF4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{t.badge}</div>
-              )}
-              <span style={{ fontSize: 18 }}>{t.icon}</span>
-              <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
-              {activeTab === t.key && <div style={{ position: "absolute", bottom: 0, width: 28, height: 3, background: "#6366F1", borderRadius: "3px 3px 0 0" }} />}
-            </button>
-          ))}
-        </div>
-      )}
+      <BottomNav NAV_TABS={NAV_TABS} sourcingAlerts={sourcingAlerts} />
       </div>{/* end content area */}
     </div>
   );

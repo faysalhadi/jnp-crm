@@ -1,72 +1,282 @@
-Read src/components/chat/ChatDetailView.js and
-src/components/chat/ChatHeader.js fully before changes.
+Read src/App.js fully before making any changes.
 
-CHANGE 1 — Remove receipt generator from client chat
+This is architecture rewrite Step 12 — final step.
+We are cleaning up App.js to under 500 lines.
+Do NOT change any logic. Only move remaining code.
 
-In ChatHeader.js find and remove:
-1. The Receipt button — looks like:
-   <button onClick={() => setShowReceipt(true)}
-   or similar. Remove the entire button.
+STEP 12A — Create src/components/layout/SideDrawer.js
 
-2. The Receipt modal/panel — looks like:
-   {showReceipt && (
-     <div ...>
-       ...receipt content...
-     </div>
-   )}
-   Remove the entire block.
+Find the side drawer JSX in App.js.
+It starts with:
+  {showSideDrawer && (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
 
-3. Remove these from ChatHeader props:
-   showReceipt, setShowReceipt,
-   receiptPaymentMethod, setReceiptPaymentMethod,
-   buildReceiptText,
-   saveReceiptNumber,
+Extract it into:
 
-In ChatDetailView.js remove these from props 
-destructuring and from the ChatHeader usage:
-   showReceipt, setShowReceipt,
-   receiptPaymentMethod, setReceiptPaymentMethod,
-   buildReceiptText,
-   saveReceiptNumber,
+  import React from "react";
+  import { useUI } from "../../context/UIContext";
+  import { useSales } from "../../context/SalesContext";
 
-In App.js find where ChatDetailView is rendered.
-Remove these props:
-   showReceipt={showReceipt}
-   setShowReceipt={setShowReceipt}
-   receiptPaymentMethod={receiptPaymentMethod}
-   setReceiptPaymentMethod={setReceiptPaymentMethod}
-   buildReceiptText={buildReceiptText}
-   saveReceiptNumber={saveReceiptNumber}
+  export default function SideDrawer({ handleLogout }) {
+    const { showSideDrawer, setShowSideDrawer, 
+            setActiveTab } = useUI();
 
-Also remove these state declarations from App.js
-if they are only used for the client chat receipt:
-   const [showReceipt, setShowReceipt] = useState(false);
-   const [receiptPaymentMethod, setReceiptPaymentMethod] = useState("Cash");
+    return (
+      // exact same side drawer JSX
+    );
+  }
 
-CHANGE 2 — Make sure receipt still works in Sales History
+In App.js replace the side drawer JSX with:
+  import SideDrawer from "./components/layout/SideDrawer";
+  
+  {showSideDrawer && (
+    <SideDrawer handleLogout={handleLogout} />
+  )}
 
-The Sales History tab already has a 🧾 Receipt button
-on each sale card that opens the receipt modal.
-This should stay exactly as is — do not touch it.
+STEP 12B — Create src/components/layout/BottomNav.js
 
-CHANGE 3 — Make sure receipt works after completing reservation
+Find the bottom tab bar in App.js.
+It renders the 6 tab buttons at the bottom.
 
-In src/components/stock/ReservedView.js find the
-Complete Sale button flow. After a sale is completed
-it should trigger the receipt.
+Extract into:
 
-Find where setSaleReceiptData and setShowSaleReceipt
-are called after completing a reservation.
-Make sure these calls still exist and work correctly.
+  import React from "react";
+  import { useUI } from "../../context/UIContext";
+  import { SOURCING_STAGES } from "../../constants";
 
-After changes:
+  export default function BottomNav({ 
+    NAV_TABS, sourcingAlerts 
+  }) {
+    const { activeTab, setActiveTab } = useUI();
+
+    return (
+      // exact same bottom nav JSX
+    );
+  }
+
+In App.js replace with:
+  import BottomNav from "./components/layout/BottomNav";
+  
+  <BottomNav 
+    NAV_TABS={NAV_TABS} 
+    sourcingAlerts={sourcingAlerts} 
+  />
+
+STEP 12C — Create src/components/layout/ToastNotification.js
+
+Find the toast JSX in App.js:
+  {toast && (
+    <div style={{ position: "fixed", bottom: ... }}>
+
+Extract into:
+
+  import React from "react";
+  import { useUI } from "../../context/UIContext";
+
+  export default function ToastNotification() {
+    const { toast, isMobile } = useUI();
+    if (!toast) return null;
+
+    return (
+      // exact same toast JSX
+    );
+  }
+
+In App.js replace with:
+  import ToastNotification from "./components/layout/ToastNotification";
+  
+  <ToastNotification />
+
+STEP 12D — Create src/components/layout/ReceiptModal.js
+
+Find the sale receipt modal in App.js:
+  {showSaleReceipt && saleReceiptData && (
+    <div style={{ position: "fixed"...}}>
+
+Extract into:
+
+  import React from "react";
+  import { useSales } from "../../context/SalesContext";
+  import { useUI } from "../../context/UIContext";
+
+  export default function ReceiptModal() {
+    const { 
+      showSaleReceipt, setShowSaleReceipt,
+      saleReceiptData,
+      receiptEditName, setReceiptEditName,
+      buildSaleReceiptText,
+    } = useSales();
+    const { isMobile } = useUI();
+
+    if (!showSaleReceipt || !saleReceiptData) return null;
+
+    return (
+      // exact same receipt modal JSX
+    );
+  }
+
+In App.js replace with:
+  import ReceiptModal from "./components/layout/ReceiptModal";
+  
+  <ReceiptModal />
+
+STEP 12E — Create src/components/layout/BroadcastModal.js
+
+Find the broadcast modal in App.js:
+  {showBroadcast && broadcastItem && (
+    <div style={{ position: "fixed"...}}>
+
+Extract into:
+
+  import React from "react";
+  import { useUI } from "../../context/UIContext";
+
+  export default function BroadcastModal({
+    showBroadcast, setShowBroadcast,
+    broadcastItem, setBroadcastItem,
+    broadcastClients, setBroadcastClients,
+    broadcastSelected, setBroadcastSelected,
+    broadcastMessages, setBroadcastMessages,
+    broadcastLoading,
+    broadcastStep, setBroadcastStep,
+    broadcastSent, setBroadcastSent,
+    generateBroadcastMessages,
+  }) {
+    const { isMobile } = useUI();
+
+    if (!showBroadcast || !broadcastItem) return null;
+
+    return (
+      // exact same broadcast modal JSX
+    );
+  }
+
+In App.js replace with:
+  import BroadcastModal from "./components/layout/BroadcastModal";
+
+  <BroadcastModal
+    showBroadcast={showBroadcast}
+    setShowBroadcast={setShowBroadcast}
+    broadcastItem={broadcastItem}
+    setBroadcastItem={setBroadcastItem}
+    broadcastClients={broadcastClients}
+    setBroadcastClients={setBroadcastClients}
+    broadcastSelected={broadcastSelected}
+    setBroadcastSelected={setBroadcastSelected}
+    broadcastMessages={broadcastMessages}
+    setBroadcastMessages={setBroadcastMessages}
+    broadcastLoading={broadcastLoading}
+    broadcastStep={broadcastStep}
+    setBroadcastStep={setBroadcastStep}
+    broadcastSent={broadcastSent}
+    setBroadcastSent={setBroadcastSent}
+    generateBroadcastMessages={generateBroadcastMessages}
+  />
+
+STEP 12F — Create src/components/layout/AuthScreen.js
+
+Find the auth screen in App.js.
+It shows when there is no session.
+It includes login and signup forms.
+
+Extract into:
+
+  import React from "react";
+  import { supabase } from "../../supabase";
+
+  export default function AuthScreen({
+    authMode, setAuthMode,
+    authEmail, setAuthEmail,
+    authPassword, setAuthPassword,
+    authError, setAuthError,
+    authBusy, setAuthBusy,
+    handleLogin,
+    handleSignup,
+  }) {
+    return (
+      // exact same auth screen JSX
+    );
+  }
+
+In App.js replace the auth screen with:
+  import AuthScreen from "./components/layout/AuthScreen";
+
+  if (!session) {
+    return (
+      <AuthScreen
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        authEmail={authEmail}
+        setAuthEmail={setAuthEmail}
+        authPassword={authPassword}
+        setAuthPassword={setAuthPassword}
+        authError={authError}
+        setAuthError={setAuthError}
+        authBusy={authBusy}
+        setAuthBusy={setAuthBusy}
+        handleLogin={handleLogin}
+        handleSignup={handleSignup}
+      />
+    );
+  }
+
+STEP 12G — Move remaining business logic to App.js services
+
+Find these functions still in App.js and check if 
+they can be simplified:
+
+1. handleConfirmSale — keep in App.js but make sure
+   it uses context values not props
+
+2. handleReserveDevice — keep in App.js
+
+3. addIncomingMessage — keep in App.js
+
+4. generateAIReply — keep in App.js
+
+5. sendAIReply — keep in App.js
+
+6. sendDirectReply — keep in App.js
+
+7. generateOutreach — keep in App.js
+
+8. generateSupplierReply — keep in App.js
+
+9. openBroadcast — keep in App.js
+
+10. handleUpgradeApply — keep in App.js
+
+These functions need access to multiple contexts
+so they stay in App.js for now.
+
+STEP 12H — Clean up unused imports in App.js
+
+After all extractions find and remove any imports
+in App.js that are no longer used:
+- Remove unused useState imports
+- Remove unused component imports
+- Remove unused function imports
+
+IMPORTANT RULES:
+- Every new file must have import React from "react" at top
+- Do not change any logic
+- Test everything after deployment
+- If App.js is still over 500 lines after this step
+  identify what is left and we will split further
+
+After ALL changes:
 1. Run npm run build
-2. Fix any errors
-3. git add -A && git commit -m "feat: remove receipt from client chat, keep in sales history" 
+2. Fix ALL errors one by one
+3. Only when build is clean:
+   git add -A && git commit -m "architecture step 12: clean App.js to under 500 lines" 
    && git push origin main --force
-4. Test:
-   - Open a client chat with closed deal
-   - Is receipt button gone?
-   - Go to Sales History — does receipt button still work?
-   - Complete a reservation — does receipt appear?
-5. Tell me new ChatDetailView.js line count
+4. Wait 2 minutes
+5. Open https://jnp-crm.vercel.app
+6. Test everything:
+   - Login works?
+   - All tabs work?
+   - Client chat works?
+   - Reserve works?
+   - Sales history works?
+   - Marketing tab works?
+7. Tell me new App.js line count
