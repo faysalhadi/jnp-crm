@@ -28,8 +28,6 @@ export default function ChatDetailView({
   outreachMode, setOutreachMode,
   outreachReason, setOutreachReason,
   outreachCustom, setOutreachCustom,
-  showReceipt, setShowReceipt,
-  receiptPaymentMethod, setReceiptPaymentMethod,
   showSupplierReply, setShowSupplierReply,
   supplierReplyCtx, setSupplierReplyCtx,
   supplierReplyGmail, setSupplierReplyGmail,
@@ -119,9 +117,6 @@ export default function ChatDetailView({
             numberInput={numberInput} setNumberInput={setNumberInput}
             moveStage={moveStage}
             pendingSuggestion={pendingSuggestion} setPendingSuggestion={setPendingSuggestion}
-            showReceipt={showReceipt} setShowReceipt={setShowReceipt}
-            receiptPaymentMethod={receiptPaymentMethod} setReceiptPaymentMethod={setReceiptPaymentMethod}
-            buildReceiptText={undefined} saveReceiptNumber={undefined}
             outreachMode={outreachMode} setOutreachMode={setOutreachMode}
             outreachReason={outreachReason} setOutreachReason={setOutreachReason}
             outreachCustom={outreachCustom} setOutreachCustom={setOutreachCustom}

@@ -224,9 +224,6 @@ export default function App() {
   const [marketingDevices, setMarketingDevices] = useState([]);
 
 
-  // ── receipt ──
-  const [showReceipt, setShowReceipt] = useState(false);
-  const [receiptPaymentMethod, setReceiptPaymentMethod] = useState("Cash");
 
 
   // ── side drawer / sales history ──
@@ -1239,48 +1236,6 @@ ${cleanWhatsAppText(importText).slice(0, 12000)}`;
   }
 
 
-  // ── receipt ──
-  function buildReceiptText(paymentMethod) {
-    if (!activeDeal || !activeCustomer) return "";
-    const num = activeDeal.receipt_number || `LFL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    const payStatus = PAYMENT_STATUSES.find(p => p.id === activeDeal.payment_status)?.label || "Pending";
-    return `━━━━━━━━━━━━━━━━━━━━━━
-      LAPTOP FOR LESS
-      UAE | laptopforless.ae
-━━━━━━━━━━━━━━━━━━━━━━
-RECEIPT #: ${num}
-Date: ${date}
-
-SOLD TO:
-Name: ${activeCustomer.name}
-Contact: ${activeCustomer.number || "—"}
-
-DEVICE DETAILS:
-Brand & Model: ${[activeDeal.brand, activeDeal.model].filter(Boolean).join(" ") || "—"}
-${activeDeal.processor ? `Processor: ${activeDeal.processor}\n` : ""}RAM: ${activeDeal.ram || "—"}
-Storage: ${activeDeal.storage || activeDeal.ssd || "—"}
-Screen: ${activeDeal.screen || "—"}
-Condition: ${activeDeal.condition || "—"}
-${activeDeal.serial_number ? `Serial #: ${activeDeal.serial_number}\n` : ""}Charger Included: ${activeDeal.charger || "—"}
-Box Included: ${activeDeal.box || "—"}
-
-PAYMENT:
-Amount Paid: AED ${(activeDeal.value || 0).toLocaleString()}
-Payment Status: ${payStatus}
-Payment Method: ${paymentMethod}
-
-Thank you for your purchase! 🙏
-For any issues please contact us on WhatsApp.
-━━━━━━━━━━━━━━━━━━━━━━`;
-  }
-
-  async function saveReceiptNumber(num) {
-    if (activeDeal && !activeDeal.receipt_number) {
-      await supabase.from("deals").update({ receipt_number: num, receipt_date: new Date().toISOString(), payment_method: receiptPaymentMethod }).eq("id", activeDealId);
-      await loadCustomers();
-    }
-  }
 
   // ── broadcast ──
   function openBroadcast(item) {
@@ -1617,10 +1572,6 @@ For any issues please contact us on WhatsApp.
         setOutreachReason={setOutreachReason}
         outreachCustom={outreachCustom}
         setOutreachCustom={setOutreachCustom}
-        showReceipt={showReceipt}
-        setShowReceipt={setShowReceipt}
-        receiptPaymentMethod={receiptPaymentMethod}
-        setReceiptPaymentMethod={setReceiptPaymentMethod}
         showSupplierReply={showSupplierReply}
         setShowSupplierReply={setShowSupplierReply}
         supplierReplyCtx={supplierReplyCtx}
@@ -1938,53 +1889,6 @@ For any issues please contact us on WhatsApp.
           onComplete={() => { loadStock(); refreshCachedStock(); loadTodaySales(); loadCustomers(); setQuickSalePrefill(null); }}
         />
       )}
-
-      {/* ── RECEIPT MODAL ── */}
-      {showReceipt && activeDeal && activeCustomer && (() => {
-        const receiptText = buildReceiptText(receiptPaymentMethod);
-        const receiptNum = activeDeal.receipt_number || receiptText.match(/RECEIPT #: (LFL-\d+-\d+)/)?.[1] || "";
-        return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
-            <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>🧾 Receipt</span>
-                  <button onClick={() => setShowReceipt(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
-                </div>
-                {/* Payment method */}
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 6, letterSpacing: 0.5 }}>PAYMENT METHOD</div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {["Cash", "Bank Transfer"].map(m => (
-                      <button key={m} onClick={() => setReceiptPaymentMethod(m)}
-                        style={{ flex: 1, padding: "8px", borderRadius: 10, border: "none", background: receiptPaymentMethod === m ? "#6366F1" : "#F1F5F9", color: receiptPaymentMethod === m ? "#fff" : "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {/* Receipt preview */}
-                <div style={{ background: "#F8FAFC", borderRadius: 14, padding: 16, fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#0F172A", whiteSpace: "pre-line", marginBottom: 16, border: "1px solid #E2E8F0" }}>
-                  {receiptText}
-                </div>
-                {/* Actions */}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => { navigator.clipboard.writeText(receiptText); saveReceiptNumber(receiptNum); }}
-                    style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                    📋 Copy Receipt
-                  </button>
-                  {activeCustomer.number && (
-                    <button onClick={() => { saveReceiptNumber(receiptNum); window.open(`https://wa.me/${activeCustomer.number.replace(/\D/g,"")}?text=${encodeURIComponent(receiptText)}`, "_blank"); }}
-                      style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#25D366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                      📱 Send WhatsApp
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ── BROADCAST MODAL ── */}
       {showBroadcast && broadcastItem && (

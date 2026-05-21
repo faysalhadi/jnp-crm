@@ -15,9 +15,6 @@ export default function ChatHeader({
   numberInput, setNumberInput,
   moveStage,
   pendingSuggestion, setPendingSuggestion,
-  showReceipt, setShowReceipt,
-  receiptPaymentMethod, setReceiptPaymentMethod,
-  buildReceiptText, saveReceiptNumber,
   outreachMode, setOutreachMode,
   outreachReason, setOutreachReason,
   outreachCustom, setOutreachCustom,
@@ -245,10 +242,6 @@ export default function ChatHeader({
                   </button>
                 ))}
               </div>
-              <button onClick={() => { setReceiptPaymentMethod("Cash"); setShowReceipt(true); }}
-                style={{ width: "100%", padding: "8px", borderRadius: 10, border: "1.5px solid #6366F1", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                🧾 Generate Receipt
-              </button>
             </div>
           )}
 

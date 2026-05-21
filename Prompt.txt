@@ -1,171 +1,72 @@
-Read src/components/chat/ChatDetailView.js fully 
-before making any changes.
+Read src/components/chat/ChatDetailView.js and
+src/components/chat/ChatHeader.js fully before changes.
 
-This is architecture rewrite Step 11.
-We are splitting ChatDetailView into smaller files.
-Do NOT change any logic. Only split into separate files.
+CHANGE 1 — Remove receipt generator from client chat
 
-STEP 11A — Create src/components/chat/ChatHeader.js
+In ChatHeader.js find and remove:
+1. The Receipt button — looks like:
+   <button onClick={() => setShowReceipt(true)}
+   or similar. Remove the entire button.
 
-Extract the chat header section from ChatDetailView.
-It is the top section showing:
-- Back button
-- Customer name and tier badge
-- Phone number
-- Action buttons (edit name, edit number, delete, 📊)
-- Urgent toggle
-- Stage bar and deal card
+2. The Receipt modal/panel — looks like:
+   {showReceipt && (
+     <div ...>
+       ...receipt content...
+     </div>
+   )}
+   Remove the entire block.
 
-Create src/components/chat/ChatHeader.js:
+3. Remove these from ChatHeader props:
+   showReceipt, setShowReceipt,
+   receiptPaymentMethod, setReceiptPaymentMethod,
+   buildReceiptText,
+   saveReceiptNumber,
 
-  import React from "react";
-  import { useCustomers } from "../../context/CustomerContext";
-  import { useUI } from "../../context/UIContext";
-  import { useReservations } from "../../context/ReservationsContext";
-  import Badge from "../ui/Badge";
-  import StageBar from "../ui/StageBar";
-  import { STAGES, TIERS } from "../../constants";
-  import { daysSince } from "../../utils/helpers";
+In ChatDetailView.js remove these from props 
+destructuring and from the ChatHeader usage:
+   showReceipt, setShowReceipt,
+   receiptPaymentMethod, setReceiptPaymentMethod,
+   buildReceiptText,
+   saveReceiptNumber,
 
-  export default function ChatHeader({
-    editingName, setEditingName,
-    nameInput, setNameInput,
-    editingNumber, setEditingNumber,
-    numberInput, setNumberInput,
-    showAddDeal, setShowAddDeal,
-    showDeleteConfirm, setShowDeleteConfirm,
-    showLossReason, setShowLossReason,
-    showReceipt, setShowReceipt,
-    receiptPaymentMethod, setReceiptPaymentMethod,
-    moveStage,
-    updateCustomer,
-    updateDeal,
-    deleteCustomer,
-    buildReceiptText,
-    saveReceiptNumber,
-    loadCustomers,
-    newDeal, setNewDeal,
-    addDeal,
-    handleConfirmSale,
-    handleReserveDevice,
-  }) {
-    const { activeCustomer, activeDeal, activeDealId,
-      setActiveDealId, setView } = useCustomers();
-    const { setShowSideDrawer } = useUI();
+In App.js find where ChatDetailView is rendered.
+Remove these props:
+   showReceipt={showReceipt}
+   setShowReceipt={setShowReceipt}
+   receiptPaymentMethod={receiptPaymentMethod}
+   setReceiptPaymentMethod={setReceiptPaymentMethod}
+   buildReceiptText={buildReceiptText}
+   saveReceiptNumber={saveReceiptNumber}
 
-    // exact same JSX for the header section
-  }
+Also remove these state declarations from App.js
+if they are only used for the client chat receipt:
+   const [showReceipt, setShowReceipt] = useState(false);
+   const [receiptPaymentMethod, setReceiptPaymentMethod] = useState("Cash");
 
-STEP 11B — Create src/components/chat/MessageList.js
+CHANGE 2 — Make sure receipt still works in Sales History
 
-Extract the messages display section from ChatDetailView.
-It shows the list of messages — customer on left, 
-owner on right.
+The Sales History tab already has a 🧾 Receipt button
+on each sale card that opens the receipt modal.
+This should stay exactly as is — do not touch it.
 
-Create src/components/chat/MessageList.js:
+CHANGE 3 — Make sure receipt works after completing reservation
 
-  import React from "react";
-  import { useCustomers } from "../../context/CustomerContext";
-  import { timeAgo } from "../../utils/helpers";
+In src/components/stock/ReservedView.js find the
+Complete Sale button flow. After a sale is completed
+it should trigger the receipt.
 
-  export default function MessageList({
-    messages,
-    copied, setCopied,
-    editSent, setEditSent,
-    confirmSent,
-    markNotSent,
-    copyMsg,
-    bottomRef,
-    msgLoading,
-  }) {
-    const { activeCustomer } = useCustomers();
-
-    // exact same JSX for message bubbles list
-  }
-
-STEP 11C — Create src/components/chat/InputBar.js
-
-Extract the input bar section from ChatDetailView.
-It is the bottom section showing:
-- Reserve Device button
-- Confirm Sale link
-- TOP ROW: paste client message input
-- AI reply box (when generatedReply exists)
-- BOTTOM ROW: type your own message + 📱 send button
-- AI compose box
-
-Create src/components/chat/InputBar.js:
-
-  import React, { useState } from "react";
-  import { useCustomers } from "../../context/CustomerContext";
-  import { useReservations } from "../../context/ReservationsContext";
-  import { callClaude, buildSystemPromptFromCache } 
-    from "../../utils/claude";
-
-  export default function InputBar({
-    messages,
-    incomingText, setIncomingText,
-    replyMode, setReplyMode,
-    replyingToId, setReplyingToId,
-    directReplyText, setDirectReplyText,
-    generatedReply, setGeneratedReply,
-    generatedReplyLoading, setGeneratedReplyLoading,
-    editingGenerated, setEditingGenerated,
-    anthropicKey,
-    cachedStock,
-    addIncomingMessage,
-    generateAIReply,
-    sendAIReply,
-    sendDirectReply,
-    generateOpeningMessage,
-    handleConfirmSale,
-    handleReserveDevice,
-  }) {
-    const { activeCustomer, activeDeal } = useCustomers();
-    const [aiComposeContext, setAiComposeContext] = useState("");
-
-    // exact same JSX for the input bar
-  }
-
-STEP 11D — Update ChatDetailView.js to use sub-components
-
-In ChatDetailView.js replace the extracted sections with:
-
-  import ChatHeader from "./ChatHeader";
-  import MessageList from "./MessageList";
-  import InputBar from "./InputBar";
-
-Replace each section in the return with the component.
-Pass required props to each.
-
-ChatDetailView should now only contain:
-- Import statements
-- Props destructuring
-- State that is shared between sub-components
-- The main return with ChatHeader, MessageList, InputBar
-- Modals (LinkStockModal, ReservationModal, ComplaintModal)
-
-IMPORTANT RULES:
-- Every new file must have import React from "react" at top
-- Do not change any logic
-- Each sub-component gets shared state from context hooks
-- Only pass props that cannot come from context
-- Make sure AI reply still works after extraction
-- Make sure Reserve and Confirm Sale still work
+Find where setSaleReceiptData and setShowSaleReceipt
+are called after completing a reservation.
+Make sure these calls still exist and work correctly.
 
 After changes:
 1. Run npm run build
-2. Fix ALL errors one by one
-3. Only when build is clean:
-   git add -A && git commit -m "architecture step 11: split ChatDetailView" 
+2. Fix any errors
+3. git add -A && git commit -m "feat: remove receipt from client chat, keep in sales history" 
    && git push origin main --force
-4. Wait 2 minutes
-5. Open https://jnp-crm.vercel.app
-6. Test client chat thoroughly:
-   - Messages load correctly?
-   - Can send a message?
-   - AI reply works?
-   - Reserve button works?
-   - Confirm Sale works?
-   - Receipt generates?
-7. Tell me new ChatDetailView.js line count
+4. Test:
+   - Open a client chat with closed deal
+   - Is receipt button gone?
+   - Go to Sales History — does receipt button still work?
+   - Complete a reservation — does receipt appear?
+5. Tell me new ChatDetailView.js line count
