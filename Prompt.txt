@@ -2,102 +2,186 @@ Read src/SourcingModule.js fully before making any changes.
 
 This is architecture rewrite Step 9.
 We are splitting SourcingModule.js into smaller files.
-Do NOT change any logic. Only split into separate files.
+Do NOT change any logic. Only move code into new files.
 
-First run this to see the structure:
-grep -n "^function \|^const.*=.*(" src/SourcingModule.js | head -30
+STEP 9A — Create src/components/sourcing/SourcingHelpers.js
 
-STEP 9A — Identify the main sections in SourcingModule.js
+Create this file with all shared helpers and small components:
 
-SourcingModule.js likely has these sections:
-1. State declarations and data loading
-2. Deal list view
-3. Deal detail view  
-4. Landed cost calculator
-5. Message/timeline section
-6. Reply generator
-
-STEP 9B — Create src/components/sourcing/SourcingDealList.js
-
-Extract the deal list view section into its own component.
-This is the part that shows all deals grouped by stage.
-
-Create src/components/sourcing/SourcingDealList.js:
   import React from "react";
+
+  export const DEFAULT_RATE = 3.67;
+  export const DUTY_PCT = 0.05;
+
+  export const STAGES = [
+    // exact same STAGES array from SourcingModule.js
+  ];
+  export const STAGE_MAP = Object.fromEntries(
+    STAGES.map(s => [s.id, s])
+  );
+  export const MILESTONES = {
+    // exact same MILESTONES object from SourcingModule.js
+  };
+
+  export const fmtUSD = n => n 
+    ? "$" + Number(n).toLocaleString("en-US", 
+        { maximumFractionDigits: 0 }) 
+    : "—";
+  export const fmtAED = n => (n || n === 0) 
+    ? "AED " + Number(n).toLocaleString("en-US", 
+        { maximumFractionDigits: 0 }) 
+    : "—";
+
+  export function hoursUntil(ts) {
+    // exact same code
+  }
+  export function timeAgo(ts) {
+    // exact same code
+  }
+  export function fmtTime(ts) {
+    // exact same code
+  }
+  export function calcLanded(d, rate) {
+    // exact same code
+  }
+  export function calcProfit(d, rate) {
+    // exact same code
+  }
+  export async function callClaude(apiKey, prompt, system) {
+    // exact same code
+  }
+  export function StageBadge({ status }) {
+    // exact same code
+  }
+  export function MilestoneBadge({ milestone }) {
+    // exact same code
+  }
+  export function Row({ label, value, bold, color }) {
+    // exact same code
+  }
+
+STEP 9B — Create src/components/sourcing/DealDetail.js
+
+Extract the DealDetail function (lines 121-958) 
+into its own file:
+
+  import React, { useState, useEffect, useRef } from "react";
   import { supabase } from "../../supabase";
+  import { 
+    STAGES, STAGE_MAP, MILESTONES, DEFAULT_RATE, DUTY_PCT,
+    fmtUSD, fmtAED, hoursUntil, timeAgo, fmtTime,
+    calcLanded, calcProfit, callClaude,
+    StageBadge, MilestoneBadge, Row
+  } from "./SourcingHelpers";
+  import SourcingCalculator from "./SourcingCalculator";
+  import SourcingMessages from "./SourcingMessages";
 
-  export default function SourcingDealList({
-    deals, suppliers, selectedDeal, setSelectedDeal,
-    showAddDeal, setShowAddDeal, dealForm, setDealForm,
-    saveDeal, deleteDeal, loadDeals,
-    SOURCING_STAGES, SOURCING_STAGE_COLORS,
+  export default function DealDetail({ 
+    deal: initialDeal, suppliers, rate, 
+    anthropicKey, onBack, onUpdate 
   }) {
-    // exact same JSX for the deal list
+    // exact same code from lines 121-958
   }
 
-STEP 9C — Create src/components/sourcing/SourcingCalculator.js
+STEP 9C — Create src/components/sourcing/SupplierComponents.js
 
-Extract the landed cost calculator into its own component.
+Extract these smaller components into one file:
+  - DealCard (lines 959-1035)
+  - NewDealModal (lines 1036-1153)
+  - GmailSheet (lines 1154-1219)
+  - SectionToggle (lines 1220-1263)
+  - SupplierDetail (lines 1264-1408)
+  - SuppliersList (lines 1409-1508)
+  - AddSupplierModal (lines 1509-end)
 
-Create src/components/sourcing/SourcingCalculator.js:
-  import React, { useState } from "react";
-
-  export default function SourcingCalculator({ deal }) {
-    // exact same calculator JSX and logic
-  }
-
-STEP 9D — Create src/components/sourcing/SourcingMessages.js
-
-Extract the message timeline section into its own component.
-
-Create src/components/sourcing/SourcingMessages.js:
-  import React, { useState } from "react";
+  import React, { useState, useEffect } from "react";
   import { supabase } from "../../supabase";
-  import { callClaude } from "../../utils/claude";
+  import {
+    STAGES, STAGE_MAP, DEFAULT_RATE, DUTY_PCT,
+    fmtUSD, fmtAED, timeAgo, calcLanded, calcProfit,
+    callClaude, StageBadge, Row
+  } from "./SourcingHelpers";
 
-  export default function SourcingMessages({
-    deal, supplier, anthropicKey,
-    messages, setMessages, loadMessages,
-    showReplyGen, setShowReplyGen,
-    replyGmail, setReplyGmail,
-    replyWA, setReplyWA,
-    replyLoading, setReplyLoading,
-  }) {
-    // exact same messages/timeline JSX and logic
+  export function DealCard({ deal: d, rate, onClick }) {
+    // exact same code
+  }
+  export function NewDealModal({ suppliers, rate, onClose, onCreate }) {
+    // exact same code
+  }
+  export function GmailSheet({ anthropicKey, onClose, onCreateDeal }) {
+    // exact same code
+  }
+  export function SectionToggle({ section, setSection, deals, suppliers }) {
+    // exact same code
+  }
+  export function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, onUpdate }) {
+    // exact same code
+  }
+  export function SuppliersList({ suppliers, deals, rate, onSelect, onAdd }) {
+    // exact same code
+  }
+  export function AddSupplierModal({ onClose, onCreate }) {
+    // exact same code
   }
 
-STEP 9E — Update SourcingModule.js to use sub-components
+STEP 9D — Update SourcingModule.js to use new files
 
-In SourcingModule.js replace the extracted sections
-with the new components:
+In SourcingModule.js:
 
-  import SourcingDealList from "./components/sourcing/SourcingDealList";
-  import SourcingCalculator from "./components/sourcing/SourcingCalculator";
-  import SourcingMessages from "./components/sourcing/SourcingMessages";
+1. Add these imports:
+   import DealDetail from "./components/sourcing/DealDetail";
+   import {
+     DealCard, NewDealModal, GmailSheet, SectionToggle,
+     SupplierDetail, SuppliersList, AddSupplierModal
+   } from "./components/sourcing/SupplierComponents";
+   import {
+     STAGES, STAGE_MAP, MILESTONES, DEFAULT_RATE, DUTY_PCT,
+     fmtUSD, fmtAED, hoursUntil, timeAgo, fmtTime,
+     calcLanded, calcProfit, callClaude,
+     StageBadge, MilestoneBadge, Row
+   } from "./components/sourcing/SourcingHelpers";
 
-Replace each section in the JSX with the component.
+2. DELETE all extracted code from SourcingModule.js:
+   - STAGES, STAGE_MAP, MILESTONES constants
+   - DEFAULT_RATE, DUTY_PCT constants
+   - fmtUSD, fmtAED, hoursUntil, timeAgo, fmtTime functions
+   - calcLanded, calcProfit, callClaude functions
+   - StageBadge, MilestoneBadge, Row components
+   - DealDetail function (entire 837 lines)
+   - DealCard function
+   - NewDealModal function
+   - GmailSheet function
+   - SectionToggle function
+   - SupplierDetail function
+   - SuppliersList function
+   - AddSupplierModal function
+
+3. SourcingModule.js should now only contain:
+   - The main SourcingModule export function
+   - State declarations
+   - Data loading functions
+   - Main return JSX using the imported components
 
 IMPORTANT RULES:
 - Every new file must have import React from "react" at top
 - Do not change any logic
-- Pass all required state as props
-- Test Gmail sync still works
-- Test WhatsApp paste still works
-- Test calculator still works
-- Test stage changes still work
+- Make sure all imports are correct in each file
+- SourcingCalculator.js and SourcingMessages.js 
+  already exist — do not recreate them
+- SourcingDealList.js already exists — do not recreate it
 
 After changes:
 1. Run npm run build
 2. Fix ALL errors one by one
 3. Only when build is clean:
-   git add -A && git commit -m "architecture step 9: split SourcingModule" 
+   git add -A && git commit -m "architecture step 9: split SourcingModule components" 
    && git push origin main --force
 4. Wait 2 minutes
 5. Open https://jnp-crm.vercel.app
-6. Test Sourcing tab thoroughly:
-   - Does deal list show?
+6. Test Sourcing tab:
+   - Does supplier list show?
    - Does deal detail open?
-   - Does calculator work?
    - Does stage change work?
    - Does WhatsApp paste work?
+   - Does Gmail sync work?
 7. Tell me new SourcingModule.js line count
