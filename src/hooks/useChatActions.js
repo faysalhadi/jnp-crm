@@ -291,11 +291,17 @@ Write TWO versions. Return JSON only:
     setSupplierReplyLoading(false);
   }
 
+  async function deleteMessage(msgId) {
+    await supabase.from("messages").delete().eq("id", msgId);
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+  }
+
   return {
     handleReserveDevice, handleConfirmSale, moveStage,
     addIncomingMessage, generateAIReply, sendAIReply,
     sendDirectReply, generateOpeningMessage,
     confirmSent, markNotSent, copyMsg,
     generateOutreach, generateSupplierReply,
+    deleteMessage,
   };
 }

@@ -22,25 +22,22 @@ export default function InputBar() {
   const { cachedStock } = useStock();
   const {
     addIncomingMessage,
-    generateAIReply,
     sendAIReply,
     sendDirectReply,
-    handleConfirmSale,
-    handleReserveDevice,
   } = useChatActions();
   const [aiComposeContext, setAiComposeContext] = useState("");
 
   return (
-    <div style={{ padding: "10px 12px 20px", background: "#fff", borderTop: "1px solid #F1F5F9", position: "sticky", bottom: 0 }}>
+    <div style={{ padding: "10px 14px 20px", background: "#fff", borderTop: "1px solid #F1F5F9", position: "sticky", bottom: 0 }}>
 
-      {/* AI compose box — shown when user taps 🤖 AI button */}
+      {/* AI COMPOSE BOX */}
       {replyMode === "ai_compose" && (
-        <div style={{ marginBottom: 12, background: "#EEF2FF", borderRadius: 14, padding: 12, border: "1px solid #C7D2FE" }}>
+        <div style={{ marginBottom: 10, background: "#EEF2FF", borderRadius: 14, padding: 12, border: "1px solid #C7D2FE" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: 0.5, marginBottom: 6 }}>🤖 AI COMPOSE</div>
           <textarea
             value={aiComposeContext}
             onChange={e => setAiComposeContext(e.target.value)}
-            placeholder="What do you want to say? e.g. 'Follow up on MacBook, offer 10% discount'"
+            placeholder='e.g. "Follow up on MacBook, offer 10% discount"'
             rows={2}
             style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #C7D2FE", fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box", background: "#fff", marginBottom: 8 }}
           />
@@ -77,8 +74,7 @@ export default function InputBar() {
               style={{ flex: 1, padding: "8px", borderRadius: 10, border: "none", background: generatedReplyLoading ? "#E2E8F0" : "#6366F1", color: generatedReplyLoading ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
               {generatedReplyLoading ? "⏳ Generating..." : "⚡ Generate"}
             </button>
-            <button
-              onClick={() => { setReplyMode(null); setAiComposeContext(""); setGeneratedReply(""); }}
+            <button onClick={() => { setReplyMode(null); setAiComposeContext(""); setGeneratedReply(""); }}
               style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
               ✕
             </button>
@@ -86,17 +82,15 @@ export default function InputBar() {
         </div>
       )}
 
-      {/* AI generated reply box — shown above inputs when ready */}
+      {/* AI GENERATED REPLY BOX */}
       {generatedReply && !generatedReplyLoading && (
-        <div style={{ marginBottom: 12, background: "#EEF2FF", borderRadius: 14, padding: 12, border: "1px solid #C7D2FE" }}>
+        <div style={{ marginBottom: 10, background: "#EEF2FF", borderRadius: 14, padding: 12, border: "1px solid #C7D2FE" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: 0.5, marginBottom: 6 }}>🤖 SUGGESTED REPLY</div>
           {editingGenerated ? (
             <textarea value={generatedReply} onChange={e => setGeneratedReply(e.target.value)} rows={3} autoFocus
               style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #6366F1", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box", background: "#fff" }} />
           ) : (
-            <div style={{ fontSize: 13, color: "#1E1B4B", lineHeight: 1.65, whiteSpace: "pre-line" }}>
-              {generatedReply}
-            </div>
+            <div style={{ fontSize: 13, color: "#1E1B4B", lineHeight: 1.65, whiteSpace: "pre-line" }}>{generatedReply}</div>
           )}
           <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
             <button onClick={async () => {
@@ -116,57 +110,19 @@ export default function InputBar() {
             </button>
             <button onClick={() => { setGeneratedReply(""); setReplyingToId(null); setEditingGenerated(false); }}
               style={{ padding: "9px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-              ❌ Skip
+              ❌
             </button>
           </div>
         </div>
       )}
 
-      {/* ── PRIMARY ACTION BAR ── */}
-      <div style={{ marginBottom: 8 }}>
-        <button
-          onClick={handleReserveDevice}
-          style={{
-            width: "100%",
-            padding: "12px 16px",
-            borderRadius: 12,
-            border: "none",
-            background: "linear-gradient(135deg, #F59E0B, #D97706)",
-            color: "#fff",
-            fontSize: 14,
-            fontWeight: 800,
-            cursor: "pointer",
-            marginBottom: 6,
-          }}
-        >
-          🔒 Reserve Device
-        </button>
-        <div style={{ textAlign: "center" }}>
-          <button
-            onClick={handleConfirmSale}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#6366F1",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-              textDecoration: "underline",
-              padding: "2px 8px",
-            }}
-          >
-            ⚡ Confirm Sale instead →
-          </button>
-        </div>
-      </div>
-
-      {/* TOP ROW — paste client's incoming message */}
+      {/* INCOMING MESSAGE ROW */}
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8 }}>
         <textarea
           value={incomingText}
           onChange={e => setIncomingText(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addIncomingMessage(); } }}
-          placeholder="New message from client..."
+          placeholder="Paste client message..."
           rows={1}
           style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5, background: "#F8FAFC" }}
         />
@@ -176,15 +132,11 @@ export default function InputBar() {
         </button>
       </div>
 
-      {/* BOTTOM ROW — type your own outgoing message (always usable) */}
+      {/* OUTGOING REPLY ROW */}
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
         <button
-          onClick={() => {
-            setReplyMode(replyMode === "ai_compose" ? null : "ai_compose");
-            setGeneratedReply("");
-            setEditingGenerated(true);
-          }}
-          style={{ width: 40, height: 52, borderRadius: 12, border: "none", background: replyMode === "ai_compose" ? "#6366F1" : "#EEF2FF", color: replyMode === "ai_compose" ? "#fff" : "#6366F1", fontWeight: 800, fontSize: 11, cursor: "pointer", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
+          onClick={() => { setReplyMode(replyMode === "ai_compose" ? null : "ai_compose"); setGeneratedReply(""); setEditingGenerated(false); }}
+          style={{ width: 40, height: 46, borderRadius: 10, border: "none", background: replyMode === "ai_compose" ? "#6366F1" : "#EEF2FF", color: replyMode === "ai_compose" ? "#fff" : "#6366F1", cursor: "pointer", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
           <span style={{ fontSize: 16 }}>🤖</span>
           <span style={{ fontSize: 8, fontWeight: 700 }}>AI</span>
         </button>
@@ -193,17 +145,11 @@ export default function InputBar() {
           value={directReplyText}
           onChange={e => setDirectReplyText(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDirectReply(); } }}
-          placeholder="Type your message..."
+          placeholder="Type your reply..."
           rows={2}
-          style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13.5, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
+          style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5 }}
         />
-        {!activeCustomer?.number && (
-          <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
-            style={{ width: 46, height: 52, borderRadius: 12, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 20, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
-            ↑
-          </button>
-        )}
-        {activeCustomer?.number && (
+        {activeCustomer?.number ? (
           <button
             onClick={async () => {
               const text = directReplyText.trim();
@@ -213,9 +159,14 @@ export default function InputBar() {
               window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank");
             }}
             disabled={!directReplyText.trim()}
-            style={{ height: 52, padding: "0 14px", borderRadius: 12, border: "none", background: directReplyText.trim() ? "#25D366" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 13, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
-            <span style={{ fontSize: 16 }}>📱</span>
-            <span style={{ fontSize: 9, fontWeight: 700 }}>Send</span>
+            style={{ width: 46, height: 46, borderRadius: 10, border: "none", background: directReplyText.trim() ? "#25D366" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
+            <span style={{ fontSize: 18 }}>📱</span>
+            <span style={{ fontSize: 8, fontWeight: 700 }}>Send</span>
+          </button>
+        ) : (
+          <button onClick={sendDirectReply} disabled={!directReplyText.trim()}
+            style={{ width: 46, height: 46, borderRadius: 10, border: "none", background: directReplyText.trim() ? "#6366F1" : "#E2E8F0", color: directReplyText.trim() ? "#fff" : "#94A3B8", fontWeight: 800, fontSize: 20, cursor: directReplyText.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
+            ↑
           </button>
         )}
       </div>

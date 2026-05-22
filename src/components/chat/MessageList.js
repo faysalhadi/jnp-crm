@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { timeAgo } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
 import { useChat } from "../../context/ChatContext";
@@ -13,8 +13,6 @@ export default function MessageList() {
     generatedReply, setGeneratedReply,
     generatedReplyLoading,
     editingGenerated, setEditingGenerated,
-    copied, setCopied,
-    editSent, setEditSent,
     showSupplierReply, setShowSupplierReply,
     supplierReplyCtx, setSupplierReplyCtx,
     supplierReplyGmail, setSupplierReplyGmail,
@@ -22,24 +20,42 @@ export default function MessageList() {
     supplierReplyLoading, setSupplierReplyLoading,
     copiedSupGmail, setCopiedSupGmail,
     copiedSupWA, setCopiedSupWA,
+    editSent, setEditSent,
   } = useChat();
   const {
     confirmSent,
-    markNotSent,
-    copyMsg,
     generateAIReply,
     sendAIReply,
     generateOpeningMessage,
     generateSupplierReply,
+    deleteMessage,
   } = useChatActions();
+
   const bottomRef = useRef(null);
+  const [longPressId, setLongPressId] = useState(null);
+  const longPressTimer = useRef(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+  useEffect(() => {
+    const handler = () => setLongPressId(null);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, []);
+
+  const handleLongPressStart = (msgId) => {
+    longPressTimer.current = setTimeout(() => setLongPressId(msgId), 500);
+  };
+  const handleLongPressEnd = () => clearTimeout(longPressTimer.current);
+
+  const handleDeleteMessage = async (msgId) => {
+    setLongPressId(null);
+    if (deleteMessage) await deleteMessage(msgId);
+  };
+
   return (
     <>
-      {/* ── MESSAGES ── */}
-      <div style={{ flex: 1, padding: "12px", display: "flex", flexDirection: "column", gap: 10, paddingBottom: 4 }}>
+      <div style={{ flex: 1, padding: "14px 14px 8px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
 
         {/* Empty state */}
         {messages.length === 0 && (
@@ -47,7 +63,7 @@ export default function MessageList() {
             <div style={{ fontSize: 40, marginBottom: 10 }}>💬</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8", marginBottom: 20 }}>No messages yet</div>
             <div style={{ display: "flex", gap: 10, width: "100%" }}>
-              <button onClick={() => { setReplyMode("myself"); }}
+              <button onClick={() => setReplyMode("myself")}
                 style={{ flex: 1, padding: "11px 8px", borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                 ✏️ I'll start typing
               </button>
@@ -59,54 +75,69 @@ export default function MessageList() {
           </div>
         )}
 
-        {/* Imported from WhatsApp banner */}
-        {messages.length > 0 && messages[0]?.ts && (Date.now() - new Date(messages[0].ts).getTime()) > 3600000 && (
-          <div style={{ textAlign: "center", padding: "5px 12px", borderRadius: 8, background: "#F1F5F9", fontSize: 11, color: "#94A3B8", fontWeight: 500 }}>
-            📱 Imported from WhatsApp
-          </div>
-        )}
-
-        {/* Message list with inline reply buttons */}
+        {/* Message list */}
         {(() => {
           const lastAssistantTs = messages
             .filter(m => m.role === "assistant" && m.sent && m.sent !== "NOT_SENT")
             .map(m => new Date(m.ts).getTime()).sort().pop() || 0;
-          const unansweredIds = new Set(
-            messages
-              .filter(m => m.role === "customer" && new Date(m.ts).getTime() > lastAssistantTs)
-              .map(m => m.id)
+
+          const unansweredCustomerMsgs = messages.filter(
+            m => m.role === "customer" && new Date(m.ts).getTime() > lastAssistantTs
           );
+          const lastUnansweredId = unansweredCustomerMsgs.length > 0
+            ? unansweredCustomerMsgs[unansweredCustomerMsgs.length - 1].id
+            : null;
 
           return messages.map(msg => {
             const isCustomer = msg.role === "customer";
-            const isSent     = msg.sent && msg.sent !== "NOT_SENT";
-            const isNotSent  = msg.sent === "NOT_SENT";
-            const display    = isSent && msg.sent !== msg.content ? msg.sent : msg.content;
-            const showReplyBtns = isCustomer && unansweredIds.has(msg.id) && replyingToId !== msg.id;
+            const isSent = msg.sent && msg.sent !== "NOT_SENT";
+            const isNotSent = msg.sent === "NOT_SENT";
+            const display = isSent && msg.sent !== msg.content ? msg.sent : msg.content;
+            const showReplyBtns = isCustomer && msg.id === lastUnansweredId && replyingToId !== msg.id;
+            const isLongPressed = longPressId === msg.id;
 
             return (
               <div key={msg.id}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: isCustomer ? "flex-start" : "flex-end", gap: 4 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: isCustomer ? "flex-start" : "flex-end", gap: 3 }}>
                   <div style={{ fontSize: 10, color: "#CBD5E1" }}>
-                    {isCustomer ? (msg.is_voice ? "🎤 Voice Note" : `👤 ${activeCustomer.name}`) : "You"} · {timeAgo(msg.ts)}
+                    {isCustomer ? `👤 ${activeCustomer.name}` : "You"} · {timeAgo(msg.ts)}
                   </div>
-                  <div style={{
-                    maxWidth: "84%", padding: "10px 13px", fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-line",
-                    borderRadius: isCustomer ? "4px 16px 16px 16px" : "16px 4px 16px 16px",
-                    background: isCustomer ? "#F1F5F9" : "#6366F1",
-                    color:      isCustomer ? "#334155"  : "#fff",
-                    border:     isCustomer ? "1px solid #E2E8F0" : "none",
-                    opacity: isNotSent ? 0.45 : 1,
-                  }}>
+                  <div
+                    onMouseDown={() => handleLongPressStart(msg.id)}
+                    onMouseUp={handleLongPressEnd}
+                    onMouseLeave={handleLongPressEnd}
+                    onTouchStart={() => handleLongPressStart(msg.id)}
+                    onTouchEnd={handleLongPressEnd}
+                    style={{
+                      maxWidth: "84%", padding: "10px 13px", fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-line",
+                      borderRadius: isCustomer ? "4px 16px 16px 16px" : "16px 4px 16px 16px",
+                      background: isCustomer ? "#F1F5F9" : "#6366F1",
+                      color: isCustomer ? "#334155" : "#fff",
+                      border: isCustomer ? "1px solid #E2E8F0" : "none",
+                      opacity: isNotSent ? 0.45 : 1,
+                      cursor: "pointer",
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                    }}>
                     {display}
                   </div>
-                  {isSent  && !isCustomer && <div style={{ fontSize: 10, color: "#10B981", fontWeight: 600 }}>✓ Sent · {timeAgo(msg.ts)}</div>}
+
+                  {/* long press delete */}
+                  {isLongPressed && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteMessage(msg.id); }}
+                      style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 2 }}>
+                      🗑 Delete message
+                    </button>
+                  )}
+
+                  {isSent && !isCustomer && <div style={{ fontSize: 10, color: "#10B981", fontWeight: 600 }}>✓ Sent</div>}
                   {isNotSent && !isCustomer && <div style={{ fontSize: 10, color: "#94A3B8" }}>Not sent</div>}
                 </div>
 
-                {/* Inline reply buttons — shown on each unanswered client message */}
+                {/* Reply buttons — ONLY on last unanswered message */}
                 {showReplyBtns && (
-                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                  <div style={{ display: "flex", gap: 6, marginTop: 7 }}>
                     <button onClick={() => { setReplyingToId(msg.id); setReplyMode("myself"); }}
                       style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                       ✏️ Reply Myself
@@ -137,7 +168,7 @@ export default function MessageList() {
         <div ref={bottomRef} />
       </div>
 
-      {/* ── SUPPLIER REPLY GENERATOR MODAL ── */}
+      {/* SUPPLIER REPLY MODAL */}
       {showSupplierReply && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
           <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -149,12 +180,10 @@ export default function MessageList() {
                 </div>
                 <button onClick={() => setShowSupplierReply(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
               </div>
-
               <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>WHAT DO YOU WANT TO SAY?</div>
               <textarea value={supplierReplyCtx} onChange={e => setSupplierReplyCtx(e.target.value)} rows={3}
                 placeholder='e.g. "Accept their lot offer, ask for invoice and shipping quote"'
                 style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", marginBottom: 14 }} />
-
               <button onClick={generateSupplierReply} disabled={supplierReplyLoading} style={{
                 width: "100%", padding: 13, borderRadius: 12, border: "none", marginBottom: 18,
                 background: supplierReplyLoading ? "#E2E8F0" : "#2563EB",
@@ -163,28 +192,22 @@ export default function MessageList() {
               }}>
                 {supplierReplyLoading ? "⏳ Generating…" : "⚡ Generate Gmail + WhatsApp"}
               </button>
-
               {supplierReplyGmail && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#DC2626", marginBottom: 8 }}>📧 GMAIL — FORMAL</div>
-                  <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: 8 }}>
-                    {supplierReplyGmail}
-                  </div>
+                  <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: 8 }}>{supplierReplyGmail}</div>
                   <button onClick={() => { navigator.clipboard.writeText(supplierReplyGmail); setCopiedSupGmail(true); setTimeout(() => setCopiedSupGmail(false), 2000); }}
-                    style={{ padding: "6px 16px", borderRadius: 20, border: "none", background: copiedSupGmail ? "#ECFDF5" : "#F1F5F9", color: copiedSupGmail ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
+                    style={{ padding: "6px 16px", borderRadius: 20, border: "none", background: copiedSupGmail ? "#ECFDF5" : "#F1F5F9", color: copiedSupGmail ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                     {copiedSupGmail ? "✓ Copied!" : "📋 Copy Gmail"}
                   </button>
                 </div>
               )}
-
               {supplierReplyWA && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#16A34A", marginBottom: 8 }}>💬 WHATSAPP — SHORT</div>
-                  <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: 8 }}>
-                    {supplierReplyWA}
-                  </div>
+                  <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: 8 }}>{supplierReplyWA}</div>
                   <button onClick={() => { navigator.clipboard.writeText(supplierReplyWA); setCopiedSupWA(true); setTimeout(() => setCopiedSupWA(false), 2000); }}
-                    style={{ padding: "6px 16px", borderRadius: 20, border: "none", background: copiedSupWA ? "#ECFDF5" : "#F1F5F9", color: copiedSupWA ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
+                    style={{ padding: "6px 16px", borderRadius: 20, border: "none", background: copiedSupWA ? "#ECFDF5" : "#F1F5F9", color: copiedSupWA ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                     {copiedSupWA ? "✓ Copied!" : "📋 Copy WhatsApp"}
                   </button>
                 </div>
@@ -194,7 +217,7 @@ export default function MessageList() {
         </div>
       )}
 
-      {/* edit sent overlay */}
+      {/* EDIT SENT OVERLAY */}
       {editSent && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-end", zIndex: 50 }}>
           <div style={{ background: "#fff", borderRadius: "24px 24px 0 0", padding: "20px 20px 32px", width: "100%", maxWidth: 480, margin: "0 auto" }}>
