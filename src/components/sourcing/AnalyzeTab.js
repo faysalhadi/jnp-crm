@@ -61,6 +61,9 @@ export default function AnalyzeTab({ anthropicKey }) {
 
   const [sellPrices, setSellPrices] = useState({});
   const [profits, setProfits] = useState({});
+  const [hasPriceCol, setHasPriceCol] = useState(false);
+  const [groupAskPrices, setGroupAskPrices] = useState({});
+  const [groupCurrencies, setGroupCurrencies] = useState({});
 
   const fileInputRef = useRef();
 
@@ -76,6 +79,9 @@ export default function AnalyzeTab({ anthropicKey }) {
     setClaudeResults([]);
     setSellPrices({});
     setProfits({});
+    setGroupAskPrices({});
+    setGroupCurrencies({});
+    setHasPriceCol(false);
     setError(null);
 
     setProcessing(true);
@@ -90,6 +96,7 @@ export default function AnalyzeTab({ anthropicKey }) {
         throw new Error("Could not detect columns. Check the file has Brand/Model columns.");
       }
 
+      setHasPriceCol(!!detected.price);
       setColMap(detected);
       const { viable: v, filtered: filt } = filterUnits(rows, detected);
       const grouped = groupUnits(v, detected);
@@ -164,7 +171,11 @@ export default function AnalyzeTab({ anthropicKey }) {
     const group = groups.find(g => g.key === groupKey);
     if (!group) return;
 
-    const profit = calcGroupProfit(group, price, parseFloat(shipping), parseFloat(duty), colMap);
+    const profit = calcGroupProfit(
+      group, price, parseFloat(shipping), parseFloat(duty), colMap,
+      hasPriceCol ? null : groupAskPrices[groupKey],
+      hasPriceCol ? null : (groupCurrencies[groupKey] || currency)
+    );
     setProfits(p => ({ ...p, [groupKey]: profit }));
 
     if (price && parseFloat(price) > 0) {
@@ -313,6 +324,12 @@ export default function AnalyzeTab({ anthropicKey }) {
                     {group.grades.C.length > 0 && <span>Grade C: {group.grades.C.length}</span>}
                   </div>
 
+                  {group.isNiche && (
+                    <div style={{ fontSize: 10, color: "#D97706", background: "#FFFBEB", border: "1px solid #FDE68A", padding: "2px 8px", borderRadius: 20, marginTop: 4, display: "inline-block" }}>
+                      ⚠️ {group.nicheReason}
+                    </div>
+                  )}
+
                   {(group.ramUpgrades > 0 || group.storageUpgrades > 0) && (
                     <div style={{ marginTop: 6, fontSize: 11, color: PURPLE, background: PURPLE_LIGHT, padding: "3px 8px", borderRadius: 6, display: "inline-block" }}>
                       {group.ramUpgrades > 0 && `${group.ramUpgrades}× extra RAM`}
@@ -330,14 +347,41 @@ export default function AnalyzeTab({ anthropicKey }) {
                     </div>
                   )}
 
+                  {!hasPriceCol && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>Ask price per unit (from supplier quote)</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <select
+                          value={groupCurrencies[group.key] || "USD"}
+                          onChange={e => setGroupCurrencies(g => ({ ...g, [group.key]: e.target.value }))}
+                          style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none" }}>
+                          <option>USD</option>
+                          <option>GBP</option>
+                          <option>AED</option>
+                        </select>
+                        <input
+                          type="number"
+                          placeholder="e.g. 120"
+                          value={groupAskPrices[group.key] || ""}
+                          onChange={e => setGroupAskPrices(g => ({ ...g, [group.key]: e.target.value }))}
+                          style={{ flex: 1, padding: "5px 8px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none" }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748B", marginBottom: 3 }}>
                     <span>Landed cost / unit (avg)</span>
                     <span style={{ fontWeight: 600, color: "#0F172A" }}>
                       AED {Math.round(
                         group.units.reduce((sum, u) => {
-                          const price = parseFloat(u.row[colMap.price] || 0);
-                          const curr = String(u.row[colMap.currency] || currency).trim();
-                          return sum + calcLandedCost(price, curr, 1, parseFloat(shipping) / group.units.length, parseFloat(duty));
+                          const unitPrice = hasPriceCol
+                            ? parseFloat(u.row[colMap.price] || 0)
+                            : parseFloat(groupAskPrices[group.key] || 0);
+                          const curr = hasPriceCol
+                            ? String(u.row[colMap.currency] || currency).trim()
+                            : (groupCurrencies[group.key] || currency);
+                          return sum + calcLandedCost(unitPrice, curr, 1, parseFloat(shipping) / group.units.length, parseFloat(duty));
                         }, 0) / group.units.length
                       ).toLocaleString()}
                     </span>

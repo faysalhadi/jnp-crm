@@ -9,6 +9,19 @@ export const SKIP_BRANDS = [
 
 export const ALLOWED_BRANDS = ["dell", "hp", "lenovo", "apple"];
 
+export const NICHE_REASONS = {
+  "rugged":    "Rugged laptop — limited UAE demand",
+  "tablet":    "Tablet form factor — niche market",
+  "g7":        "Gaming laptop — niche buyer",
+  "precision": "Workstation — verify demand",
+  "zbook":     "Workstation — verify demand",
+  "yoga":      "Convertible — lower demand in UAE",
+  "ideapad":   "Consumer model — lower resale value",
+  "inspiron":  "Consumer model — lower resale value",
+  "pavilion":  "Consumer model — lower resale value",
+  "envy":      "Consumer model — lower resale value",
+};
+
 export const USD_TO_AED = 3.67;
 export const GBP_TO_AED = 4.65;
 
@@ -104,7 +117,7 @@ export function detectColumns(headers) {
     grade:        find("grade", "grading"),
     gradingNotes: find("grading notes", "notes", "comments"),
     memory:       find("memory", "ram", "mem"),
-    storage:      find("disk", "storage", "ssd", "hdd", "drive"),
+    storage:      find("disk size", "disk", "storage", "ssd", "hdd", "drive", "hard drive", "hard disk"),
     screen:       find("screen", "display", "size"),
     touch:        find("touch"),
     price:        find("price", "cost", "ask", "unit price", "value"),
@@ -199,9 +212,14 @@ export function groupUnits(viable, colMap) {
     const storageUpgrade = storage.gb > baseStorage ? storage.gb - baseStorage : 0;
 
     const procLabel = proc ? proc.label : "Unknown";
-    const key = `${brand}__${model}__${procLabel}__${baseRam}GB__${baseStorage}GB`;
+    const key = `${brand}__${model}__${procLabel}__${baseRam}GB__${storage.label.replace(/ /g, "")}`;
 
     if (!groups[key]) {
+      const modelLow = model.toLowerCase();
+      let nicheReason = null;
+      for (const [keyword, reason] of Object.entries(NICHE_REASONS)) {
+        if (modelLow.includes(keyword)) { nicheReason = reason; break; }
+      }
       groups[key] = {
         key,
         brand,
@@ -210,12 +228,15 @@ export function groupUnits(viable, colMap) {
         procTier: proc?.tier || "unknown",
         procGen: proc?.gen || 0,
         baseRam,
-        baseStorage,
+        baseStorage: storage.gb || baseStorage,
+        storageLabel: storage.label,
         units: [],
         grades: { A: [], B: [], C: [] },
         ramUpgrades: 0,
         storageUpgrades: 0,
         allNotes: [],
+        isNiche: !!nicheReason,
+        nicheReason,
       };
     }
 
@@ -297,15 +318,19 @@ export function gradeAdjustedPrice(basePrice, grade) {
 
 // ── CALCULATE GROUP PROFIT ────────────────────────────────────────────────────
 
-export function calcGroupProfit(group, sellPrice, shippingAED, dutyPct, colMap) {
+export function calcGroupProfit(group, sellPrice, shippingAED, dutyPct, colMap, manualUnitPrice, manualCurrency) {
   if (!sellPrice) return null;
   let totalRevenue = 0;
   let totalLanded = 0;
 
   for (const unit of group.units) {
-    const unitPrice = parseFloat(unit.row[colMap.price] || 0);
-    const currency = String(unit.row[colMap.currency] || "USD").trim();
-    const landed = calcLandedCost(unitPrice, currency, 1, shippingAED / group.units.length, dutyPct);
+    const unitPrice = manualUnitPrice
+      ? parseFloat(manualUnitPrice)
+      : parseFloat(unit.row[colMap.price] || 0);
+    const curr = manualCurrency
+      ? manualCurrency
+      : String(unit.row[colMap.currency] || "USD").trim();
+    const landed = calcLandedCost(unitPrice, curr, 1, shippingAED / group.units.length, dutyPct);
     const sell = gradeAdjustedPrice(sellPrice, unit.grade);
     totalRevenue += sell;
     totalLanded += landed;
