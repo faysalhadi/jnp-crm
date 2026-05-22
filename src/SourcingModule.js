@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import DealDetail from "./components/sourcing/DealDetail";
 import SourcingDealList from "./components/sourcing/SourcingDealList";
+import AnalyzeTab from "./components/sourcing/AnalyzeTab";
 import {
   DealCard, NewDealModal, GmailSheet, SectionToggle,
   SupplierDetail, SuppliersList, AddSupplierModal
@@ -71,6 +72,16 @@ export default function SourcingModule({ anthropicKey, onAddToStock }) {
         onSelectDeal={id => setSelected(id)}
         onUpdate={updated => setSuppliers(ss => ss.map(s => s.id === updated.id ? updated : s))}
       />
+    );
+  }
+
+  // ── analyze tab ───────────────────────────────────────────────────────────
+  if (section === "analyze") {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <SectionToggle section={section} setSection={setSection} deals={deals} suppliers={suppliers} />
+        <AnalyzeTab anthropicKey={anthropicKey} />
+      </div>
     );
   }
 

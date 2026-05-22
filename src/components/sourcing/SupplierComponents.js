@@ -311,6 +311,14 @@ export function SectionToggle({ section, setSection, deals, suppliers }) {
             {suppliers.length}
           </span>
         </button>
+        <button onClick={() => setSection("analyze")} style={{
+          flex: 1, padding: "10px 8px", borderRadius: 12, border: "none",
+          fontWeight: 700, fontSize: 12, cursor: "pointer",
+          background: section === "analyze" ? "#6366F1" : "#F1F5F9",
+          color:      section === "analyze" ? "#fff"    : "#64748B",
+        }}>
+          📊 Analyze
+        </button>
       </div>
     </div>
   );
