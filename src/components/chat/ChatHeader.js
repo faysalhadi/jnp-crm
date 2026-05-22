@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { supabase } from "../../supabase";
 import Badge from "../ui/Badge";
 import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS } from "../../constants";
@@ -42,6 +42,8 @@ export default function ChatHeader() {
   } = useChat();
   const { moveStage, handleConfirmSale, handleReserveDevice, generateSupplierReply } = useChatActions();
 
+  const [dealExpanded, setDealExpanded] = useState(false);
+
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);
@@ -51,6 +53,7 @@ export default function ChatHeader() {
   const overdue = daysSince(activeCustomer.last_active) >= 1 && (activeCustomer.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
   const closedDealValue = (activeCustomer.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
   const initials = (activeCustomer.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const currentStageLabel = STAGES.find(s => s.id === activeDeal?.stage)?.label || activeDeal?.stage || "";
 
   return (
     <div style={{ background: "#fff", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 20 }}>
@@ -139,7 +142,7 @@ export default function ChatHeader() {
             <button key={d.id} onClick={() => setActiveDealId(d.id)}
               style={{ padding: "4px 12px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
                 background: d.id === activeDealId ? "#6366F1" : "#F1F5F9",
-                color: d.id === activeDealId ? "#fff" : "#64748B", transition: "all 0.15s" }}>
+                color: d.id === activeDealId ? "#fff" : "#64748B" }}>
               {d.brand || "Deal"} {i + 1}
             </button>
           ))}
@@ -179,135 +182,138 @@ export default function ChatHeader() {
         </div>
       )}
 
-      {/* DEAL CARD */}
+      {/* DEAL CARD — collapsible */}
       {activeDeal && (
         <div style={{ margin: "0 14px 12px", borderRadius: 14, border: "1px solid #E2E8F0", overflow: "hidden", background: "#fff" }}>
-          <div style={{ padding: "12px 14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#0F172A" }}>
-                  {[activeDeal.brand, activeDeal.model].filter(Boolean).join(" ") || "Device TBD"}
-                </div>
-                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-                  {[activeDeal.ram, activeDeal.storage, activeDeal.screen, activeDeal.condition].filter(Boolean).join(" · ") || "Specs being extracted..."}
-                </div>
+
+          {/* COLLAPSED ROW — always visible */}
+          <div
+            onClick={() => setDealExpanded(v => !v)}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", cursor: "pointer" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", marginBottom: 2 }}>
+                {[activeDeal.brand, activeDeal.model].filter(Boolean).join(" ") || "Device TBD"}
               </div>
-              <div style={{ textAlign: "right" }}>
-                {activeDeal.budget && <div style={{ fontSize: 13, fontWeight: 700, color: "#6366F1" }}>AED {Number(activeDeal.budget).toLocaleString()}</div>}
-                {activeDeal.value && <div style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>Sold: AED {Number(activeDeal.value).toLocaleString()}</div>}
+              <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                {currentStageLabel}
+                {activeDeal.budget ? ` · AED ${Number(activeDeal.budget).toLocaleString()}` : ""}
               </div>
             </div>
-
-            {/* progress bar */}
-            <div style={{ display: "flex", gap: 3, marginBottom: 5 }}>
-              {STAGES.map((s, i) => {
-                const currentIdx = STAGES.findIndex(x => x.id === activeDeal.stage);
-                return (
-                  <div key={s.id} style={{ flex: 1, height: 3, borderRadius: 2,
-                    background: i < currentIdx ? "#10B981" : i === currentIdx ? "#6366F1" : "#E2E8F0" }} />
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 10 }}>
-              {STAGES.find(s => s.id === activeDeal.stage)?.label || activeDeal.stage}
-            </div>
-
-            {/* stage pills */}
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
-              {STAGES.map(s => (
-                <button key={s.id} onClick={() => moveStage(s.id)}
-                  style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
-                    background: s.id === activeDeal.stage ? "#6366F1" : "#F1F5F9",
-                    color: s.id === activeDeal.stage ? "#fff" : "#64748B", transition: "all 0.15s" }}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-
-            {/* info pills */}
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {activeDeal.activation_lock !== "unknown" && activeDeal.brand === "MacBook" && (
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, fontWeight: 600,
-                  background: activeDeal.activation_lock === "yes" ? "#FEF2F2" : "#ECFDF5",
-                  color: activeDeal.activation_lock === "yes" ? "#EF4444" : "#10B981" }}>
-                  🔒 {activeDeal.activation_lock === "yes" ? "Locked" : "Unlocked"}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {activeDeal.value && (
+                <span style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>
+                  AED {Number(activeDeal.value).toLocaleString()}
                 </span>
               )}
-              {activeDeal.charger !== "unknown" && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#F1F5F9", color: "#64748B", fontWeight: 600 }}>🔌 {activeDeal.charger}</span>}
-              {activeDeal.box !== "unknown" && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#F1F5F9", color: "#64748B", fontWeight: 600 }}>📦 {activeDeal.box}</span>}
+              <span style={{ fontSize: 12, color: "#94A3B8" }}>{dealExpanded ? "▲" : "▼"}</span>
             </div>
-
-            {overdue && (
-              <div style={{ marginTop: 8, fontSize: 11, color: "#EF4444", fontWeight: 700 }}>
-                ⚠️ No activity for {daysSince(activeCustomer.last_active)}d — follow up!
-              </div>
-            )}
-
-            {activeDeal.stage === "closed" && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 5, letterSpacing: 0.5 }}>PAYMENT</div>
-                <div style={{ display: "flex", gap: 5 }}>
-                  {PAYMENT_STATUSES.map(p => (
-                    <button key={p.id} onClick={() => updateDeal({ payment_status: p.id })}
-                      style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
-                        background: activeDeal.payment_status === p.id ? p.color : p.bg,
-                        color: activeDeal.payment_status === p.id ? "#fff" : p.color }}>
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: 10 }}>
-              <input value={activeDeal.serial_number || ""} onChange={e => updateDeal({ serial_number: e.target.value })}
-                placeholder="Serial / IMEI (optional)"
-                style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", boxSizing: "border-box", color: "#475569" }} />
-            </div>
-
-            {pendingSuggestion && (
-              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, background: "#EEF2FF", border: "1px solid #C7D2FE" }}>
-                <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, marginBottom: 3 }}>🤖 AI Suggests</div>
-                <div style={{ fontSize: 12, color: "#4338CA", marginBottom: 8 }}>{pendingSuggestion.reason}</div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => moveStage(pendingSuggestion.stage)}
-                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                    Move → {STAGES.find(s => s.id === pendingSuggestion.stage)?.label}
-                  </button>
-                  <button onClick={() => setPendingSuggestion(null)}
-                    style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #C7D2FE", background: "#fff", color: "#6366F1", fontSize: 11, cursor: "pointer" }}>
-                    Ignore
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeDeal.stage === "lost" && (
-              <div style={{ marginTop: 10 }}>
-                <select value={activeDeal.loss_reason || ""} onChange={e => updateDeal({ loss_reason: e.target.value })}
-                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #FEE2E2", fontSize: 12, outline: "none", color: "#EF4444", background: "#FEF2F2" }}>
-                  <option value="">Why was this lost?</option>
-                  {LOSS_REASONS.map(r => <option key={r}>{r}</option>)}
-                </select>
-              </div>
-            )}
-
-            {closedDealValue > 0 && (
-              <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 10, background: "#ECFDF5", fontSize: 12, color: "#10B981", fontWeight: 700 }}>
-                💰 Total from {activeCustomer.name}: AED {closedDealValue.toLocaleString()}
-              </div>
-            )}
           </div>
 
-          {/* RESERVE / CONFIRM — flush bottom of card, hidden on closed/lost */}
+          {/* EXPANDED CONTENT */}
+          {dealExpanded && (
+            <div style={{ borderTop: "1px solid #F1F5F9", padding: "12px 14px" }}>
+
+              {/* specs */}
+              {[activeDeal.ram, activeDeal.storage, activeDeal.screen, activeDeal.condition].filter(Boolean).length > 0 && (
+                <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 10 }}>
+                  {[activeDeal.ram, activeDeal.storage, activeDeal.screen, activeDeal.condition].filter(Boolean).join(" · ")}
+                </div>
+              )}
+
+              {/* stage pills — single scrollable row */}
+              <div style={{ display: "flex", gap: 4, overflowX: "auto", scrollbarWidth: "none", marginBottom: 10, paddingBottom: 2 }}>
+                {STAGES.map(s => (
+                  <button key={s.id} onClick={() => moveStage(s.id)}
+                    style={{ padding: "4px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                      background: s.id === activeDeal.stage ? "#6366F1" : "#F1F5F9",
+                      color: s.id === activeDeal.stage ? "#fff" : "#64748B" }}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* info pills */}
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
+                {activeDeal.activation_lock !== "unknown" && activeDeal.brand === "MacBook" && (
+                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, fontWeight: 600,
+                    background: activeDeal.activation_lock === "yes" ? "#FEF2F2" : "#ECFDF5",
+                    color: activeDeal.activation_lock === "yes" ? "#EF4444" : "#10B981" }}>
+                    🔒 {activeDeal.activation_lock === "yes" ? "Locked" : "Unlocked"}
+                  </span>
+                )}
+                {activeDeal.charger !== "unknown" && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#F1F5F9", color: "#64748B", fontWeight: 600 }}>🔌 {activeDeal.charger}</span>}
+                {activeDeal.box !== "unknown" && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#F1F5F9", color: "#64748B", fontWeight: 600 }}>📦 {activeDeal.box}</span>}
+              </div>
+
+              {overdue && (
+                <div style={{ marginBottom: 10, fontSize: 11, color: "#EF4444", fontWeight: 700 }}>
+                  ⚠️ No activity for {daysSince(activeCustomer.last_active)}d — follow up!
+                </div>
+              )}
+
+              {/* payment status for closed deals */}
+              {activeDeal.stage === "closed" && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 5, letterSpacing: 0.5 }}>PAYMENT</div>
+                  <div style={{ display: "flex", gap: 5 }}>
+                    {PAYMENT_STATUSES.map(p => (
+                      <button key={p.id} onClick={() => updateDeal({ payment_status: p.id })}
+                        style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                          background: activeDeal.payment_status === p.id ? p.color : p.bg,
+                          color: activeDeal.payment_status === p.id ? "#fff" : p.color }}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AI suggestion */}
+              {pendingSuggestion && (
+                <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 12, background: "#EEF2FF", border: "1px solid #C7D2FE" }}>
+                  <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 700, marginBottom: 3 }}>🤖 AI Suggests</div>
+                  <div style={{ fontSize: 12, color: "#4338CA", marginBottom: 8 }}>{pendingSuggestion.reason}</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => moveStage(pendingSuggestion.stage)}
+                      style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      Move → {STAGES.find(s => s.id === pendingSuggestion.stage)?.label}
+                    </button>
+                    <button onClick={() => setPendingSuggestion(null)}
+                      style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #C7D2FE", background: "#fff", color: "#6366F1", fontSize: 11, cursor: "pointer" }}>
+                      Ignore
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* loss reason */}
+              {activeDeal.stage === "lost" && (
+                <div style={{ marginBottom: 10 }}>
+                  <select value={activeDeal.loss_reason || ""} onChange={e => updateDeal({ loss_reason: e.target.value })}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #FEE2E2", fontSize: 12, outline: "none", color: "#EF4444", background: "#FEF2F2" }}>
+                    <option value="">Why was this lost?</option>
+                    {LOSS_REASONS.map(r => <option key={r}>{r}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {closedDealValue > 0 && (
+                <div style={{ padding: "8px 12px", borderRadius: 10, background: "#ECFDF5", fontSize: 12, color: "#10B981", fontWeight: 700 }}>
+                  💰 Total from {activeCustomer.name}: AED {closedDealValue.toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* RESERVE / CONFIRM — flush bottom, always visible, smaller */}
           {activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
             <div style={{ display: "flex", borderTop: "1px solid #F1F5F9" }}>
               <button onClick={handleReserveDevice}
-                style={{ flex: 1, padding: "13px 10px", border: "none", borderRight: "1px solid #F1F5F9", background: "#FFFBEB", color: "#D97706", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                🔒 Reserve Device
+                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#FFFBEB", color: "#D97706", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                🔒 Reserve
               </button>
               <button onClick={handleConfirmSale}
-                style={{ flex: 1, padding: "13px 10px", border: "none", background: "#EEF2FF", color: "#6366F1", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                style={{ flex: 1, padding: "9px 8px", border: "none", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                 ⚡ Confirm Sale
               </button>
             </div>
