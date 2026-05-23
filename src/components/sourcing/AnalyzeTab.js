@@ -2,9 +2,10 @@ import { useState, useRef } from "react";
 import { supabase } from "../../supabase";
 import {
   parseFile, detectColumns, filterUnits, groupUnits,
-  calcLandedCost, calcGroupProfit,
+  calcLandedCost, calcGroupProfit, getAdjustedSellPrice, getAdjustmentReason,
   buildAnalyzePrompt, buildExportWorkbook, downloadWorkbook,
-  normalizeStorage,
+  readPreprocessedExcel, normalizeStorage,
+  DEFAULT_RAM_ADJUSTMENTS, DEFAULT_SSD_ADJUSTMENTS,
 } from "./analyzeHelpers";
 
 const PURPLE = "#534AB7";
@@ -64,12 +65,18 @@ export default function AnalyzeTab({ anthropicKey }) {
   const [hasPriceCol, setHasPriceCol] = useState(false);
   const [groupAskPrices, setGroupAskPrices] = useState({});
   const [groupCurrencies, setGroupCurrencies] = useState({});
+  const [ramAdjustments, setRamAdjustments] = useState(DEFAULT_RAM_ADJUSTMENTS);
+  const [ssdAdjustments, setSsdAdjustments] = useState(DEFAULT_SSD_ADJUSTMENTS);
+  const [isReupload, setIsReupload] = useState(false);
+  const [reuploadData, setReuploadData] = useState(null);
+  const [expandedGroups, setExpandedGroups] = useState({});
 
   const fileInputRef = useRef();
 
   const handleFile = async (e) => {
     const f = e.target.files[0];
     if (!f) return;
+
     setFile(f);
     setPreprocessed(false);
     setAnalyzed(false);
@@ -82,39 +89,124 @@ export default function AnalyzeTab({ anthropicKey }) {
     setGroupAskPrices({});
     setGroupCurrencies({});
     setHasPriceCol(false);
+    setIsReupload(false);
+    setReuploadData(null);
+    setExpandedGroups({});
     setError(null);
-
     setProcessing(true);
+
     try {
-      const rows = await parseFile(f);
-      if (!rows.length) throw new Error("No data found in file");
+      const preProcessed = await readPreprocessedExcel(f);
 
-      const headers = Object.keys(rows[0]);
-      const detected = detectColumns(headers);
+      if (preProcessed) {
+        // ── RE-UPLOAD PATH ──
+        setIsReupload(true);
+        setReuploadData(preProcessed);
 
-      if (!detected.brand && !detected.model) {
-        throw new Error("Could not detect columns. Check the file has Brand/Model columns.");
-      }
+        if (preProcessed.settings?.ramAdjustments) setRamAdjustments(preProcessed.settings.ramAdjustments);
+        if (preProcessed.settings?.ssdAdjustments) setSsdAdjustments(preProcessed.settings.ssdAdjustments);
 
-      setHasPriceCol(!!detected.price);
-      setColMap(detected);
-      const { viable: v, filtered: filt } = filterUnits(rows, detected);
-      const grouped = groupUnits(v, detected);
+        const viableRows = preProcessed.viableUnits;
+        if (!viableRows.length) throw new Error("No viable units found in the file.");
 
-      setViable(v);
-      setFiltered(filt);
-      setGroups(grouped);
-      setPreprocessed(true);
+        const mockColMap = {
+          brand: "Brand", model: "Model", serial: "Serial",
+          processor: "Processor", memory: "RAM", storage: "Storage",
+          grade: "Grade", gradingNotes: "Grading Notes",
+          price: "Unit Price", currency: "Currency",
+        };
+        setColMap(mockColMap);
 
-      const { data: savedPrices } = await supabase
-        .from("pricing_rules")
-        .select("model_key, sell_price")
-        .in("model_key", grouped.map(g => g.key));
+        const mappedRows = viableRows.map(row => ({
+          ...row,
+          _brand: String(row["Brand"] || ""),
+          _proc: { label: String(row["Processor"] || ""), tier: "i5", gen: 8 },
+          _ram: parseInt(String(row["RAM"] || "8").match(/\d+/)?.[0] || "8"),
+        }));
 
-      if (savedPrices?.length) {
+        const grouped = groupUnits(mappedRows, mockColMap);
+        setViable(mappedRows);
+        setGroups(grouped);
+
         const priceMap = {};
-        savedPrices.forEach(p => { priceMap[p.model_key] = p.sell_price; });
+        const askMap = {};
+        const currMap = {};
+        for (const gp of preProcessed.groupPrices) {
+          const match = grouped.find(g =>
+            g.brand.toLowerCase() === gp.brand.toLowerCase() &&
+            g.model.toLowerCase() === gp.model.toLowerCase()
+          );
+          if (match) {
+            if (gp.sellPrice > 0) priceMap[match.key] = gp.sellPrice;
+            if (gp.askPrice > 0) askMap[match.key] = gp.askPrice;
+            if (gp.currency) currMap[match.key] = gp.currency;
+          }
+        }
         setSellPrices(priceMap);
+        setGroupAskPrices(askMap);
+        setGroupCurrencies(currMap);
+
+        setFiltered(preProcessed.filteredUnits.map(r => ({
+          ...r,
+          _brand: r["Brand"],
+          _filterReason: r["Filter Reason"],
+          [mockColMap.model]: r["Model"],
+        })));
+
+        setPreprocessed(true);
+        setHasPriceCol(false);
+
+        const newProfits = {};
+        const ramAdj = preProcessed.settings.ramAdjustments;
+        const ssdAdj = preProcessed.settings.ssdAdjustments;
+        for (const group of grouped) {
+          const sellPrice = priceMap[group.key];
+          const askPrice = askMap[group.key];
+          if (sellPrice && askPrice) {
+            const profit = calcGroupProfit(
+              group, sellPrice,
+              preProcessed.settings?.shipping || parseFloat(shipping),
+              preProcessed.settings?.duty || parseFloat(duty),
+              mockColMap, askPrice, currMap[group.key] || "USD",
+              ramAdj, ssdAdj
+            );
+            if (profit) newProfits[group.key] = profit;
+          }
+        }
+        setProfits(newProfits);
+
+      } else {
+        // ── FIRST UPLOAD PATH (raw supplier file) ──
+        const rows = await parseFile(f);
+        if (!rows.length) throw new Error("No data found in file");
+
+        const headers = Object.keys(rows[0]);
+        const detected = detectColumns(headers);
+
+        if (!detected.brand && !detected.model) {
+          throw new Error("Could not detect columns. Check the file has Brand/Model columns.");
+        }
+
+        setHasPriceCol(!!detected.price);
+        setColMap(detected);
+        const { viable: v, filtered: filt } = filterUnits(rows, detected);
+        const grouped = groupUnits(v, detected);
+
+        setViable(v);
+        setFiltered(filt);
+        setGroups(grouped);
+        setPreprocessed(true);
+
+        const { data: savedPrices } = await supabase
+          .from("pricing_rules")
+          .select("model_key, sell_price")
+          .in("model_key", grouped.map(g => g.key));
+
+        if (savedPrices?.length) {
+          const priceMap = {};
+          savedPrices.forEach(p => { priceMap[p.model_key] = p.sell_price; });
+          setSellPrices(priceMap);
+        }
       }
     } catch (err) {
       setError(err.message);
@@ -124,7 +216,10 @@ export default function AnalyzeTab({ anthropicKey }) {
 
   const handleExportPreprocessed = () => {
     if (!groups.length) return;
-    const wb = buildExportWorkbook(groups, filtered, viable, {}, [], shipping, duty, colMap, false);
+    const wb = buildExportWorkbook(
+      groups, filtered, viable, {}, [], shipping, duty, colMap, false,
+      {}, {}, ramAdjustments, ssdAdjustments
+    );
     downloadWorkbook(wb, `preprocessed_${file.name.replace(/\.(xlsx|xls|csv)$/i, "")}.xlsx`);
   };
 
@@ -162,7 +257,10 @@ export default function AnalyzeTab({ anthropicKey }) {
 
   const handleExportWithProfit = () => {
     if (!groups.length) return;
-    const wb = buildExportWorkbook(groups, filtered, viable, sellPrices, claudeResults, shipping, duty, colMap, true);
+    const wb = buildExportWorkbook(
+      groups, filtered, viable, sellPrices, claudeResults, shipping, duty, colMap, true,
+      groupAskPrices, groupCurrencies, ramAdjustments, ssdAdjustments
+    );
     downloadWorkbook(wb, `analysis_${file.name.replace(/\.(xlsx|xls|csv)$/i, "")}.xlsx`);
   };
 
@@ -174,7 +272,8 @@ export default function AnalyzeTab({ anthropicKey }) {
     const profit = calcGroupProfit(
       group, price, parseFloat(shipping), parseFloat(duty), colMap,
       hasPriceCol ? null : groupAskPrices[groupKey],
-      hasPriceCol ? null : (groupCurrencies[groupKey] || currency)
+      hasPriceCol ? null : (groupCurrencies[groupKey] || currency),
+      ramAdjustments, ssdAdjustments
     );
     setProfits(p => ({ ...p, [groupKey]: profit }));
 
@@ -217,6 +316,12 @@ export default function AnalyzeTab({ anthropicKey }) {
           )}
         </div>
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ display: "none" }} />
+
+        {isReupload && (
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: "#E1F5EE", border: "1px solid #5DCAA5", fontSize: 12, color: "#0F6E56", fontWeight: 600, marginBottom: 10 }}>
+            ✅ Pre-processed file detected — prices and settings loaded from Excel
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
           <div>
@@ -424,6 +529,40 @@ export default function AnalyzeTab({ anthropicKey }) {
                     </div>
                   )}
                 </div>
+
+                {/* Per-unit breakdown */}
+                {profit?.unitBreakdown?.length > 0 && (
+                  <div style={{ borderTop: "1px solid #F1F5F9" }}>
+                    <button
+                      onClick={() => setExpandedGroups(p => ({ ...p, [group.key]: !p[group.key] }))}
+                      style={{ width: "100%", padding: "7px 14px", background: "none", border: "none", fontSize: 11, color: "#94A3B8", cursor: "pointer", textAlign: "left" }}>
+                      {expandedGroups[group.key] ? "▲ Hide" : "▼ Show"} per-unit breakdown
+                    </button>
+                    {expandedGroups[group.key] && (
+                      <div style={{ padding: "0 14px 10px" }}>
+                        {Object.entries(
+                          profit.unitBreakdown.reduce((acc, u) => {
+                            const k = `${u.ram}GB / ${u.storage >= 1000 ? "1 TB" : u.storage ? u.storage + " GB" : "No SSD"} · Grade ${u.grade}`;
+                            if (!acc[k]) acc[k] = { ...u, count: 0 };
+                            acc[k].count++;
+                            return acc;
+                          }, {})
+                        ).map(([spec, data]) => (
+                          <div key={spec} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: "1px solid #F8FAFC", fontSize: 11 }}>
+                            <div>
+                              <span style={{ color: "#0F172A", fontWeight: 500 }}>{spec}</span>
+                              <span style={{ color: "#94A3B8", marginLeft: 6 }}>× {data.count}</span>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontWeight: 600, color: "#0F172A" }}>AED {data.adjustedSell}</div>
+                              <div style={{ fontSize: 10, color: "#94A3B8" }}>{data.reason}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
