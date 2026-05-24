@@ -306,12 +306,19 @@ export default function MessageList() {
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // dismiss context menu on outside click
+  // dismiss context menu on outside click or right-click
   useEffect(() => {
     const dismiss = () => setLongPressId(null);
     document.addEventListener("click", dismiss);
-    return () => document.removeEventListener("click", dismiss);
+    document.addEventListener("contextmenu", dismiss);
+    return () => {
+      document.removeEventListener("click", dismiss);
+      document.removeEventListener("contextmenu", dismiss);
+    };
   }, []);
+
+  // clear pending long-press timer on unmount
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const handleLongPressStart = useCallback((msgId) => {
     timerRef.current = setTimeout(() => setLongPressId(msgId), 480);
@@ -323,6 +330,7 @@ export default function MessageList() {
 
   const handleContextMenu = useCallback((e, msgId) => {
     e.preventDefault();
+    e.stopPropagation(); // prevent document contextmenu listener from immediately dismissing
     setLongPressId(msgId);
   }, []);
 
