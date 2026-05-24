@@ -1,4 +1,5 @@
 import React from "react";
+import PullToRefresh from "../ui/PullToRefresh";
 import LinkStockModal from "../modals/LinkStockModal";
 import ReservationModal from "../modals/ReservationModal";
 import { useCustomers } from "../../context/CustomerContext";
@@ -82,7 +83,9 @@ export default function ChatDetailView() {
       {/* detail content */}
       <div style={isMobile ? { flex: 1, display: "flex", flexDirection: "column" } : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", maxWidth: "calc(100vw - 280px)" }}>
         <ChatHeader />
-        <MessageList />
+        <PullToRefresh onRefresh={async () => { await loadCustomers(); }}>
+          <MessageList />
+        </PullToRefresh>
         <InputBar />
       </div>
 

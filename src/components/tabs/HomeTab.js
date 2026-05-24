@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { STAGES, EMPTY_STOCK } from "../../constants";
+import PullToRefresh from "../ui/PullToRefresh";
 import { daysSince, timeAgo, getGreeting } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -70,7 +71,8 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   })();
 
   return (
-    <div style={{ flex: 1, padding: isMobile ? "16px 12px 100px" : "24px 32px 40px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
+    <PullToRefresh onRefresh={async () => { await loadCustomers(); await loadTodayFollowUps(); }}>
+    <div style={{ padding: isMobile ? "16px 12px 100px" : "24px 32px 40px", display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Greeting */}
       <div>
         <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A" }}>{getGreeting()} 👋</div>
@@ -225,5 +227,6 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
           style={{ flex: 1, padding: 12, borderRadius: 14, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🔍 Search</button>
       </div>
     </div>
+    </PullToRefresh>
   );
 }
