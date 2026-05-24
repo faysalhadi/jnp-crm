@@ -65,37 +65,45 @@ export default function FollowUpPanel() {
   const setFollowUpTime = async (hours) => {
     setLoading(true);
     const dueAt = new Date(Date.now() + hours * 3600000).toISOString();
-    if (followUp) {
-      await supabase.from("follow_ups")
-        .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
-        .eq("id", followUp.id);
-    } else {
-      await supabase.from("follow_ups")
-        .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+    try {
+      if (followUp) {
+        await supabase.from("follow_ups")
+          .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
+          .eq("id", followUp.id);
+      } else {
+        await supabase.from("follow_ups")
+          .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+      }
+    } catch (err) {
+      console.error("Follow-up save error:", err);
     }
-    await loadFollowUp();
     setShowTimeOptions(false);
     setFollowUpNote("");
     setLoading(false);
+    setTimeout(() => loadFollowUp(), 500);
   };
 
   const setCustomFollowUpTime = async () => {
     if (!customTime) return;
     setLoading(true);
     const dueAt = new Date(customTime).toISOString();
-    if (followUp) {
-      await supabase.from("follow_ups")
-        .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
-        .eq("id", followUp.id);
-    } else {
-      await supabase.from("follow_ups")
-        .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+    try {
+      if (followUp) {
+        await supabase.from("follow_ups")
+          .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
+          .eq("id", followUp.id);
+      } else {
+        await supabase.from("follow_ups")
+          .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+      }
+    } catch (err) {
+      console.error("Follow-up custom time save error:", err);
     }
-    await loadFollowUp();
     setShowTimeOptions(false);
     setShowCustomTime(false);
     setFollowUpNote("");
     setLoading(false);
+    setTimeout(() => loadFollowUp(), 500);
   };
 
   const markFollowUpDone = async () => {
