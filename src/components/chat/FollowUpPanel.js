@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { useCustomers } from "../../context/CustomerContext";
 
@@ -24,154 +24,162 @@ export default function FollowUpPanel() {
   const [activityLog, setActivityLog] = useState([]);
   const [notes, setNotes] = useState(activeCustomer?.notes || "");
   const [notesSaving, setNotesSaving] = useState(false);
-  const [showTimeOptions, setShowTimeOptions] = useState(false);
   const [followUpNote, setFollowUpNote] = useState("");
   const [customTime, setCustomTime] = useState("");
   const [showCustomTime, setShowCustomTime] = useState(false);
   const [loading, setLoading] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
-
-  const loadFollowUp = useCallback(async (custId) => {
-    const id = custId || activeCustomerId;
-    if (!id) return;
-    const { data, error } = await supabase
-      .from("follow_ups")
-      .select("*")
-      .eq("customer_id", id)
-      .eq("status", "pending")
-      .order("due_at", { ascending: true })
-      .limit(1);
-    if (error) { console.error("loadFollowUp error:", error); return; }
-    setFollowUp(data && data.length > 0 ? data[0] : null);
-  }, [activeCustomerId]);
-
-  const loadActivityLog = useCallback(async (custId) => {
-    const id = custId || activeCustomerId;
-    if (!id) return;
-    const { data } = await supabase
-      .from("activity_log")
-      .select("*")
-      .eq("customer_id", id)
-      .order("logged_at", { ascending: false })
-      .limit(10);
-    setActivityLog(data || []);
-  }, [activeCustomerId]);
+  const [showPicker, setShowPicker] = useState(false);
 
   useEffect(() => {
     if (activeCustomerId) {
       setFollowUp(null);
-      setActivityLog([]);
       setNotes(activeCustomer?.notes || "");
-      loadFollowUp(activeCustomerId);
-      loadActivityLog(activeCustomerId);
+      fetchFollowUp(activeCustomerId);
+      fetchActivityLog(activeCustomerId);
     }
   }, [activeCustomerId]); // eslint-disable-line
 
-  const setFollowUpTime = async (hours) => {
-    if (!activeCustomerId) return;
+  async function fetchFollowUp(cid) {
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .select("*")
+      .eq("customer_id", cid)
+      .eq("status", "pending")
+      .order("due_at", { ascending: true })
+      .limit(1);
+    if (error) { console.error("fetchFollowUp:", error.message); return; }
+    setFollowUp(data && data.length > 0 ? data[0] : null);
+  }
+
+  async function fetchActivityLog(cid) {
+    const { data } = await supabase
+      .from("activity_log")
+      .select("*")
+      .eq("customer_id", cid)
+      .order("logged_at", { ascending: false })
+      .limit(10);
+    setActivityLog(data || []);
+  }
+
+  async function saveFollowUp(hours) {
+    if (!activeCustomerId || loading) return;
     setLoading(true);
     const dueAt = new Date(Date.now() + hours * 3600000).toISOString();
-    try {
-      if (followUp) {
-        await supabase.from("follow_ups")
-          .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
-          .eq("id", followUp.id);
-      } else {
-        await supabase.from("follow_ups")
-          .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
-      }
-    } catch (err) { console.error("setFollowUpTime error:", err); }
-    setShowTimeOptions(false);
+    let error;
+    if (followUp) {
+      const res = await supabase.from("follow_ups")
+        .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
+        .eq("id", followUp.id);
+      error = res.error;
+    } else {
+      const res = await supabase.from("follow_ups")
+        .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+      error = res.error;
+    }
+    if (error) { console.error("saveFollowUp:", error.message); }
+    setShowPicker(false);
     setFollowUpNote("");
     setLoading(false);
-    setTimeout(() => loadFollowUp(activeCustomerId), 300);
-  };
+    await fetchFollowUp(activeCustomerId);
+  }
 
-  const setCustomFollowUpTime = async () => {
-    if (!customTime || !activeCustomerId) return;
+  async function saveCustomTime() {
+    if (!customTime || !activeCustomerId || loading) return;
     setLoading(true);
     const dueAt = new Date(customTime).toISOString();
-    try {
-      if (followUp) {
-        await supabase.from("follow_ups")
-          .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
-          .eq("id", followUp.id);
-      } else {
-        await supabase.from("follow_ups")
-          .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
-      }
-    } catch (err) { console.error("setCustomFollowUpTime error:", err); }
-    setShowTimeOptions(false);
+    let error;
+    if (followUp) {
+      const res = await supabase.from("follow_ups")
+        .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
+        .eq("id", followUp.id);
+      error = res.error;
+    } else {
+      const res = await supabase.from("follow_ups")
+        .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+      error = res.error;
+    }
+    if (error) { console.error("saveCustomTime:", error.message); }
+    setShowPicker(false);
     setShowCustomTime(false);
     setFollowUpNote("");
     setLoading(false);
-    setTimeout(() => loadFollowUp(activeCustomerId), 300);
-  };
+    await fetchFollowUp(activeCustomerId);
+  }
 
-  const markFollowUpDone = async () => {
+  async function markDone() {
     if (!followUp) return;
-    await supabase.from("follow_ups").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", followUp.id);
+    await supabase.from("follow_ups")
+      .update({ status: "done", updated_at: new Date().toISOString() })
+      .eq("id", followUp.id);
     setFollowUp(null);
-  };
+  }
 
-  const clearFollowUp = async () => {
+  async function clearIt() {
     if (!followUp) return;
     await supabase.from("follow_ups").delete().eq("id", followUp.id);
     setFollowUp(null);
     setClearConfirm(false);
-  };
+  }
 
-  const snoozeFollowUp = async () => {
+  async function snooze() {
     if (!followUp) return;
     const newDue = new Date(Date.now() + 3600000).toISOString();
-    await supabase.from("follow_ups").update({ due_at: newDue, updated_at: new Date().toISOString() }).eq("id", followUp.id);
-    setTimeout(() => loadFollowUp(activeCustomerId), 300);
-  };
+    await supabase.from("follow_ups")
+      .update({ due_at: newDue, updated_at: new Date().toISOString() })
+      .eq("id", followUp.id);
+    await fetchFollowUp(activeCustomerId);
+  }
 
-  const logActivity = async (type) => {
+  async function logActivity(type) {
     if (!activeCustomerId) return;
-    await supabase.from("activity_log").insert({ customer_id: activeCustomerId, activity_type: type, logged_at: new Date().toISOString() });
-    await supabase.from("customers").update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() }).eq("id", activeCustomerId);
-    loadActivityLog(activeCustomerId);
+    await supabase.from("activity_log").insert({
+      customer_id: activeCustomerId,
+      activity_type: type,
+      logged_at: new Date().toISOString(),
+    });
+    await supabase.from("customers")
+      .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
+      .eq("id", activeCustomerId);
+    fetchActivityLog(activeCustomerId);
     loadCustomers();
-  };
+  }
 
-  const saveNotes = async (val) => {
+  async function saveNotes(val) {
     if (!activeCustomerId) return;
     setNotesSaving(true);
     await supabase.from("customers").update({ notes: val }).eq("id", activeCustomerId);
     await loadCustomers();
     setNotesSaving(false);
-  };
+  }
 
-  const formatDueAt = (dueAt) => {
+  function fmt(dueAt) {
     if (!dueAt) return "";
     const d = new Date(dueAt);
-    const now = new Date();
-    const diff = d - now;
-    const hours = Math.round(diff / 3600000);
-    if (hours < 0) return "Overdue " + Math.abs(hours) + "h";
-    if (hours < 1) return "Due now";
-    if (hours < 24) return "In " + hours + "h";
-    const days = Math.round(hours / 24);
-    if (days === 1) return "Tomorrow " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const diffH = Math.round((d - new Date()) / 3600000);
+    if (diffH < 0) return "Overdue " + Math.abs(diffH) + "h";
+    if (diffH < 1) return "Due now";
+    if (diffH < 24) return "In " + diffH + "h";
+    const diffD = Math.round(diffH / 24);
+    if (diffD === 1) return "Tomorrow " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  };
+  }
 
   const isOverdue = followUp && new Date(followUp.due_at) < new Date();
 
   const collapsedRow = (
-    <div onClick={() => setExpanded(v => !v)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "pointer", borderBottom: expanded ? "none" : "1px solid #F1F5F9" }}>
+    <div onClick={() => setExpanded(v => !v)}
+      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "pointer", borderBottom: expanded ? "none" : "1px solid #F1F5F9" }}>
       {followUp ? (
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 20, background: isOverdue ? "#FEF2F2" : "#FFFBEB", border: "1px solid " + (isOverdue ? "#FEE2E2" : "#FDE68A") }}>
-          <span style={{ fontSize: 13 }}>📅</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: isOverdue ? "#EF4444" : "#D97706" }}>{formatDueAt(followUp.due_at)}</span>
-          {followUp.note && <span style={{ fontSize: 11, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 100 }}>— {followUp.note}</span>}
+          <span>📅</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: isOverdue ? "#EF4444" : "#D97706" }}>{fmt(followUp.due_at)}</span>
+          {followUp.note ? <span style={{ fontSize: 11, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 100 }}>— {followUp.note}</span> : null}
           <span style={{ fontSize: 11, color: "#94A3B8", marginLeft: "auto" }}>{expanded ? "▲" : "▼"}</span>
         </div>
       ) : (
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 20, background: "#F8FAFC", border: "1px dashed #E2E8F0" }}>
-          <span style={{ fontSize: 13 }}>📅</span>
+          <span>📅</span>
           <span style={{ fontSize: 12, color: "#94A3B8" }}>Set follow-up</span>
           <span style={{ fontSize: 11, color: "#94A3B8", marginLeft: "auto" }}>{expanded ? "▲" : "▼"}</span>
         </div>
@@ -191,60 +199,72 @@ export default function FollowUpPanel() {
     <div style={{ borderBottom: "1px solid #F1F5F9" }}>
       {collapsedRow}
       <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+        {/* FOLLOW-UP */}
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>📅 FOLLOW-UP</div>
-          {followUp && !showTimeOptions ? (
+          {followUp && !showPicker ? (
             <div>
               <div style={{ padding: "10px 12px", borderRadius: 10, background: isOverdue ? "#FEF2F2" : "#FFFBEB", border: "1px solid " + (isOverdue ? "#FEE2E2" : "#FDE68A"), marginBottom: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: isOverdue ? "#EF4444" : "#D97706" }}>{formatDueAt(followUp.due_at)}</div>
-                {followUp.note && <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{followUp.note}</div>}
+                <div style={{ fontSize: 13, fontWeight: 700, color: isOverdue ? "#EF4444" : "#D97706" }}>{fmt(followUp.due_at)}</div>
+                {followUp.note ? <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{followUp.note}</div> : null}
               </div>
               {clearConfirm ? (
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <span style={{ fontSize: 12, color: "#EF4444", flex: 1 }}>Remove this follow-up?</span>
-                  <button onClick={clearFollowUp} style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#EF4444", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Yes, clear</button>
-                  <button onClick={() => setClearConfirm(false)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                  <button onClick={clearIt} style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#EF4444", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Yes</button>
+                  <button onClick={() => setClearConfirm(false)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer" }}>No</button>
                 </div>
               ) : (
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={markFollowUpDone} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#ECFDF5", color: "#10B981", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓ Done</button>
-                  <button onClick={snoozeFollowUp} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+1hr</button>
-                  <button onClick={() => setShowTimeOptions(true)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✏️ Edit</button>
+                  <button onClick={markDone} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#ECFDF5", color: "#10B981", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓ Done</button>
+                  <button onClick={snooze} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+1hr</button>
+                  <button onClick={() => setShowPicker(true)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✏️ Edit</button>
                   <button onClick={() => setClearConfirm(true)} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✕</button>
                 </div>
               )}
             </div>
           ) : (
             <div>
-              <input value={followUpNote} onChange={e => setFollowUpNote(e.target.value)} placeholder='Note e.g. "waiting for wife approval"'
+              <input value={followUpNote} onChange={e => setFollowUpNote(e.target.value)}
+                placeholder='Note — e.g. "waiting for wife approval"'
                 style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 6 }}>
                 {TIME_OPTIONS.map(t => (
-                  <button key={t.label} onClick={() => setFollowUpTime(t.hours)} disabled={loading}
-                    style={{ padding: "5px 12px", borderRadius: 20, border: "1px solid #E2E8F0", background: "#F8FAFC", color: "#475569", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                    {t.label}
+                  <button key={t.label} onClick={() => saveFollowUp(t.hours)} disabled={loading}
+                    style={{ padding: "5px 12px", borderRadius: 20, border: "1px solid #E2E8F0", background: loading ? "#E2E8F0" : "#F8FAFC", color: "#475569", fontSize: 12, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer" }}>
+                    {loading ? "..." : t.label}
                   </button>
                 ))}
                 <button onClick={() => setShowCustomTime(v => !v)} style={{ padding: "5px 12px", borderRadius: 20, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Pick time</button>
               </div>
               {showCustomTime && (
                 <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                  <input type="datetime-local" value={customTime} onChange={e => setCustomTime(e.target.value)} style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none" }} />
-                  <button onClick={setCustomFollowUpTime} disabled={!customTime || loading} style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Set</button>
+                  <input type="datetime-local" value={customTime} onChange={e => setCustomTime(e.target.value)}
+                    style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none" }} />
+                  <button onClick={saveCustomTime} disabled={!customTime || loading}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Set</button>
                 </div>
               )}
               {followUp && (
-                <button onClick={() => { setShowTimeOptions(false); setShowCustomTime(false); }} style={{ marginTop: 6, padding: "5px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>← Cancel</button>
+                <button onClick={() => { setShowPicker(false); setShowCustomTime(false); }}
+                  style={{ marginTop: 6, padding: "5px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>← Cancel</button>
               )}
             </div>
           )}
         </div>
+
+        {/* NOTES */}
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>📝 NOTES {notesSaving && <span style={{ color: "#10B981" }}>• saving...</span>}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>
+            📝 NOTES {notesSaving && <span style={{ color: "#10B981" }}>• saving...</span>}
+          </div>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={() => saveNotes(notes)} rows={3}
             placeholder='e.g. "Prefers MacBook, budget 3k-3.5k. Comes weekends only."'
             style={{ width: "100%", padding: "9px 11px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.6, boxSizing: "border-box", color: "#334155" }} />
         </div>
+
+        {/* ACTIVITY LOG */}
         {activityLog.length > 0 && (
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>📋 ACTIVITY</div>
@@ -252,7 +272,6 @@ export default function FollowUpPanel() {
               {activityLog.map((a, i) => {
                 const type = ACTIVITY_TYPES.find(t => t.id === a.activity_type);
                 const d = new Date(a.logged_at);
-                const timeStr = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " · " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "#F8FAFC" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: type?.color || "#94A3B8", flexShrink: 0 }} />
@@ -260,7 +279,9 @@ export default function FollowUpPanel() {
                       <span style={{ fontSize: 12, color: "#334155", fontWeight: 600 }}>{type?.label || a.activity_type}</span>
                       {a.note && <span style={{ fontSize: 11, color: "#94A3B8" }}> — {a.note}</span>}
                     </div>
-                    <div style={{ fontSize: 10, color: "#CBD5E1" }}>{timeStr}</div>
+                    <div style={{ fontSize: 10, color: "#CBD5E1" }}>
+                      {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                    </div>
                   </div>
                 );
               })}
