@@ -259,7 +259,7 @@ export default function MessageList() {
   const { activeCustomer } = useCustomers();
   const {
     messages,
-    replyMode, setReplyMode,
+    setReplyMode,
     replyingToId, setReplyingToId,
     generatedReplyLoading,
     showSupplierReply, setShowSupplierReply,
@@ -362,7 +362,8 @@ export default function MessageList() {
   return (
     <>
       {/* ── message list ──────────────────────────────────────────────────── */}
-      <div ref={scrollRef} style={{ flex: 1, padding: "14px 14px 8px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", position: "relative" }}>
+      <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div ref={scrollRef} style={{ flex: 1, padding: "14px 14px 8px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
 
         {/* empty state */}
         {messages.length === 0 && (
@@ -419,9 +420,10 @@ export default function MessageList() {
         {generatedReplyLoading && <AITypingIndicator />}
 
         <div ref={bottomRef} />
+      </div>
 
-        {/* scroll to bottom button */}
-        {showScrollBtn && <ScrollToBottomBtn onClick={scrollToBottom} />}
+      {/* scroll-to-bottom floats over the visible area, not inside the scroll content */}
+      {showScrollBtn && <ScrollToBottomBtn onClick={scrollToBottom} />}
       </div>
 
       {/* ── supplier reply modal ──────────────────────────────────────────── */}
