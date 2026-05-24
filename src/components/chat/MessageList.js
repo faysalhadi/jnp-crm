@@ -36,42 +36,31 @@ export default function MessageList() {
 
   const bottomRef = useRef(null);
   const longPressTimer = useRef(null);
-  const ignoreNextClick = useRef(false);
+  const [hoveredMsgId, setHoveredMsgId] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
   const [longPressId, setLongPressId] = useState(null);
   const [copiedMsgId, setCopiedMsgId] = useState(null);
+  const isMobile = useRef(window.matchMedia("(hover: none) and (pointer: coarse)").matches);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Close dropdown when clicking outside
   useEffect(() => {
-    const handler = () => {
-      if (ignoreNextClick.current) {
-        ignoreNextClick.current = false;
-        return;
+    const handler = (e) => {
+      if (!e.target.closest("[data-msg-menu]")) {
+        setOpenMenuId(null);
+        setLongPressId(null);
       }
-      setLongPressId(null);
     };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
   }, []);
 
-  const handleMouseDown = (msgId) => {
-    clearTimeout(longPressTimer.current);
-    longPressTimer.current = setTimeout(() => {
-      ignoreNextClick.current = true;
-      setLongPressId(msgId);
-    }, 600);
-  };
-
-  const handleMouseUp = () => {
-    clearTimeout(longPressTimer.current);
-  };
-
+  // Mobile long press
   const handleTouchStart = (msgId) => {
-    clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
-      ignoreNextClick.current = true;
       setLongPressId(msgId);
     }, 500);
   };
@@ -82,8 +71,8 @@ export default function MessageList() {
 
   const handleCopy = (e, text, msgId) => {
     e.stopPropagation();
-    e.preventDefault();
     navigator.clipboard.writeText(text);
+    setOpenMenuId(null);
     setLongPressId(null);
     setCopiedMsgId(msgId);
     setTimeout(() => setCopiedMsgId(null), 2000);
@@ -91,9 +80,14 @@ export default function MessageList() {
 
   const handleDelete = async (e, msgId) => {
     e.stopPropagation();
-    e.preventDefault();
+    setOpenMenuId(null);
     setLongPressId(null);
     if (deleteMessage) await deleteMessage(msgId);
+  };
+
+  const toggleMenu = (e, msgId) => {
+    e.stopPropagation();
+    setOpenMenuId(prev => prev === msgId ? null : msgId);
   };
 
   return (
@@ -141,7 +135,8 @@ export default function MessageList() {
             const isNotSent  = msg.sent === "NOT_SENT";
             const display    = isSent && msg.sent !== msg.content ? msg.sent : msg.content;
             const showReplyBtns = isCustomer && msg.id === lastUnansweredId && replyingToId !== msg.id;
-            const isMenuOpen = longPressId === msg.id;
+            const isMenuOpen = openMenuId === msg.id || longPressId === msg.id;
+            const isHovered  = hoveredMsgId === msg.id;
             const isCopied   = copiedMsgId === msg.id;
 
             return (
@@ -151,75 +146,170 @@ export default function MessageList() {
                     {isCustomer ? (msg.is_voice ? "🎤 Voice Note" : `👤 ${activeCustomer.name}`) : "You"} · {timeAgo(msg.ts)}
                   </div>
 
+                  {/* Bubble + ⋮ button row */}
                   <div
-                    onMouseDown={() => handleMouseDown(msg.id)}
-                    onMouseUp={handleMouseUp}
+                    data-msg-menu
+                    onMouseEnter={() => setHoveredMsgId(msg.id)}
+                    onMouseLeave={() => setHoveredMsgId(null)}
                     onTouchStart={() => handleTouchStart(msg.id)}
                     onTouchEnd={handleTouchEnd}
                     onTouchMove={handleTouchEnd}
                     style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      flexDirection: isCustomer ? "row" : "row-reverse",
+                      position: "relative",
+                    }}>
+
+                    {/* Message bubble */}
+                    <div style={{
                       maxWidth: "84%",
                       padding: "10px 13px",
                       fontSize: 13.5,
                       lineHeight: 1.7,
                       whiteSpace: "pre-line",
                       borderRadius: isCustomer ? "4px 16px 16px 16px" : "16px 4px 16px 16px",
-                      background: isMenuOpen
-                        ? (isCustomer ? "#DDE1E7" : "#4338CA")
-                        : (isCustomer ? "#F1F5F9" : "#6366F1"),
+                      background: isCustomer ? "#F1F5F9" : "#6366F1",
                       color: isCustomer ? "#334155" : "#fff",
                       border: isCustomer ? "1px solid #E2E8F0" : "none",
                       opacity: isNotSent ? 0.45 : 1,
-                      cursor: "pointer",
                       userSelect: "none",
                       WebkitUserSelect: "none",
                     }}>
-                    {display}
-                  </div>
-
-                  {isMenuOpen && (
-                    <div
-                      onClick={e => e.stopPropagation()}
-                      style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                      <button
-                        onMouseDown={e => e.stopPropagation()}
-                        onClick={e => handleCopy(e, display, msg.id)}
-                        style={{
-                          padding: "7px 16px",
-                          borderRadius: 8,
-                          border: "1px solid #E2E8F0",
-                          background: "#fff",
-                          color: "#334155",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-                        }}>
-                        📋 Copy
-                      </button>
-                      <button
-                        onMouseDown={e => e.stopPropagation()}
-                        onClick={e => handleDelete(e, msg.id)}
-                        style={{
-                          padding: "7px 16px",
-                          borderRadius: 8,
-                          border: "1px solid #FEE2E2",
-                          background: "#FEF2F2",
-                          color: "#EF4444",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-                        }}>
-                        🗑 Delete
-                      </button>
+                      {display}
                     </div>
-                  )}
+
+                    {/* ⋮ button — desktop hover only */}
+                    {!isMobile.current && (isHovered || isMenuOpen) && (
+                      <div style={{ position: "relative" }} data-msg-menu>
+                        <button
+                          onClick={e => toggleMenu(e, msg.id)}
+                          style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: 6,
+                            border: "1px solid #E2E8F0",
+                            background: isMenuOpen ? "#F1F5F9" : "#fff",
+                            cursor: "pointer",
+                            fontSize: 14,
+                            color: "#64748B",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}>
+                          ⋮
+                        </button>
+
+                        {/* Dropdown */}
+                        {isMenuOpen && (
+                          <div
+                            data-msg-menu
+                            style={{
+                              position: "absolute",
+                              top: 30,
+                              [isCustomer ? "left" : "right"]: 0,
+                              background: "#fff",
+                              border: "1px solid #E2E8F0",
+                              borderRadius: 10,
+                              boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                              overflow: "hidden",
+                              zIndex: 50,
+                              minWidth: 130,
+                            }}>
+                            <button
+                              onClick={e => handleCopy(e, display, msg.id)}
+                              style={{
+                                width: "100%",
+                                padding: "9px 14px",
+                                border: "none",
+                                borderBottom: "1px solid #F1F5F9",
+                                background: "#fff",
+                                color: "#334155",
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                textAlign: "left",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}>
+                              📋 Copy
+                            </button>
+                            <button
+                              onClick={e => handleDelete(e, msg.id)}
+                              style={{
+                                width: "100%",
+                                padding: "9px 14px",
+                                border: "none",
+                                background: "#fff",
+                                color: "#EF4444",
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                textAlign: "left",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}>
+                              🗑 Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Mobile long press menu */}
+                    {isMobile.current && longPressId === msg.id && (
+                      <div
+                        data-msg-menu
+                        style={{
+                          position: "absolute",
+                          top: -45,
+                          [isCustomer ? "left" : "right"]: 0,
+                          background: "#fff",
+                          border: "1px solid #E2E8F0",
+                          borderRadius: 10,
+                          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                          overflow: "hidden",
+                          zIndex: 50,
+                          display: "flex",
+                        }}>
+                        <button
+                          onClick={e => handleCopy(e, display, msg.id)}
+                          style={{
+                            padding: "8px 16px",
+                            border: "none",
+                            borderRight: "1px solid #F1F5F9",
+                            background: "#fff",
+                            color: "#334155",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}>
+                          📋 Copy
+                        </button>
+                        <button
+                          onClick={e => handleDelete(e, msg.id)}
+                          style={{
+                            padding: "8px 16px",
+                            border: "none",
+                            background: "#fff",
+                            color: "#EF4444",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}>
+                          🗑 Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {isCopied && (
                     <div style={{ fontSize: 11, color: "#10B981", fontWeight: 600 }}>✓ Copied!</div>
                   )}
-
                   {isSent && !isCustomer && (
                     <div style={{ fontSize: 10, color: "#10B981", fontWeight: 600 }}>✓ Sent · {timeAgo(msg.ts)}</div>
                   )}
