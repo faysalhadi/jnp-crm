@@ -36,6 +36,7 @@ export default function MessageList() {
 
   const bottomRef = useRef(null);
   const longPressTimer = useRef(null);
+  const ignoreNextClick = useRef(false);
   const [longPressId, setLongPressId] = useState(null);
   const [copiedMsgId, setCopiedMsgId] = useState(null);
 
@@ -44,16 +45,21 @@ export default function MessageList() {
   }, [messages]);
 
   useEffect(() => {
-    const handler = () => setLongPressId(null);
+    const handler = () => {
+      if (ignoreNextClick.current) {
+        ignoreNextClick.current = false;
+        return;
+      }
+      setLongPressId(null);
+    };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
   }, []);
 
-  // Desktop: only mouseDown starts the timer, mouseUp clears it
-  // No mouseLeave — it fires on slightest cursor movement and cancels timer
   const handleMouseDown = (msgId) => {
     clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
+      ignoreNextClick.current = true;
       setLongPressId(msgId);
     }, 600);
   };
@@ -62,10 +68,10 @@ export default function MessageList() {
     clearTimeout(longPressTimer.current);
   };
 
-  // Mobile touch
   const handleTouchStart = (msgId) => {
     clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
+      ignoreNextClick.current = true;
       setLongPressId(msgId);
     }, 500);
   };
