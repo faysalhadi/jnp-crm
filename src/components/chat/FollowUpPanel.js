@@ -41,6 +41,7 @@ export default function FollowUpPanel() {
   }, [activeCustomerId]); // eslint-disable-line
 
   async function fetchFollowUp(cid) {
+    console.log("fetchFollowUp called with cid:", cid);
     const { data, error } = await supabase
       .from("follow_ups")
       .select("*")
@@ -50,6 +51,7 @@ export default function FollowUpPanel() {
       .limit(1);
     if (error) { console.error("fetchFollowUp:", error.message); return; }
     setFollowUp(data && data.length > 0 ? data[0] : null);
+    console.log("fetchFollowUp result:", data);
   }
 
   async function fetchActivityLog(cid) {
@@ -64,6 +66,7 @@ export default function FollowUpPanel() {
 
   async function saveFollowUp(hours) {
     if (!activeCustomerId || loading) return;
+    console.log("saveFollowUp called, activeCustomerId:", activeCustomerId, "followUp:", followUp, "hours:", hours);
     setLoading(true);
     const dueAt = new Date(Date.now() + hours * 3600000).toISOString();
     let error;
@@ -77,6 +80,7 @@ export default function FollowUpPanel() {
         .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
       error = res.error;
     }
+    console.log("saveFollowUp DB result, error:", error);
     if (error) { console.error("saveFollowUp:", error.message); }
     setShowPicker(false);
     setFollowUpNote("");
