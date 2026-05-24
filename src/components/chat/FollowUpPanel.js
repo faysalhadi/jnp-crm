@@ -112,6 +112,7 @@ export default function FollowUpPanel() {
   }
 
   async function markDone() {
+    console.log("markDone called, followUp:", followUp, new Error().stack);
     if (!followUp) return;
     await supabase.from("follow_ups")
       .update({ status: "done", updated_at: new Date().toISOString() })
