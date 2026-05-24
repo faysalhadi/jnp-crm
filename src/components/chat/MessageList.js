@@ -35,7 +35,7 @@ function DateSeparator({ ts }) {
   );
 }
 
-function MessageBubble({ msg, customerName, isLongPressed, copied, onLongPressStart, onLongPressEnd, onCopy, onDelete }) {
+function MessageBubble({ msg, customerName, isLongPressed, copied, onLongPressStart, onLongPressEnd, onContextMenu, onCopy, onDelete }) {
   const isCustomer = msg.role === "customer";
   const isSent     = msg.sent && msg.sent !== "NOT_SENT";
   const isNotSent  = msg.sent === "NOT_SENT";
@@ -50,13 +50,12 @@ function MessageBubble({ msg, customerName, isLongPressed, copied, onLongPressSt
         <span>{formatTime(msg.ts)}</span>
       </div>
 
-      {/* bubble */}
+      {/* bubble — right-click on desktop, long-press on touch */}
       <div
-        onMouseDown={() => onLongPressStart(msg.id)}
-        onMouseUp={onLongPressEnd}
-        onMouseLeave={onLongPressEnd}
+        onContextMenu={onContextMenu}
         onTouchStart={() => onLongPressStart(msg.id)}
         onTouchEnd={onLongPressEnd}
+        onTouchMove={onLongPressEnd}
         style={{
           maxWidth: "84%",
           padding: "10px 13px",
@@ -322,6 +321,11 @@ export default function MessageList() {
     clearTimeout(timerRef.current);
   }, []);
 
+  const handleContextMenu = useCallback((e, msgId) => {
+    e.preventDefault();
+    setLongPressId(msgId);
+  }, []);
+
   const handleDelete = useCallback(async (msgId) => {
     setLongPressId(null);
     await deleteMessage(msgId);
@@ -386,6 +390,7 @@ export default function MessageList() {
                 customerName={activeCustomer.name}
                 isLongPressed={longPressId === msg.id}
                 copied={copied}
+                onContextMenu={(e) => handleContextMenu(e, msg.id)}
                 onLongPressStart={handleLongPressStart}
                 onLongPressEnd={handleLongPressEnd}
                 onCopy={handleCopy}
