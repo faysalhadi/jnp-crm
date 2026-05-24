@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "../../supabase";
 import { STAGES, EMPTY_STOCK } from "../../constants";
 import { daysSince, timeAgo, getGreeting } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
@@ -15,6 +16,29 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     setFilter, setSearch,
     openDeals, closedDeals, revenue,
   } = useCustomers();
+
+  const [todayFollowUps, setTodayFollowUps] = useState([]);
+
+  useEffect(() => {
+    loadTodayFollowUps();
+  }, []);
+
+  const loadTodayFollowUps = async () => {
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+    const { data } = await supabase
+      .from("follow_ups")
+      .select("*, customers(id, name, number)")
+      .eq("status", "pending")
+      .lte("due_at", endOfDay.toISOString())
+      .order("due_at", { ascending: true });
+    setTodayFollowUps(data || []);
+  };
+
+  const markFollowUpDone = async (id) => {
+    await supabase.from("follow_ups").update({ status: "done" }).eq("id", id);
+    loadTodayFollowUps();
+  };
   const { stock, setStockFilter, setShowAddStock, setEditingStock, setStockForm, setShowQuickSale } = useStock();
   const { todaySales, openComplaints } = useSales();
   const { partsRevMTD } = useParts();
@@ -68,6 +92,49 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
           </div>
         ))}
       </div>
+
+      {/* Today's Follow-ups */}
+      {todayFollowUps.length > 0 && (
+        <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>
+            📅 TODAY'S FOLLOW-UPS
+            <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 20, background: "#FEF2F2", color: "#EF4444", fontSize: 11 }}>
+              {todayFollowUps.length}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {todayFollowUps.map(fu => {
+              const d = new Date(fu.due_at);
+              const isOverdue = d < new Date();
+              const timeStr = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+              const customer = fu.customers;
+              return (
+                <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: isOverdue ? "#FEF2F2" : "#F8FAFC", border: `1px solid ${isOverdue ? "#FEE2E2" : "#F1F5F9"}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: isOverdue ? "#EF4444" : "#D97706", minWidth: 42, paddingTop: 2 }}>
+                    {isOverdue ? "⚠️" : "🕐"} {timeStr}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+                    {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button
+                        onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); }}
+                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        Open chat
+                      </button>
+                      <button
+                        onClick={() => markFollowUpDone(fu.id)}
+                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        ✓ Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Today's sales stat */}
       {todaySales.total > 0 && (

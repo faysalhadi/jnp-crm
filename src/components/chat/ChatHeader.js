@@ -7,6 +7,7 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
+import FollowUpPanel from "./FollowUpPanel";
 
 export default function ChatHeader() {
   const { setShowSideDrawer } = useUI();
@@ -320,6 +321,9 @@ export default function ChatHeader() {
           )}
         </div>
       )}
+
+      {/* Follow-up, Notes & Activity Panel */}
+      <FollowUpPanel />
 
       {/* ADD DEAL FORM */}
       {showAddDeal && (
