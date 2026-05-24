@@ -1,12 +1,53 @@
+# Build: Follow-up, Notes & Activity Log System
+
+## Overview
+Add a follow-up + notes + activity log panel to the client chat, sitting between the deal card and messages. Collapsed by default, one tap to expand. Also add today's follow-ups section to the dashboard.
+
+## Files to read first
+- src/components/chat/ChatHeader.js
+- src/components/tabs/HomeTab.js
+- src/context/CustomerContext.js
+- src/context/ChatContext.js
+
+## Step 1 — Create Supabase table
+Run this in Supabase SQL editor before deploying:
+
+```sql
+CREATE TABLE IF NOT EXISTS follow_ups (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  customer_id uuid REFERENCES customers(id) ON DELETE CASCADE,
+  due_at timestamptz,
+  note text,
+  status text DEFAULT 'pending',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS activity_log (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  customer_id uuid REFERENCES customers(id) ON DELETE CASCADE,
+  activity_type text NOT NULL,
+  note text,
+  logged_at timestamptz DEFAULT now()
+);
+```
+
+---
+
+## Step 2 — Create src/components/chat/FollowUpPanel.js
+
+This is the collapsible panel that sits between deal card and messages in ChatHeader.
+
+```jsx
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { useCustomers } from "../../context/CustomerContext";
 
 const ACTIVITY_TYPES = [
-  { id: "called",    label: "📞 Called",    color: "#6366F1", bg: "#EEF2FF" },
-  { id: "no_answer", label: "📵 No answer", color: "#EF4444", bg: "#FEF2F2" },
-  { id: "messaged",  label: "💬 Messaged",  color: "#10B981", bg: "#ECFDF5" },
-  { id: "met",       label: "🤝 Met",       color: "#F59E0B", bg: "#FFFBEB" },
+  { id: "called",    label: "📞 Called",     color: "#6366F1", bg: "#EEF2FF" },
+  { id: "no_answer", label: "📵 No answer",  color: "#EF4444", bg: "#FEF2F2" },
+  { id: "messaged",  label: "💬 Messaged",   color: "#10B981", bg: "#ECFDF5" },
+  { id: "met",       label: "🤝 Met",        color: "#F59E0B", bg: "#FFFBEB" },
 ];
 
 const TIME_OPTIONS = [
@@ -29,7 +70,6 @@ export default function FollowUpPanel() {
   const [customTime, setCustomTime] = useState("");
   const [showCustomTime, setShowCustomTime] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [clearConfirm, setClearConfirm] = useState(false);
 
   useEffect(() => {
     if (activeCustomerId) {
@@ -37,10 +77,9 @@ export default function FollowUpPanel() {
       loadActivityLog();
       setNotes(activeCustomer?.notes || "");
     }
-  }, [activeCustomerId]); // eslint-disable-line
+  }, [activeCustomerId]);
 
   const loadFollowUp = async () => {
-    // Use maybeSingle() instead of single() to avoid error when no record found
     const { data } = await supabase
       .from("follow_ups")
       .select("*")
@@ -48,7 +87,7 @@ export default function FollowUpPanel() {
       .eq("status", "pending")
       .order("due_at", { ascending: true })
       .limit(1)
-      .maybeSingle();
+      .single();
     setFollowUp(data || null);
   };
 
@@ -66,12 +105,9 @@ export default function FollowUpPanel() {
     setLoading(true);
     const dueAt = new Date(Date.now() + hours * 3600000).toISOString();
     if (followUp) {
-      await supabase.from("follow_ups")
-        .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
-        .eq("id", followUp.id);
+      await supabase.from("follow_ups").update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() }).eq("id", followUp.id);
     } else {
-      await supabase.from("follow_ups")
-        .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+      await supabase.from("follow_ups").insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
     }
     await loadFollowUp();
     setShowTimeOptions(false);
@@ -84,12 +120,9 @@ export default function FollowUpPanel() {
     setLoading(true);
     const dueAt = new Date(customTime).toISOString();
     if (followUp) {
-      await supabase.from("follow_ups")
-        .update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() })
-        .eq("id", followUp.id);
+      await supabase.from("follow_ups").update({ due_at: dueAt, note: followUpNote, status: "pending", updated_at: new Date().toISOString() }).eq("id", followUp.id);
     } else {
-      await supabase.from("follow_ups")
-        .insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
+      await supabase.from("follow_ups").insert({ customer_id: activeCustomerId, due_at: dueAt, note: followUpNote, status: "pending" });
     }
     await loadFollowUp();
     setShowTimeOptions(false);
@@ -100,26 +133,14 @@ export default function FollowUpPanel() {
 
   const markFollowUpDone = async () => {
     if (!followUp) return;
-    await supabase.from("follow_ups")
-      .update({ status: "done", updated_at: new Date().toISOString() })
-      .eq("id", followUp.id);
+    await supabase.from("follow_ups").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", followUp.id);
     setFollowUp(null);
-  };
-
-  // Clear = delete the follow-up entirely (mistake correction)
-  const clearFollowUp = async () => {
-    if (!followUp) return;
-    await supabase.from("follow_ups").delete().eq("id", followUp.id);
-    setFollowUp(null);
-    setClearConfirm(false);
   };
 
   const snoozeFollowUp = async () => {
     if (!followUp) return;
     const newDue = new Date(Date.now() + 3600000).toISOString();
-    await supabase.from("follow_ups")
-      .update({ due_at: newDue, updated_at: new Date().toISOString() })
-      .eq("id", followUp.id);
+    await supabase.from("follow_ups").update({ due_at: newDue, updated_at: new Date().toISOString() }).eq("id", followUp.id);
     await loadFollowUp();
   };
 
@@ -129,9 +150,8 @@ export default function FollowUpPanel() {
       activity_type: type,
       logged_at: new Date().toISOString(),
     });
-    await supabase.from("customers")
-      .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
-      .eq("id", activeCustomerId);
+    // Update customer last_active
+    await supabase.from("customers").update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() }).eq("id", activeCustomerId);
     await loadActivityLog();
     await loadCustomers();
   };
@@ -159,6 +179,7 @@ export default function FollowUpPanel() {
 
   const isOverdue = followUp && new Date(followUp.due_at) < new Date();
 
+  // Collapsed row
   const collapsedRow = (
     <div
       onClick={() => setExpanded(v => !v)}
@@ -186,7 +207,7 @@ export default function FollowUpPanel() {
             {formatDueAt(followUp.due_at)}
           </span>
           {followUp.note && (
-            <span style={{ fontSize: 11, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 100 }}>
+            <span style={{ fontSize: 11, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>
               — {followUp.note}
             </span>
           )}
@@ -209,6 +230,7 @@ export default function FollowUpPanel() {
         </div>
       )}
 
+      {/* Quick activity log buttons */}
       {ACTIVITY_TYPES.map(a => (
         <button
           key={a.id}
@@ -259,40 +281,20 @@ export default function FollowUpPanel() {
                 </div>
                 {followUp.note && <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{followUp.note}</div>}
               </div>
-
-              {/* Clear confirm state */}
-              {clearConfirm ? (
-                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                  <div style={{ flex: 1, fontSize: 12, color: "#EF4444", display: "flex", alignItems: "center" }}>Remove this follow-up?</div>
-                  <button onClick={clearFollowUp}
-                    style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#EF4444", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    Yes, clear
-                  </button>
-                  <button onClick={() => setClearConfirm(false)}
-                    style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={markFollowUpDone}
-                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#ECFDF5", color: "#10B981", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    ✓ Done
-                  </button>
-                  <button onClick={snoozeFollowUp}
-                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    +1hr
-                  </button>
-                  <button onClick={() => setShowTimeOptions(true)}
-                    style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    ✏️ Edit
-                  </button>
-                  <button onClick={() => setClearConfirm(true)}
-                    style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#FEF2F2", color: "#EF4444", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    ✕
-                  </button>
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={markFollowUpDone}
+                  style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: "#ECFDF5", color: "#10B981", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  ✓ Done
+                </button>
+                <button onClick={snoozeFollowUp}
+                  style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  +1hr Snooze
+                </button>
+                <button onClick={() => setShowTimeOptions(true)}
+                  style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  ✏️ Edit
+                </button>
+              </div>
             </div>
           ) : (
             <div>
@@ -323,12 +325,6 @@ export default function FollowUpPanel() {
                     Set
                   </button>
                 </div>
-              )}
-              {followUp && (
-                <button onClick={() => { setShowTimeOptions(false); setShowCustomTime(false); }}
-                  style={{ marginTop: 6, padding: "5px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>
-                  ← Cancel
-                </button>
               )}
             </div>
           )}
@@ -376,3 +372,133 @@ export default function FollowUpPanel() {
     </div>
   );
 }
+```
+
+---
+
+## Step 3 — Modify src/components/chat/ChatHeader.js
+
+Add the FollowUpPanel between the deal card and the closing `</div>` of the sticky header.
+
+Add import at top:
+```js
+import FollowUpPanel from "./FollowUpPanel";
+```
+
+Find the closing of the deal card section (after `{showDeleteConfirm && ...}` block or after the last `</div>` in the return before the outer closing `</div>`).
+
+Add `<FollowUpPanel />` right after the deal card div and before the add deal modal:
+
+Find this comment in ChatHeader.js:
+```js
+{/* add deal modal */}
+```
+
+Add right before it:
+```jsx
+{/* Follow-up, Notes & Activity Panel */}
+<FollowUpPanel />
+```
+
+---
+
+## Step 4 — Modify src/components/tabs/HomeTab.js
+
+Add today's follow-ups section to the dashboard.
+
+Add this import at top of HomeTab.js:
+```js
+import { supabase } from "../../supabase";
+```
+
+Add useState and useEffect at top of the component (after existing hooks):
+```js
+const [todayFollowUps, setTodayFollowUps] = useState([]);
+
+useEffect(() => {
+  loadTodayFollowUps();
+}, []);
+
+const loadTodayFollowUps = async () => {
+  const now = new Date();
+  const endOfDay = new Date();
+  endOfDay.setHours(23, 59, 59, 999);
+  const { data } = await supabase
+    .from("follow_ups")
+    .select("*, customers(id, name, number)")
+    .eq("status", "pending")
+    .lte("due_at", endOfDay.toISOString())
+    .order("due_at", { ascending: true });
+  setTodayFollowUps(data || []);
+};
+
+const markFollowUpDone = async (id) => {
+  await supabase.from("follow_ups").update({ status: "done" }).eq("id", id);
+  loadTodayFollowUps();
+};
+```
+
+Add this section in the JSX, after the Stats row and before the Alerts section:
+
+```jsx
+{/* Today's Follow-ups */}
+{todayFollowUps.length > 0 && (
+  <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+    <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>
+      📅 TODAY'S FOLLOW-UPS
+      <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 20, background: "#FEF2F2", color: "#EF4444", fontSize: 11 }}>
+        {todayFollowUps.length}
+      </span>
+    </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {todayFollowUps.map(fu => {
+        const d = new Date(fu.due_at);
+        const isOverdue = d < new Date();
+        const timeStr = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+        const customer = fu.customers;
+        return (
+          <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: isOverdue ? "#FEF2F2" : "#F8FAFC", border: `1px solid ${isOverdue ? "#FEE2E2" : "#F1F5F9"}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: isOverdue ? "#EF4444" : "#D97706", minWidth: 42, paddingTop: 2 }}>
+              {isOverdue ? "⚠️" : "🕐"} {timeStr}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+              {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <button
+                  onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); }}
+                  style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  Open chat
+                </button>
+                <button
+                  onClick={() => markFollowUpDone(fu.id)}
+                  style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  ✓ Done
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+```
+
+---
+
+## After all changes
+
+```bash
+npm run build && git add -A && git commit -m "Add follow-up, notes and activity log to chat" && git push
+```
+
+## Test checklist
+- [ ] Collapsed row shows between deal card and messages
+- [ ] Activity buttons (📞 📵 💬 🤝) log instantly without expanding
+- [ ] Tap the row to expand — shows follow-up, notes, activity log
+- [ ] Set a follow-up with "Tomorrow" — shows in collapsed row
+- [ ] Notes save on blur (tap outside the textarea)
+- [ ] Dashboard shows today's follow-ups section
+- [ ] "Open chat" on dashboard navigates to client chat
+- [ ] "Done" on dashboard removes the follow-up
