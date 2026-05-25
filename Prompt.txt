@@ -1,73 +1,230 @@
-Replace the entire contents of src/components/ui/PullToRefresh.js with this:
+Make these changes to two files:
 
-import React, { useRef, useState, useEffect } from "react";
+═══════════════════════════════════════
+FILE 1: src/components/chat/FollowUpPanel.js
+═══════════════════════════════════════
 
-export default function PullToRefresh({ onRefresh, children }) {
-  const [pullDistance, setPullDistance] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
-  const startY = useRef(null);
-  const containerRef = useRef(null);
-  const THRESHOLD = 70;
+CHANGE 1 — Add state after activityLog state:
+const [followUpHistory, setFollowUpHistory] = useState([]);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+CHANGE 2 — Add this function after fetchActivityLog:
 
-    const handleTouchStart = (e) => {
-      if (el.scrollTop === 0) {
-        startY.current = e.touches[0].clientY;
-      } else {
-        startY.current = null;
-      }
-    };
-
-    const handleTouchMove = (e) => {
-      if (startY.current === null) return;
-      const deltaY = e.touches[0].clientY - startY.current;
-      if (deltaY > 0 && el.scrollTop === 0) {
-        setPullDistance(Math.min(deltaY * 0.5, THRESHOLD + 20));
-      } else {
-        startY.current = null;
-        setPullDistance(0);
-      }
-    };
-
-    const handleTouchEnd = async () => {
-      if (startY.current === null) return;
-      if (pullDistance >= THRESHOLD) {
-        setRefreshing(true);
-        setPullDistance(0);
-        try { await onRefresh(); } catch (e) {}
-        setRefreshing(false);
-      } else {
-        setPullDistance(0);
-      }
-      startY.current = null;
-    };
-
-    el.addEventListener("touchstart", handleTouchStart, { passive: true });
-    el.addEventListener("touchmove", handleTouchMove, { passive: true });
-    el.addEventListener("touchend", handleTouchEnd, { passive: true });
-
-    return () => {
-      el.removeEventListener("touchstart", handleTouchStart);
-      el.removeEventListener("touchmove", handleTouchMove);
-      el.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [pullDistance, onRefresh]);
-
-  return (
-    <div ref={containerRef} style={{ flex: 1, overflowY: "auto", position: "relative" }}>
-      {(pullDistance > 0 || refreshing) && (
-        <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 20, background: "#EEF2FF", border: "1px solid #C7D2FE", fontSize: 12, color: "#6366F1", fontWeight: 600 }}>
-            {refreshing ? "Refreshing..." : pullDistance >= THRESHOLD ? "Release to refresh" : "Pull to refresh"}
-          </div>
-        </div>
-      )}
-      {children}
-    </div>
-  );
+async function fetchFollowUpHistory(cid) {
+  const id = cid || activeCustomerId;
+  if (!id) return;
+  const { data } = await supabase
+    .from("follow_ups")
+    .select("*")
+    .eq("customer_id", id)
+    .eq("status", "done")
+    .order("updated_at", { ascending: false })
+    .limit(10);
+  setFollowUpHistory(data || []);
 }
 
-Run: npm run build && git add -A && git commit -m "Fix pull-to-refresh blocking scroll on iPhone" && git push
+CHANGE 3 — In useEffect, after fetchActivityLog(activeCustomerId); add:
+fetchFollowUpHistory(activeCustomerId);
+
+CHANGE 4 — In markDone function, after setFollowUp(null); add:
+fetchFollowUpHistory(activeCustomerId);
+
+CHANGE 5 — After the closing </div> of the ACTIVITY LOG section add:
+
+{followUpHistory.length > 0 && (
+  <div>
+    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>📅 FOLLOW-UP HISTORY</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {followUpHistory.map((fu, i) => {
+        const due = new Date(fu.due_at);
+        const done = new Date(fu.updated_at);
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 10px", borderRadius: 8, background: "#F8FAFC" }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", flexShrink: 0, marginTop: 4 }} />
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: 12, color: "#334155", fontWeight: 600 }}>✓ Followed up</span>
+              {fu.note ? <span style={{ fontSize: 11, color: "#94A3B8" }}> — {fu.note}</span> : null}
+              <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 2 }}>
+                Due {due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · Done {done.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+
+═══════════════════════════════════════
+FILE 2: src/components/tabs/HomeTab.js
+═══════════════════════════════════════
+
+CHANGE 1 — Add these imports at the top of the file after existing imports:
+import { useState, useEffect } from "react";
+import { supabase } from "../../supabase";
+
+CHANGE 2 — Add these inside the component function, after the existing const declarations:
+
+const [todayFollowUps, setTodayFollowUps] = useState([]);
+const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
+const [showTomorrow, setShowTomorrow] = useState(false);
+
+useEffect(() => {
+  loadFollowUps();
+}, []);
+
+const loadFollowUps = async () => {
+  const now = new Date();
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  const endOfTomorrow = new Date();
+  endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
+  endOfTomorrow.setHours(23, 59, 59, 999);
+
+  const { data } = await supabase
+    .from("follow_ups")
+    .select("*, customers(id, name, number)")
+    .eq("status", "pending")
+    .lte("due_at", endOfTomorrow.toISOString())
+    .order("due_at", { ascending: true });
+
+  const all = data || [];
+  setTodayFollowUps(all.filter(fu => new Date(fu.due_at) <= endOfToday));
+  setTomorrowFollowUps(all.filter(fu => new Date(fu.due_at) > endOfToday));
+};
+
+const markFollowUpDone = async (id) => {
+  await supabase.from("follow_ups").update({ status: "done" }).eq("id", id);
+  loadFollowUps();
+};
+
+CHANGE 3 — Find the existing loadTodayFollowUps and todayFollowUps useState declarations (around lines 21-41) and REMOVE them since we are replacing with the new loadFollowUps above.
+
+CHANGE 4 — Find the existing Today's Follow-ups JSX section and replace it entirely with:
+
+{(todayFollowUps.length > 0 || tomorrowFollowUps.length > 0) && (
+  <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+    <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <span>📅 FOLLOW-UPS</span>
+      {todayFollowUps.length > 0 && (
+        <span style={{ padding: "1px 8px", borderRadius: 20, background: "#FEF2F2", color: "#EF4444", fontSize: 11, fontWeight: 700 }}>
+          {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0
+            ? `${todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length} overdue`
+            : `${todayFollowUps.length} today`}
+        </span>
+      )}
+    </div>
+
+    {/* Overdue */}
+    {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0 && (
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#EF4444", letterSpacing: 0.5, marginBottom: 6 }}>⚠️ OVERDUE</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).map(fu => {
+            const d = new Date(fu.due_at);
+            const customer = fu.customers;
+            return (
+              <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#FEF2F2", border: "1px solid #FEE2E2" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#EF4444", minWidth: 42, paddingTop: 2 }}>
+                  {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+                  {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      Open chat
+                    </button>
+                    <button onClick={() => markFollowUpDone(fu.id)}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      ✓ Done
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
+
+    {/* Due today (not overdue) */}
+    {todayFollowUps.filter(fu => new Date(fu.due_at) >= new Date()).length > 0 && (
+      <div style={{ marginBottom: tomorrowFollowUps.length > 0 ? 8 : 0 }}>
+        {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0 && (
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", letterSpacing: 0.5, marginBottom: 6 }}>🕐 TODAY</div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {todayFollowUps.filter(fu => new Date(fu.due_at) >= new Date()).map(fu => {
+            const d = new Date(fu.due_at);
+            const customer = fu.customers;
+            return (
+              <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#D97706", minWidth: 42, paddingTop: 2 }}>
+                  {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+                  {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      Open chat
+                    </button>
+                    <button onClick={() => markFollowUpDone(fu.id)}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      ✓ Done
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
+
+    {/* Tomorrow - collapsible */}
+    {tomorrowFollowUps.length > 0 && (
+      <div>
+        <button onClick={() => setShowTomorrow(v => !v)}
+          style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1px solid #F1F5F9", background: "#F8FAFC", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, fontWeight: 700, color: "#64748B" }}>
+          <span>📅 Tomorrow ({tomorrowFollowUps.length})</span>
+          <span>{showTomorrow ? "▲" : "▼"}</span>
+        </button>
+        {showTomorrow && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+            {tomorrowFollowUps.map(fu => {
+              const d = new Date(fu.due_at);
+              const customer = fu.customers;
+              return (
+                <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", minWidth: 42, paddingTop: 2 }}>
+                    {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+                    {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        Open chat
+                      </button>
+                      <button onClick={() => markFollowUpDone(fu.id)}
+                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        ✓ Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)}
+
+After all changes run:
+npm run build && git add -A && git commit -m "Add follow-up history in panel and collapsible dashboard sections" && git push

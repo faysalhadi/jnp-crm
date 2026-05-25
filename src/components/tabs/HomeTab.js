@@ -19,26 +19,35 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   } = useCustomers();
 
   const [todayFollowUps, setTodayFollowUps] = useState([]);
+  const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
+  const [showTomorrow, setShowTomorrow] = useState(false);
 
   useEffect(() => {
-    loadTodayFollowUps();
+    loadFollowUps();
   }, []);
 
-  const loadTodayFollowUps = async () => {
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+  const loadFollowUps = async () => {
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    const endOfTomorrow = new Date();
+    endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
+    endOfTomorrow.setHours(23, 59, 59, 999);
+
     const { data } = await supabase
       .from("follow_ups")
       .select("*, customers(id, name, number)")
       .eq("status", "pending")
-      .lte("due_at", endOfDay.toISOString())
+      .lte("due_at", endOfTomorrow.toISOString())
       .order("due_at", { ascending: true });
-    setTodayFollowUps(data || []);
+
+    const all = data || [];
+    setTodayFollowUps(all.filter(fu => new Date(fu.due_at) <= endOfToday));
+    setTomorrowFollowUps(all.filter(fu => new Date(fu.due_at) > endOfToday));
   };
 
   const markFollowUpDone = async (id) => {
     await supabase.from("follow_ups").update({ status: "done" }).eq("id", id);
-    loadTodayFollowUps();
+    loadFollowUps();
   };
   const { stock, setStockFilter, setShowAddStock, setEditingStock, setStockForm, setShowQuickSale } = useStock();
   const { todaySales, openComplaints } = useSales();
@@ -71,7 +80,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   })();
 
   return (
-    <PullToRefresh onRefresh={async () => { await loadCustomers(); await loadTodayFollowUps(); }}>
+    <PullToRefresh onRefresh={async () => { await loadFollowUps(); }}>
     <div style={{ padding: isMobile ? "16px 12px 100px" : "24px 32px 40px", display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Greeting */}
       <div>
@@ -95,46 +104,129 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
         ))}
       </div>
 
-      {/* Today's Follow-ups */}
-      {todayFollowUps.length > 0 && (
+      {/* Follow-ups */}
+      {(todayFollowUps.length > 0 || tomorrowFollowUps.length > 0) && (
         <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>
-            📅 TODAY'S FOLLOW-UPS
-            <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 20, background: "#FEF2F2", color: "#EF4444", fontSize: 11 }}>
-              {todayFollowUps.length}
-            </span>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>📅 FOLLOW-UPS</span>
+            {todayFollowUps.length > 0 && (
+              <span style={{ padding: "1px 8px", borderRadius: 20, background: "#FEF2F2", color: "#EF4444", fontSize: 11, fontWeight: 700 }}>
+                {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0
+                  ? `${todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length} overdue`
+                  : `${todayFollowUps.length} today`}
+              </span>
+            )}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {todayFollowUps.map(fu => {
-              const d = new Date(fu.due_at);
-              const isOverdue = d < new Date();
-              const timeStr = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-              const customer = fu.customers;
-              return (
-                <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: isOverdue ? "#FEF2F2" : "#F8FAFC", border: `1px solid ${isOverdue ? "#FEE2E2" : "#F1F5F9"}` }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: isOverdue ? "#EF4444" : "#D97706", minWidth: 42, paddingTop: 2 }}>
-                    {isOverdue ? "⚠️" : "🕐"} {timeStr}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
-                    {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
-                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                      <button
-                        onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); }}
-                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        Open chat
-                      </button>
-                      <button
-                        onClick={() => markFollowUpDone(fu.id)}
-                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        ✓ Done
-                      </button>
+
+          {/* Overdue */}
+          {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#EF4444", letterSpacing: 0.5, marginBottom: 6 }}>⚠️ OVERDUE</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).map(fu => {
+                  const d = new Date(fu.due_at);
+                  const customer = fu.customers;
+                  return (
+                    <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#FEF2F2", border: "1px solid #FEE2E2" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#EF4444", minWidth: 42, paddingTop: 2 }}>
+                        {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+                        {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+                        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                          <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                            style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            Open chat
+                          </button>
+                          <button onClick={() => markFollowUpDone(fu.id)}
+                            style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            ✓ Done
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Due today (not overdue) */}
+          {todayFollowUps.filter(fu => new Date(fu.due_at) >= new Date()).length > 0 && (
+            <div style={{ marginBottom: tomorrowFollowUps.length > 0 ? 8 : 0 }}>
+              {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0 && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", letterSpacing: 0.5, marginBottom: 6 }}>🕐 TODAY</div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {todayFollowUps.filter(fu => new Date(fu.due_at) >= new Date()).map(fu => {
+                  const d = new Date(fu.due_at);
+                  const customer = fu.customers;
+                  return (
+                    <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#D97706", minWidth: 42, paddingTop: 2 }}>
+                        {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+                        {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+                        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                          <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                            style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            Open chat
+                          </button>
+                          <button onClick={() => markFollowUpDone(fu.id)}
+                            style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            ✓ Done
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Tomorrow - collapsible */}
+          {tomorrowFollowUps.length > 0 && (
+            <div>
+              <button onClick={() => setShowTomorrow(v => !v)}
+                style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1px solid #F1F5F9", background: "#F8FAFC", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, fontWeight: 700, color: "#64748B" }}>
+                <span>📅 Tomorrow ({tomorrowFollowUps.length})</span>
+                <span>{showTomorrow ? "▲" : "▼"}</span>
+              </button>
+              {showTomorrow && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                  {tomorrowFollowUps.map(fu => {
+                    const d = new Date(fu.due_at);
+                    const customer = fu.customers;
+                    return (
+                      <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", minWidth: 42, paddingTop: 2 }}>
+                          {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
+                          {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
+                          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                            <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                              style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              Open chat
+                            </button>
+                            <button onClick={() => markFollowUpDone(fu.id)}
+                              style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              ✓ Done
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

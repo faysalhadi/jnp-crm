@@ -22,6 +22,7 @@ export default function FollowUpPanel() {
   const [expanded, setExpanded] = useState(false);
   const [followUp, setFollowUp] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
+  const [followUpHistory, setFollowUpHistory] = useState([]);
   const [notes, setNotes] = useState(activeCustomer?.notes || "");
   const [notesSaving, setNotesSaving] = useState(false);
   const [followUpNote, setFollowUpNote] = useState("");
@@ -37,6 +38,7 @@ export default function FollowUpPanel() {
       setNotes(activeCustomer?.notes || "");
       fetchFollowUp(activeCustomerId);
       fetchActivityLog(activeCustomerId);
+      fetchFollowUpHistory(activeCustomerId);
     }
   }, [activeCustomerId]); // eslint-disable-line
 
@@ -62,6 +64,19 @@ export default function FollowUpPanel() {
       .order("logged_at", { ascending: false })
       .limit(10);
     setActivityLog(data || []);
+  }
+
+  async function fetchFollowUpHistory(cid) {
+    const id = cid || activeCustomerId;
+    if (!id) return;
+    const { data } = await supabase
+      .from("follow_ups")
+      .select("*")
+      .eq("customer_id", id)
+      .eq("status", "done")
+      .order("updated_at", { ascending: false })
+      .limit(10);
+    setFollowUpHistory(data || []);
   }
 
   async function saveFollowUp(hours) {
@@ -118,6 +133,7 @@ export default function FollowUpPanel() {
       .update({ status: "done", updated_at: new Date().toISOString() })
       .eq("id", followUp.id);
     setFollowUp(null);
+    fetchFollowUpHistory(activeCustomerId);
   }
 
   async function clearIt() {
@@ -286,6 +302,30 @@ export default function FollowUpPanel() {
                     </div>
                     <div style={{ fontSize: 10, color: "#CBD5E1" }}>
                       {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {followUpHistory.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>📅 FOLLOW-UP HISTORY</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {followUpHistory.map((fu, i) => {
+                const due = new Date(fu.due_at);
+                const done = new Date(fu.updated_at);
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 10px", borderRadius: 8, background: "#F8FAFC" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", flexShrink: 0, marginTop: 4 }} />
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: 12, color: "#334155", fontWeight: 600 }}>✓ Followed up</span>
+                      {fu.note ? <span style={{ fontSize: 11, color: "#94A3B8" }}> — {fu.note}</span> : null}
+                      <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 2 }}>
+                        Due {due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · Done {done.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                      </div>
                     </div>
                   </div>
                 );
