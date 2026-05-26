@@ -21,10 +21,39 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const [todayFollowUps, setTodayFollowUps] = useState([]);
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
   const [showTomorrow, setShowTomorrow] = useState(false);
+  const [waitingMatchCount, setWaitingMatchCount] = useState(0);
 
   useEffect(() => {
     loadFollowUps();
   }, []);
+
+  useEffect(() => {
+    loadWaitingMatches();
+  }, []); // eslint-disable-line
+
+  const loadWaitingMatches = async () => {
+    const { data: availableStock } = await supabase
+      .from("stock")
+      .select("brand, model, processor")
+      .eq("status", "available");
+
+    const { data: waitingDeals } = await supabase
+      .from("deals")
+      .select("match_category")
+      .eq("stage", "waiting")
+      .neq("match_category", "none");
+
+    if (!availableStock || !waitingDeals) return;
+
+    const { stockMatchesCategory } = await import("../../constants");
+    let matches = 0;
+    for (const deal of waitingDeals) {
+      for (const item of availableStock) {
+        if (stockMatchesCategory(item, deal.match_category)) { matches++; break; }
+      }
+    }
+    setWaitingMatchCount(matches);
+  };
 
   const loadFollowUps = async () => {
     const endOfToday = new Date();
@@ -244,13 +273,22 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       )}
 
       {/* Alerts */}
-      {(urgentClients > 0 || overdueFollowUps > 0 || slowStock > 0 || pendingPayments > 0 || pickupsToday.length > 0 || overduePickups.length > 0) && (
+      {(urgentClients > 0 || overdueFollowUps > 0 || slowStock > 0 || pendingPayments > 0 || pickupsToday.length > 0 || overduePickups.length > 0 || waitingMatchCount > 0) && (
         <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>⚡ ALERTS</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {pickupsToday.length > 0 && <button onClick={() => { setStockFilter("reserved"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FFFBEB", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#D97706", fontWeight: 700 }}>🔒 {pickupsToday.length} reservation{pickupsToday.length !== 1 ? "s" : ""} — pickup today</span><span style={{ color: "#D97706", fontSize: 13 }}>→</span></button>}
             {overduePickups.length > 0 && <button onClick={() => { setStockFilter("reserved"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF2F2", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#EF4444", fontWeight: 700 }}>⚠️ {overduePickups.length} reservation{overduePickups.length !== 1 ? "s" : ""} overdue — client didn't show</span><span style={{ color: "#EF4444", fontSize: 13 }}>→</span></button>}
             {urgentClients > 0 && <button onClick={() => { setFilter("urgent"); setActiveTab("customers"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF2F2", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#EF4444", fontWeight: 700 }}>🔴 {urgentClients} urgent client{urgentClients !== 1 ? "s" : ""}</span><span style={{ color: "#EF4444", fontSize: 13 }}>→</span></button>}
+            {waitingMatchCount > 0 && (
+              <button onClick={() => setActiveTab("stock")}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#EEEDFE", cursor: "pointer", textAlign: "left" }}>
+                <span style={{ fontSize: 13, color: "#534AB7", fontWeight: 700 }}>
+                  👥 {waitingMatchCount} waiting client{waitingMatchCount !== 1 ? "s" : ""} match available stock
+                </span>
+                <span style={{ color: "#534AB7", fontSize: 13 }}>→</span>
+              </button>
+            )}
             {overdueFollowUps > 0 && <button onClick={() => { setActiveTab("customers"); setFilter("overdue"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FFFBEB", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#F59E0B", fontWeight: 700 }}>⏰ {overdueFollowUps} overdue follow up{overdueFollowUps !== 1 ? "s" : ""}</span><span style={{ color: "#F59E0B", fontSize: 13 }}>→</span></button>}
             {slowStock > 0 && <button onClick={() => { setStockFilter("available"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF9C3", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#CA8A04", fontWeight: 700 }}>⚠️ {slowStock} device{slowStock !== 1 ? "s" : ""} unsold 7+ days</span><span style={{ color: "#CA8A04", fontSize: 13 }}>→</span></button>}
             {pendingPayments > 0 && <button onClick={() => { setFilter("all"); setActiveTab("customers"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#ECFDF5", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#10B981", fontWeight: 700 }}>💰 {pendingPayments} payment{pendingPayments !== 1 ? "s" : ""} pending</span><span style={{ color: "#10B981", fontSize: 13 }}>→</span></button>}

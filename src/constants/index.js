@@ -2,6 +2,7 @@ export const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
 
 export const STAGES = [
   { id: "new_inquiry",       label: "New Inquiry",       color: "#6366F1", bg: "#EEF2FF" },
+  { id: "waiting",           label: "Waiting",           color: "#F59E0B", bg: "#FFFBEB" },
   { id: "requirement_noted", label: "Requirement Noted", color: "#F59E0B", bg: "#FFFBEB" },
   { id: "searching",         label: "Searching Device",  color: "#3B82F6", bg: "#EFF6FF" },
   { id: "device_found",      label: "Device Found",      color: "#8B5CF6", bg: "#F5F3FF" },
@@ -10,6 +11,47 @@ export const STAGES = [
   { id: "closed",                   label: "Deal Closed",                color: "#10B981", bg: "#ECFDF5" },
   { id: "lost",              label: "Lost",              color: "#EF4444", bg: "#FEF2F2" },
 ];
+
+export const MATCH_CATEGORIES = [
+  { id: "macbook",      label: "MacBook (any)",        icon: "🍎" },
+  { id: "high_gen_win", label: "High Gen Windows",     icon: "💻" },
+  { id: "low_gen_win",  label: "Low Gen Windows",      icon: "🖥️" },
+  { id: "gaming",       label: "Gaming Laptop",        icon: "🎮" },
+  { id: "budget",       label: "Budget",               icon: "💰" },
+  { id: "none",         label: "No auto-match",        icon: "🚫" },
+];
+
+export function getMatchCategory(brand, model, processor) {
+  const b = (brand || "").toLowerCase();
+  const m = (model || "").toLowerCase();
+  const p = (processor || "").toLowerCase();
+
+  if (b === "macbook" || b === "apple") return "macbook";
+
+  const gamingModels = ["g3", "g5", "g7", "g15", "g16", "omen", "legion", "ideapad gaming", "tuf", "rog", "nitro", "predator"];
+  if (gamingModels.some(g => m.includes(g))) return "gaming";
+
+  const budgetProcs = ["celeron", "pentium", "i3", "atom", "dual core"];
+  if (budgetProcs.some(bp => p.includes(bp))) return "budget";
+
+  if (b === "dell" || b === "hp" || b === "lenovo") {
+    const genMatch = p.match(/i[357]-(\d{4,5})/);
+    if (genMatch) {
+      const modelNum = genMatch[1];
+      const gen = modelNum.length === 4 ? parseInt(modelNum[0]) : parseInt(modelNum.slice(0, 2));
+      return gen >= 6 ? "high_gen_win" : "low_gen_win";
+    }
+    if (p.includes("ryzen")) return "high_gen_win";
+    return "high_gen_win";
+  }
+
+  return "none";
+}
+
+export function stockMatchesCategory(stockItem, category) {
+  const itemCat = getMatchCategory(stockItem.brand, stockItem.model, stockItem.processor);
+  return itemCat === category;
+}
 
 export const TIERS = {
   vip:     { label: "VIP",     color: "#EF4444", bg: "#FEF2F2", icon: "⭐" },

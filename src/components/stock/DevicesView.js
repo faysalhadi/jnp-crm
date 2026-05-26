@@ -1,4 +1,5 @@
 import React from "react";
+import WaitingClientsPanel from "./WaitingClientsPanel";
 import { supabase } from "../../supabase";
 import { useStock } from "../../context/StockContext";
 import { useReservations } from "../../context/ReservationsContext";
@@ -367,6 +368,8 @@ export default function DevicesView({
                 </div>
               );
             })()}
+
+            {item.status === "available" && <WaitingClientsPanel stockItem={item} />}
 
             {/* Expanded details */}
             {isExpanded && (

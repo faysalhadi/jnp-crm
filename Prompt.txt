@@ -1,230 +1,340 @@
-Make these changes to two files:
+Implement a demand matching system. When a client wants a laptop that is not in stock, their deal gets a "Waiting" stage and a match category. When matching stock arrives, the stock card shows which clients are waiting and lets you notify them with AI-generated personalized messages.
+
+Read these files first:
+- src/constants/index.js
+- src/components/chat/ChatHeader.js
+- src/components/stock/DevicesView.js
+- src/context/CustomerContext.js
 
 ═══════════════════════════════════════
-FILE 1: src/components/chat/FollowUpPanel.js
+CHANGE 1: src/constants/index.js
 ═══════════════════════════════════════
 
-CHANGE 1 — Add state after activityLog state:
-const [followUpHistory, setFollowUpHistory] = useState([]);
+Add "waiting" stage to the STAGES array after "new_inquiry":
+{ id: "waiting", label: "Waiting", color: "#F59E0B", bg: "#FFFBEB" },
 
-CHANGE 2 — Add this function after fetchActivityLog:
+Add this new constant after STAGES:
+export const MATCH_CATEGORIES = [
+  { id: "macbook",      label: "MacBook (any)",        icon: "🍎" },
+  { id: "high_gen_win", label: "High Gen Windows",     icon: "💻" },
+  { id: "low_gen_win",  label: "Low Gen Windows",      icon: "🖥️" },
+  { id: "gaming",       label: "Gaming Laptop",        icon: "🎮" },
+  { id: "budget",       label: "Budget",               icon: "💰" },
+  { id: "none",         label: "No auto-match",        icon: "🚫" },
+];
 
-async function fetchFollowUpHistory(cid) {
-  const id = cid || activeCustomerId;
-  if (!id) return;
-  const { data } = await supabase
-    .from("follow_ups")
-    .select("*")
-    .eq("customer_id", id)
-    .eq("status", "done")
-    .order("updated_at", { ascending: false })
-    .limit(10);
-  setFollowUpHistory(data || []);
+Add this helper function after MATCH_CATEGORIES:
+export function getMatchCategory(brand, model, processor) {
+  const b = (brand || "").toLowerCase();
+  const m = (model || "").toLowerCase();
+  const p = (processor || "").toLowerCase();
+
+  if (b === "macbook" || b === "apple") return "macbook";
+
+  const gamingModels = ["g3", "g5", "g7", "g15", "g16", "omen", "legion", "ideapad gaming", "tuf", "rog", "nitro", "predator"];
+  if (gamingModels.some(g => m.includes(g))) return "gaming";
+
+  const budgetProcs = ["celeron", "pentium", "i3", "atom", "dual core"];
+  if (budgetProcs.some(bp => p.includes(bp))) return "budget";
+
+  if (b === "dell" || b === "hp" || b === "lenovo") {
+    const genMatch = p.match(/i[357]-(\d{4,5})/);
+    if (genMatch) {
+      const modelNum = genMatch[1];
+      const gen = modelNum.length === 4 ? parseInt(modelNum[0]) : parseInt(modelNum.slice(0, 2));
+      return gen >= 6 ? "high_gen_win" : "low_gen_win";
+    }
+    if (p.includes("ryzen")) return "high_gen_win";
+    return "high_gen_win";
+  }
+
+  return "none";
 }
 
-CHANGE 3 — In useEffect, after fetchActivityLog(activeCustomerId); add:
-fetchFollowUpHistory(activeCustomerId);
+Add this helper function after getMatchCategory:
+export function stockMatchesCategory(stockItem, category) {
+  const b = (stockItem.brand || "").toLowerCase();
+  const m = (stockItem.model || "").toLowerCase();
+  const p = (stockItem.processor || "").toLowerCase();
+  const itemCat = getMatchCategory(stockItem.brand, stockItem.model, stockItem.processor);
+  return itemCat === category;
+}
 
-CHANGE 4 — In markDone function, after setFollowUp(null); add:
-fetchFollowUpHistory(activeCustomerId);
+═══════════════════════════════════════
+CHANGE 2: src/components/chat/ChatHeader.js
+═══════════════════════════════════════
 
-CHANGE 5 — After the closing </div> of the ACTIVITY LOG section add:
+Add import at top:
+import { MATCH_CATEGORIES, getMatchCategory } from "../../constants";
 
-{followUpHistory.length > 0 && (
-  <div>
-    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>📅 FOLLOW-UP HISTORY</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      {followUpHistory.map((fu, i) => {
-        const due = new Date(fu.due_at);
-        const done = new Date(fu.updated_at);
-        return (
-          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 10px", borderRadius: 8, background: "#F8FAFC" }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", flexShrink: 0, marginTop: 4 }} />
-            <div style={{ flex: 1 }}>
-              <span style={{ fontSize: 12, color: "#334155", fontWeight: 600 }}>✓ Followed up</span>
-              {fu.note ? <span style={{ fontSize: 11, color: "#94A3B8" }}> — {fu.note}</span> : null}
-              <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 2 }}>
-                Due {due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · Done {done.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+In the deal card section, find where stage pills are rendered. After the stage pills div, add this — but ONLY when activeDeal.stage === "waiting":
+
+{activeDeal.stage === "waiting" && (() => {
+  const autoCategory = getMatchCategory(activeDeal.brand, activeDeal.model, activeDeal.processor || activeDeal.ram);
+  const currentCategory = activeDeal.match_category || autoCategory || "none";
+  return (
+    <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>MATCH CATEGORY</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 12, color: "#D97706" }}>
+          {MATCH_CATEGORIES.find(c => c.id === currentCategory)?.icon} {MATCH_CATEGORIES.find(c => c.id === currentCategory)?.label}
+        </span>
+        <span style={{ fontSize: 10, color: "#94A3B8" }}>auto-assigned</span>
+        <select
+          value={currentCategory}
+          onChange={async (e) => {
+            await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
+            updateDeal({ match_category: e.target.value });
+          }}
+          style={{ marginLeft: "auto", padding: "3px 8px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", fontSize: 11, color: "#D97706", outline: "none", cursor: "pointer" }}>
+          {MATCH_CATEGORIES.map(c => (
+            <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+})()}
+
+═══════════════════════════════════════
+CHANGE 3: Add match_category column to deals table
+═══════════════════════════════════════
+
+Run this in Supabase SQL editor:
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_category text DEFAULT 'none';
+
+═══════════════════════════════════════
+CHANGE 4: Create src/components/stock/WaitingClientsPanel.js (new file)
+═══════════════════════════════════════
+
+Create this new file:
+
+import React, { useState, useEffect } from "react";
+import { supabase } from "../../supabase";
+import { stockMatchesCategory, MATCH_CATEGORIES } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
+
+export default function WaitingClientsPanel({ stockItem }) {
+  const [waitingDeals, setWaitingDeals] = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [messages, setMessages] = useState({});
+  const [sent, setSent] = useState({});
+  const { anthropicKey } = useAuth();
+
+  useEffect(() => {
+    loadWaitingClients();
+  }, [stockItem.id]); // eslint-disable-line
+
+  const loadWaitingClients = async () => {
+    const { data: deals } = await supabase
+      .from("deals")
+      .select("*, customers(id, name, number, messages(content, role, ts))")
+      .eq("stage", "waiting")
+      .neq("match_category", "none");
+
+    if (!deals) return;
+
+    const matching = deals.filter(deal => {
+      const cat = deal.match_category || "none";
+      if (cat === "none") return false;
+      return stockMatchesCategory(stockItem, cat);
+    });
+
+    setWaitingDeals(matching);
+  };
+
+  const generateMessages = async () => {
+    if (!anthropicKey || waitingDeals.length === 0) return;
+    setGenerating(true);
+
+    const newMessages = {};
+    for (const deal of waitingDeals) {
+      const customer = deal.customers;
+      const recentMsgs = (customer?.messages || [])
+        .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+        .slice(0, 6)
+        .reverse()
+        .map(m => `${m.role === "customer" ? customer.name : "Me"}: ${m.content}`)
+        .join("\n");
+
+      const deviceDesc = [stockItem.brand, stockItem.model, stockItem.processor, stockItem.ram, stockItem.ssd].filter(Boolean).join(" ");
+      const prompt = `You are a laptop reseller in UAE. Generate a short WhatsApp message to notify a waiting client that a matching laptop is now available.
+
+Client name: ${customer?.name}
+Device available: ${deviceDesc}
+Price: AED ${stockItem.max_price}
+Client's budget from deal: ${deal.budget ? "AED " + deal.budget : "not specified"}
+Recent conversation:
+${recentMsgs || "No previous messages"}
+
+Rules:
+- Write in English OR Roman Urdu based on the conversation language (default English if no conversation)
+- Never use Arabic script
+- Keep it short — WhatsApp style, 2-3 sentences max
+- Mention the device and price
+- If price is slightly over budget, acknowledge it but stay firm
+- Be friendly and personal
+- Do not mention you are AI
+- End with a question to invite reply
+
+Return ONLY the message text, nothing else.`;
+
+      try {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 200,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+        const data = await response.json();
+        newMessages[deal.id] = data.content?.[0]?.text || "";
+      } catch (err) {
+        newMessages[deal.id] = `Hey ${customer?.name}, the ${deviceDesc} you were looking for is now available at AED ${stockItem.max_price}. Interested?`;
+      }
+    }
+
+    setMessages(newMessages);
+    setGenerating(false);
+  };
+
+  const sendMessage = (deal, message) => {
+    const number = deal.customers?.number?.replace(/\D/g, "");
+    if (!number) return;
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(message)}`, "_blank");
+    setSent(p => ({ ...p, [deal.id]: true }));
+  };
+
+  if (waitingDeals.length === 0) return null;
+
+  const deviceDesc = [stockItem.brand, stockItem.model].filter(Boolean).join(" ");
+
+  return (
+    <div style={{ margin: "10px 14px", padding: "12px", borderRadius: 12, background: "#EEEDFE", border: "1px solid #AFA9EC" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 14 }}>👥</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#3C3489" }}>
+          {waitingDeals.length} client{waitingDeals.length !== 1 ? "s" : ""} waiting for {deviceDesc}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+        {waitingDeals.map(deal => (
+          <div key={deal.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#534AB7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+              {(deal.customers?.name || "?").slice(0, 2).toUpperCase()}
+            </div>
+            <span style={{ fontSize: 12, color: "#3C3489", flex: 1 }}>{deal.customers?.name}</span>
+            {deal.budget && <span style={{ fontSize: 10, color: "#7F77DD" }}>AED {Number(deal.budget).toLocaleString()}</span>}
+          </div>
+        ))}
+      </div>
+
+      {Object.keys(messages).length === 0 ? (
+        <button
+          onClick={generateMessages}
+          disabled={generating}
+          style={{ width: "100%", padding: "8px", borderRadius: 8, border: "none", background: generating ? "#AFA9EC" : "#534AB7", color: "#fff", fontSize: 12, fontWeight: 700, cursor: generating ? "not-allowed" : "pointer" }}>
+          {generating ? "Generating messages..." : "Notify clients"}
+        </button>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {waitingDeals.map(deal => (
+            <div key={deal.id} style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "1px solid #AFA9EC" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#534AB7", marginBottom: 6 }}>{deal.customers?.name}</div>
+              <textarea
+                value={messages[deal.id] || ""}
+                onChange={e => setMessages(p => ({ ...p, [deal.id]: e.target.value }))}
+                rows={3}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box", marginBottom: 8 }}
+              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={() => sendMessage(deal, messages[deal.id])}
+                  style={{ flex: 1, padding: "6px", borderRadius: 8, border: "none", background: sent[deal.id] ? "#10B981" : "#1D9E75", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  {sent[deal.id] ? "✓ Sent" : "Send on WA"}
+                </button>
+                <button
+                  onClick={() => setMessages(p => ({ ...p, [deal.id]: "" }))}
+                  style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 11, cursor: "pointer" }}>
+                  Skip
+                </button>
               </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-)}
-
-═══════════════════════════════════════
-FILE 2: src/components/tabs/HomeTab.js
-═══════════════════════════════════════
-
-CHANGE 1 — Add these imports at the top of the file after existing imports:
-import { useState, useEffect } from "react";
-import { supabase } from "../../supabase";
-
-CHANGE 2 — Add these inside the component function, after the existing const declarations:
-
-const [todayFollowUps, setTodayFollowUps] = useState([]);
-const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
-const [showTomorrow, setShowTomorrow] = useState(false);
-
-useEffect(() => {
-  loadFollowUps();
-}, []);
-
-const loadFollowUps = async () => {
-  const now = new Date();
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
-  const endOfTomorrow = new Date();
-  endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
-  endOfTomorrow.setHours(23, 59, 59, 999);
-
-  const { data } = await supabase
-    .from("follow_ups")
-    .select("*, customers(id, name, number)")
-    .eq("status", "pending")
-    .lte("due_at", endOfTomorrow.toISOString())
-    .order("due_at", { ascending: true });
-
-  const all = data || [];
-  setTodayFollowUps(all.filter(fu => new Date(fu.due_at) <= endOfToday));
-  setTomorrowFollowUps(all.filter(fu => new Date(fu.due_at) > endOfToday));
-};
-
-const markFollowUpDone = async (id) => {
-  await supabase.from("follow_ups").update({ status: "done" }).eq("id", id);
-  loadFollowUps();
-};
-
-CHANGE 3 — Find the existing loadTodayFollowUps and todayFollowUps useState declarations (around lines 21-41) and REMOVE them since we are replacing with the new loadFollowUps above.
-
-CHANGE 4 — Find the existing Today's Follow-ups JSX section and replace it entirely with:
-
-{(todayFollowUps.length > 0 || tomorrowFollowUps.length > 0) && (
-  <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-    <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <span>📅 FOLLOW-UPS</span>
-      {todayFollowUps.length > 0 && (
-        <span style={{ padding: "1px 8px", borderRadius: 20, background: "#FEF2F2", color: "#EF4444", fontSize: 11, fontWeight: 700 }}>
-          {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0
-            ? `${todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length} overdue`
-            : `${todayFollowUps.length} today`}
-        </span>
+          ))}
+        </div>
       )}
     </div>
+  );
+}
 
-    {/* Overdue */}
-    {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0 && (
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#EF4444", letterSpacing: 0.5, marginBottom: 6 }}>⚠️ OVERDUE</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).map(fu => {
-            const d = new Date(fu.due_at);
-            const customer = fu.customers;
-            return (
-              <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#FEF2F2", border: "1px solid #FEE2E2" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#EF4444", minWidth: 42, paddingTop: 2 }}>
-                  {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
-                  {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
-                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
-                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                      Open chat
-                    </button>
-                    <button onClick={() => markFollowUpDone(fu.id)}
-                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                      ✓ Done
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )}
+═══════════════════════════════════════
+CHANGE 5: src/components/stock/DevicesView.js
+═══════════════════════════════════════
 
-    {/* Due today (not overdue) */}
-    {todayFollowUps.filter(fu => new Date(fu.due_at) >= new Date()).length > 0 && (
-      <div style={{ marginBottom: tomorrowFollowUps.length > 0 ? 8 : 0 }}>
-        {todayFollowUps.filter(fu => new Date(fu.due_at) < new Date()).length > 0 && (
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", letterSpacing: 0.5, marginBottom: 6 }}>🕐 TODAY</div>
-        )}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {todayFollowUps.filter(fu => new Date(fu.due_at) >= new Date()).map(fu => {
-            const d = new Date(fu.due_at);
-            const customer = fu.customers;
-            return (
-              <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#D97706", minWidth: 42, paddingTop: 2 }}>
-                  {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
-                  {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
-                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
-                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                      Open chat
-                    </button>
-                    <button onClick={() => markFollowUpDone(fu.id)}
-                      style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                      ✓ Done
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )}
+Add import at top:
+import WaitingClientsPanel from "./WaitingClientsPanel";
 
-    {/* Tomorrow - collapsible */}
-    {tomorrowFollowUps.length > 0 && (
-      <div>
-        <button onClick={() => setShowTomorrow(v => !v)}
-          style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1px solid #F1F5F9", background: "#F8FAFC", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, fontWeight: 700, color: "#64748B" }}>
-          <span>📅 Tomorrow ({tomorrowFollowUps.length})</span>
-          <span>{showTomorrow ? "▲" : "▼"}</span>
-        </button>
-        {showTomorrow && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-            {tomorrowFollowUps.map(fu => {
-              const d = new Date(fu.due_at);
-              const customer = fu.customers;
-              return (
-                <div key={fu.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 12, background: "#F8FAFC", border: "1px solid #F1F5F9" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", minWidth: 42, paddingTop: 2 }}>
-                    {d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name || "Unknown"}</div>
-                    {fu.note && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{fu.note}</div>}
-                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                      <button onClick={() => { setActiveCustomerId(customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
-                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        Open chat
-                      </button>
-                      <button onClick={() => markFollowUpDone(fu.id)}
-                        style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#10B981", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        ✓ Done
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    )}
-  </div>
+Find the stock cards map section. Inside each stock card, find where the item details are shown (after the reserved banner section). Add the WaitingClientsPanel right before the closing </div> of each stock card, but only for available items:
+
+{item.status === "available" && <WaitingClientsPanel stockItem={item} />}
+
+═══════════════════════════════════════
+CHANGE 6: Dashboard alert in HomeTab.js
+═══════════════════════════════════════
+
+In src/components/tabs/HomeTab.js, add a waiting matches alert.
+
+Add this state and effect inside the component after the existing useEffect:
+
+const [waitingMatchCount, setWaitingMatchCount] = useState(0);
+
+useEffect(() => {
+  loadWaitingMatches();
+}, []); // eslint-disable-line
+
+const loadWaitingMatches = async () => {
+  const { data: availableStock } = await supabase
+    .from("stock")
+    .select("brand, model, processor")
+    .eq("status", "available");
+
+  const { data: waitingDeals } = await supabase
+    .from("deals")
+    .select("match_category")
+    .eq("stage", "waiting")
+    .neq("match_category", "none");
+
+  if (!availableStock || !waitingDeals) return;
+
+  const { stockMatchesCategory } = await import("../../constants");
+  let matches = 0;
+  for (const deal of waitingDeals) {
+    for (const item of availableStock) {
+      if (stockMatchesCategory(item, deal.match_category)) { matches++; break; }
+    }
+  }
+  setWaitingMatchCount(matches);
+};
+
+In the Alerts section JSX, add this alert alongside the other alerts (after urgentClients alert):
+
+{waitingMatchCount > 0 && (
+  <button onClick={() => setActiveTab("stock")}
+    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#EEEDFE", cursor: "pointer", textAlign: "left" }}>
+    <span style={{ fontSize: 13, color: "#534AB7", fontWeight: 700 }}>
+      👥 {waitingMatchCount} waiting client{waitingMatchCount !== 1 ? "s" : ""} match available stock
+    </span>
+    <span style={{ color: "#534AB7", fontSize: 13 }}>→</span>
+  </button>
 )}
 
+═══════════════════════════════════════
 After all changes run:
-npm run build && git add -A && git commit -m "Add follow-up history in panel and collapsible dashboard sections" && git push
+npm run build && git add -A && git commit -m "Add demand matching: waiting stage, match categories, notify clients" && git push
+═══════════════════════════════════════
+
+IMPORTANT: Also run this SQL in Supabase before testing:
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS match_category text DEFAULT 'none';

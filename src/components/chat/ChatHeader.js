@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { supabase } from "../../supabase";
 import Badge from "../ui/Badge";
-import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS } from "../../constants";
+import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory } from "../../constants";
 import { daysSince } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
@@ -232,6 +232,33 @@ export default function ChatHeader() {
                   </button>
                 ))}
               </div>
+
+              {activeDeal.stage === "waiting" && (() => {
+                const autoCategory = getMatchCategory(activeDeal.brand, activeDeal.model, activeDeal.processor || activeDeal.ram);
+                const currentCategory = activeDeal.match_category || autoCategory || "none";
+                return (
+                  <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>MATCH CATEGORY</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: "#D97706" }}>
+                        {MATCH_CATEGORIES.find(c => c.id === currentCategory)?.icon} {MATCH_CATEGORIES.find(c => c.id === currentCategory)?.label}
+                      </span>
+                      <span style={{ fontSize: 10, color: "#94A3B8" }}>auto-assigned</span>
+                      <select
+                        value={currentCategory}
+                        onChange={async (e) => {
+                          await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
+                          updateDeal({ match_category: e.target.value });
+                        }}
+                        style={{ marginLeft: "auto", padding: "3px 8px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", fontSize: 11, color: "#D97706", outline: "none", cursor: "pointer" }}>
+                        {MATCH_CATEGORIES.map(c => (
+                          <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* info pills */}
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
