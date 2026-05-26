@@ -1,6 +1,6 @@
 import { supabase } from "../supabase";
 
-export async function saveImportedMessages(dealId, rawChatText) {
+export async function saveImportedMessages(dealId, rawChatText, existingContents = new Set()) {
   if (!dealId || !rawChatText) return 0;
 
   const messages = [];
@@ -82,12 +82,16 @@ export async function saveImportedMessages(dealId, rawChatText) {
 
   if (validMessages.length === 0) return 0;
 
+  const deduped = validMessages.filter(m => !existingContents.has((m.content || "").trim()));
+
+  if (deduped.length === 0) return 0;
+
   const chunkSize = 50;
-  for (let i = 0; i < validMessages.length; i += chunkSize) {
-    const chunk = validMessages.slice(i, i + chunkSize);
+  for (let i = 0; i < deduped.length; i += chunkSize) {
+    const chunk = deduped.slice(i, i + chunkSize);
     await supabase.from('messages').insert(chunk);
   }
 
-  console.log('Saved messages:', validMessages.length);
-  return validMessages.length;
+  console.log('Saved messages:', deduped.length);
+  return deduped.length;
 }

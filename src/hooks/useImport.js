@@ -22,26 +22,45 @@ export function useImport() {
   async function importChatFile(file) {
     const text = cleanWhatsAppText(await file.text());
 
-    // Extract name + phone from filename
-    let filename = file.name.replace(/\.txt$/i, "").replace(/^WhatsApp\s*(Chat\s*)?(with\s*)?[-–]?\s*/i, "").trim();
-    let numberFromFile = "";
-    const phoneMatch = filename.match(/\+?\d[\d\s\-()]{7,}/);
-    if (phoneMatch) {
-      numberFromFile = phoneMatch[0].replace(/\s/g, "");
-      filename = filename.replace(phoneMatch[0], "").replace(/[-_]/g, " ").trim();
-    }
+    // Extract customer identity from chat content — not filename
+    let customerName = "";
+    let customerPhone = "";
 
-    // Find first non-owner sender in chat
-    let senderFromChat = "";
-    for (const line of text.split("\n")) {
+    // Parse lines to find first non-owner sender
+    const lines = text.split("\n");
+    for (const line of lines) {
+      // Match WhatsApp format: [DD/MM/YYYY, H:MM:SS AM/PM] SenderName: message
       const m = line.match(/\[\d{1,2}\/\d{1,2}\/\d{4}[^\]]+\]\s+~?([^:]+):/);
       if (m) {
-        const s = m[1].replace(/^~/, "").trim();
-        if (!s.toLowerCase().includes("laptop for less")) { senderFromChat = s; break; }
+        const sender = m[1].replace(/^~/, "").trim();
+        if (
+          sender.toLowerCase() !== "laptop for less" &&
+          sender.toLowerCase() !== "laptop for less " &&
+          !sender.toLowerCase().includes("laptop for less")
+        ) {
+          customerName = sender;
+          break;
+        }
       }
     }
 
-    const customerName = (filename || senderFromChat || "Unknown Customer").trim();
+    // Try to find phone number in chat content
+    for (const line of lines) {
+      // Look for lines that are just a phone number or contain phone patterns
+      const phoneMatch = line.match(/(\+?\d[\d\s\-()]{8,14}\d)/);
+      if (phoneMatch && !line.includes(":")) {
+        customerPhone = phoneMatch[1].replace(/[\s\-()]/g, "");
+        break;
+      }
+      // Also check sender patterns with phone numbers
+      const senderPhone = line.match(/\[\d{1,2}\/\d{1,2}\/\d{4}[^\]]+\]\s+(\+\d[\d\s]{8,14}):/);
+      if (senderPhone) {
+        customerPhone = senderPhone[1].replace(/[\s\-()]/g, "");
+        break;
+      }
+    }
+
+    if (!customerName) customerName = "Unknown Customer";
 
     const chatPrompt = `Analyze this WhatsApp chat between 'Laptop For Less' (a UAE laptop reseller) and a customer.
 
@@ -64,11 +83,12 @@ EXTRACT:
 - urgency: true if said urgent/today/asap/need now
 - stage: 'new_inquiry'|'requirement_noted'|'negotiation'|'closed'|'lost'
 - notes: important context
+- phone: extract phone number of the customer if visible in the chat, else empty string
 
 SHORTHAND: '8/256'=8GB RAM/256GB SSD. '16/512'=16GB/512GB. 'i5 11th'=Core i5 11th Gen. '750aed'=AED 750.
 
 Return ONLY valid JSON (no markdown):
-{"intent":"buying","brand":"Unknown","model":"","processor":"","ram":"","storage":"","condition":"Unknown","quantity":1,"budget":null,"urgency":false,"stage":"new_inquiry","notes":""}
+{"intent":"buying","brand":"Unknown","model":"","processor":"","ram":"","storage":"","condition":"Unknown","quantity":1,"budget":null,"urgency":false,"stage":"new_inquiry","notes":"","phone":""}
 
 Chat:
 ${text.slice(0, 12000)}`;
@@ -83,23 +103,86 @@ ${text.slice(0, 12000)}`;
       const raw = (data?.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
       let info; try { info = JSON.parse(raw); } catch { info = {}; }
 
-      const { data: customer } = await supabase.from("customers").insert({
-        name: customerName, number: numberFromFile || "", notes: info.notes || "",
-        tier: "cold", urgent: info.urgency || false,
-      }).select().single();
-      if (!customer) return null;
+      // Use phone from AI extraction if regex didn't find one
+      const finalPhone = customerPhone || info.phone || "";
 
-      const { data: deal } = await supabase.from("deals").insert({
-        customer_id: customer.id,
-        brand: info.brand && info.brand !== "Unknown" ? info.brand : "",
-        model: info.model || "",
-        ram: info.ram || "", storage: info.storage || "",
-        condition: info.condition && info.condition !== "Unknown" ? info.condition : "",
-        budget: info.budget || null, stage: info.stage || "new_inquiry",
-      }).select().single();
-      if (deal) await saveImportedMessages(deal.id, text);
+      // Check if customer already exists — phone first, then name
+      let existingCustomer = null;
+      if (finalPhone) {
+        const { data: byPhone } = await supabase
+          .from("customers")
+          .select("id, name")
+          .eq("number", finalPhone)
+          .maybeSingle();
+        existingCustomer = byPhone;
+      }
+      if (!existingCustomer && customerName && customerName !== "Unknown Customer") {
+        const { data: byName } = await supabase
+          .from("customers")
+          .select("id, name")
+          .ilike("name", customerName.trim())
+          .maybeSingle();
+        existingCustomer = byName;
+      }
+
+      let customer = existingCustomer;
+
+      if (!existingCustomer) {
+        // New customer — create with deal
+        const { data: newCustomer } = await supabase.from("customers").insert({
+          name: customerName,
+          number: finalPhone,
+          notes: info.notes || "",
+          tier: "cold",
+          urgent: info.urgency || false,
+          contact_type: "client",
+          last_activity_at: new Date().toISOString(),
+          last_active: new Date().toISOString(),
+        }).select().single();
+        if (!newCustomer) return null;
+        customer = newCustomer;
+
+        await supabase.from("deals").insert({
+          customer_id: customer.id,
+          brand: info.brand && info.brand !== "Unknown" ? info.brand : "",
+          model: info.model || "",
+          ram: info.ram || "",
+          storage: info.storage || "",
+          condition: info.condition && info.condition !== "Unknown" ? info.condition : "",
+          budget: info.budget || null,
+          stage: info.stage || "new_inquiry",
+        });
+      }
+
+      // Get most recent deal for this customer
+      const { data: deal } = await supabase
+        .from("deals")
+        .select("id")
+        .eq("customer_id", customer.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (deal) {
+        // Get existing message contents to avoid duplicates
+        const { data: existingMsgs } = await supabase
+          .from("messages")
+          .select("content")
+          .eq("deal_id", deal.id);
+        const existingContents = new Set((existingMsgs || []).map(m => (m.content || "").trim()));
+        await saveImportedMessages(deal.id, text, existingContents);
+      }
+
+      // Update last_activity_at
+      await supabase.from("customers")
+        .update({ last_activity_at: new Date().toISOString(), last_active: new Date().toISOString() })
+        .eq("id", customer.id);
+
       return customer;
-    } catch { return null; }
+    } catch (e) {
+      console.error("importChatFile error:", e);
+      return null;
+    }
   }
 
   async function importSingleChatFile(file) {
