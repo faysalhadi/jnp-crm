@@ -1,196 +1,132 @@
-Read src/hooks/useImport.js and src/utils/whatsapp.js carefully first.
+Read src/context/TradersContext.js carefully first.
 
-Fix the importChatFile function to extract customer identity from chat content instead of filename, and prevent duplicate customers on re-import.
+Make two fixes:
 
-THE PROBLEM:
-All exported WhatsApp files are named "_chat.txt" so filename parsing is useless. Customer name and phone must be extracted from the chat text content itself.
+FIX 1 — Extract buying requests in addition to selling listings
+FIX 2 — Skip messages already imported from previous imports of the same group
 
-CHANGE 1 — In src/hooks/useImport.js, replace the entire importChatFile function with this:
+═══════════════════════════════════════
+FIX 1: Extract buying requests
+═══════════════════════════════════════
 
-async function importChatFile(file) {
-  const text = cleanWhatsAppText(await file.text());
+In the extractTraderListings function:
 
-  // Extract customer identity from chat content — not filename
-  let customerName = "";
-  let customerPhone = "";
+CHANGE A — Update sellSignals to include buying signals too, and rename to relevantSignals:
 
-  // Parse lines to find first non-owner sender
-  const lines = text.split("\n");
-  for (const line of lines) {
-    // Match WhatsApp format: [DD/MM/YYYY, H:MM:SS AM/PM] SenderName: message
-    const m = line.match(/\[\d{1,2}\/\d{1,2}\/\d{4}[^\]]+\]\s+~?([^:]+):/);
-    if (m) {
-      const sender = m[1].replace(/^~/, "").trim();
-      if (
-        sender.toLowerCase() !== "laptop for less" &&
-        sender.toLowerCase() !== "laptop for less " &&
-        !sender.toLowerCase().includes("laptop for less")
-      ) {
-        customerName = sender;
-        break;
-      }
-    }
-  }
+Replace:
+const sellSignals = ['wts', 'want to sale', 'want to sell',
+  'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
 
-  // Try to find phone number in chat content
-  for (const line of lines) {
-    // Look for lines that are just a phone number or contain phone patterns
-    const phoneMatch = line.match(/(\+?\d[\d\s\-()]{8,14}\d)/);
-    if (phoneMatch && !line.includes(":")) {
-      customerPhone = phoneMatch[1].replace(/[\s\-()]/g, "");
-      break;
-    }
-    // Also check sender patterns with phone numbers
-    const senderPhone = line.match(/\[\d{1,2}\/\d{1,2}\/\d{4}[^\]]+\]\s+(\+\d[\d\s]{8,14}):/);
-    if (senderPhone) {
-      customerPhone = senderPhone[1].replace(/[\s\-()]/g, "");
-      break;
-    }
-  }
+With:
+const sellSignals = ['wts', 'want to sale', 'want to sell',
+  'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
+const buySignals = ['wtb', 'want to buy', 'looking for', 'need',
+  'chahiye', 'koi hai', 'kisi ke pass', 'required', 'requirement',
+  'buying', 'anyone have', 'any one have', 'kya kisi', 'mil sakta'];
 
-  if (!customerName) customerName = "Unknown Customer";
+CHANGE B — Update the filter to include buying signals:
 
-  const chatPrompt = `Analyze this WhatsApp chat between 'Laptop For Less' (a UAE laptop reseller) and a customer.
+Replace:
+const hasSellSignal = sellSignals.some(s => lower.includes(s));
+const hasLaptop = laptopBrands.some(b => lower.includes(b));
+return hasSellSignal || (hasLaptop && lower.includes('|'));
 
-PARSING:
-- 'Laptop For Less' = the owner/seller (ignore for customer profile, read for context)
-- All other senders = the customer
-- Strip ~ from sender names
-- English + Urdu/Arabic mix is normal
+With:
+const hasSellSignal = sellSignals.some(s => lower.includes(s));
+const hasBuySignal = buySignals.some(s => lower.includes(s));
+const hasLaptop = laptopBrands.some(b => lower.includes(b));
+return hasSellSignal || hasBuySignal || (hasLaptop && lower.includes('|'));
 
-EXTRACT:
-- intent: 'buying' or 'selling'
-- brand: MacBook/Dell/HP/Lenovo/Other/Unknown
-- model: specific model (e.g. 'Dell 5420', 'MacBook Air M1') or empty
-- processor: e.g. 'Core i5 11th Gen' / 'Apple M1' or empty
-- ram: e.g. '8GB' or empty
-- storage: e.g. '256GB' or empty
-- condition: New/Like New/Used/Unknown
-- quantity: units wanted (default 1)
-- budget: price in AED if mentioned (number only, null if not)
-- urgency: true if said urgent/today/asap/need now
-- stage: 'new_inquiry'|'requirement_noted'|'negotiation'|'closed'|'lost'
-- notes: important context
-- phone: extract phone number of the customer if visible in the chat, else empty string
+CHANGE C — Update the extractionPrompt to extract buying requests too:
 
-SHORTHAND: '8/256'=8GB RAM/256GB SSD. '16/512'=16GB/512GB. 'i5 11th'=Core i5 11th Gen. '750aed'=AED 750.
+Replace the entire extractionPrompt function with:
 
-Return ONLY valid JSON (no markdown):
-{"intent":"buying","brand":"Unknown","model":"","processor":"","ram":"","storage":"","condition":"Unknown","quantity":1,"budget":null,"urgency":false,"stage":"new_inquiry","notes":"","phone":""}
+const extractionPrompt = (chunkText) =>
+  `Extract laptop listings and buying requests from this WhatsApp group chat.
+Return ONLY a JSON array, no markdown.
+
+SELLING signals: WTS, Want to Sell, Available, New Shipment, For Sale
+BUYING signals: WTB, Want to Buy, Looking for, Need, Chahiye, Koi hai, Required, Anyone have
+
+Return format - use type "selling" or "buying":
+[{"type":"selling","category":"laptop","brand":"HP",
+"model":"EliteBook 840 G8","processor":"Core i7 11th Gen",
+"ram":"8GB","storage":"256GB","condition":"Used",
+"quantity":null,"price":null,"currency":"AED",
+"charger":"unknown","notes":"","trader_name":"sender name",
+"trader_number":""},
+{"type":"buying","category":"laptop","brand":"MacBook",
+"model":"Air M2","processor":"Apple M2",
+"ram":"8GB","storage":"256GB","condition":"any",
+"quantity":1,"price":null,"currency":"AED",
+"charger":"unknown","notes":"urgent","trader_name":"sender name",
+"trader_number":""}]
+
+RULES:
+- SELLING: trader has stock available for sale
+- BUYING: trader is looking to purchase something
+- SKIP: RAM only, SSD only, phones, desktops, greetings, off-topic
+- Include both selling and buying in the same output array
+- If no listings found return []
 
 Chat:
-${text.slice(0, 12000)}`;
+${chunkText}`;
 
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 800, messages: [{ role: "user", content: chatPrompt }] }),
-    });
-    const data = await res.json();
-    const raw = (data?.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
-    let info; try { info = JSON.parse(raw); } catch { info = {}; }
+═══════════════════════════════════════
+FIX 2: Skip already-imported messages
+═══════════════════════════════════════
 
-    // Use phone from AI extraction if regex didn't find one
-    const finalPhone = customerPhone || info.phone || "";
+The trader_inventory table has a source_group column. We need to track the last import timestamp per group and skip messages older than that.
 
-    // Check if customer already exists — phone first, then name
-    let existingCustomer = null;
-    if (finalPhone) {
-      const { data: byPhone } = await supabase
-        .from("customers")
-        .select("id, name")
-        .eq("number", finalPhone)
-        .maybeSingle();
-      existingCustomer = byPhone;
+CHANGE A — Add a new state variable after existing state declarations:
+const [lastImportTimes, setLastImportTimes] = useState({});
+
+CHANGE B — In loadTraderListings function, after loading listings, also load last import times:
+
+Add this after setTraderListings(data || []):
+
+const { data: importTimes } = await supabase
+  .from("trader_inventory")
+  .select("source_group, created_at")
+  .order("created_at", { ascending: false });
+
+if (importTimes) {
+  const times = {};
+  for (const row of importTimes) {
+    if (!times[row.source_group]) {
+      times[row.source_group] = row.created_at;
     }
-    if (!existingCustomer && customerName && customerName !== "Unknown Customer") {
-      const { data: byName } = await supabase
-        .from("customers")
-        .select("id, name")
-        .ilike("name", customerName.trim())
-        .maybeSingle();
-      existingCustomer = byName;
-    }
-
-    let customer = existingCustomer;
-
-    if (!existingCustomer) {
-      // New customer — create with deal
-      const { data: newCustomer } = await supabase.from("customers").insert({
-        name: customerName,
-        number: finalPhone,
-        notes: info.notes || "",
-        tier: "cold",
-        urgent: info.urgency || false,
-        contact_type: "client",
-        last_activity_at: new Date().toISOString(),
-        last_active: new Date().toISOString(),
-      }).select().single();
-      if (!newCustomer) return null;
-      customer = newCustomer;
-
-      await supabase.from("deals").insert({
-        customer_id: customer.id,
-        brand: info.brand && info.brand !== "Unknown" ? info.brand : "",
-        model: info.model || "",
-        ram: info.ram || "",
-        storage: info.storage || "",
-        condition: info.condition && info.condition !== "Unknown" ? info.condition : "",
-        budget: info.budget || null,
-        stage: info.stage || "new_inquiry",
-      });
-    }
-
-    // Get most recent deal for this customer
-    const { data: deal } = await supabase
-      .from("deals")
-      .select("id")
-      .eq("customer_id", customer.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (deal) {
-      // Get existing message contents to avoid duplicates
-      const { data: existingMsgs } = await supabase
-        .from("messages")
-        .select("content")
-        .eq("deal_id", deal.id);
-      const existingContents = new Set((existingMsgs || []).map(m => (m.content || "").trim()));
-      await saveImportedMessages(deal.id, text, existingContents);
-    }
-
-    // Update last_activity_at
-    await supabase.from("customers")
-      .update({ last_activity_at: new Date().toISOString(), last_active: new Date().toISOString() })
-      .eq("id", customer.id);
-
-    return customer;
-  } catch (e) {
-    console.error("importChatFile error:", e);
-    return null;
   }
+  setLastImportTimes(times);
 }
 
+CHANGE C — In extractTraderListings function, after cleanedText is created and before building mergedLines, add this date filter:
 
-CHANGE 2 — Update saveImportedMessages in src/utils/whatsapp.js
+// Get last import time for this group to skip old messages
+const lastImport = lastImportTimes[traderGroup || "Other"];
+const lastImportDate = lastImport ? new Date(lastImport) : null;
 
-Read the file first. Find the saveImportedMessages function signature and add existingContents parameter:
+CHANGE D — In the filter for relevantLines, add a date check at the start:
 
-Change the function signature from:
-export async function saveImportedMessages(dealId, text)
-to:
-export async function saveImportedMessages(dealId, text, existingContents = new Set())
+Replace:
+const relevantLines = mergedLines.filter(line => {
 
-Inside the function, find where messages are inserted into Supabase.
-If there is a batch array insert, add a filter before inserting:
-Filter out any message where existingContents.has((message.content || "").trim())
-Only insert messages not in existingContents.
+With:
+const relevantLines = mergedLines.filter(line => {
+  // Skip messages older than last import for this group
+  if (lastImportDate) {
+    const dateMatch = line.match(/\[(\d{1,2})\/(\d{1,2})\/(\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/);
+    if (dateMatch) {
+      const [, day, month, year, time] = dateMatch;
+      const msgDate = new Date(`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')} ${time}`);
+      if (msgDate <= lastImportDate) return false;
+    }
+  }
 
-If messages are inserted one by one in a loop, add this check before each insert:
-if (existingContents.has((content || "").trim())) continue;
+CHANGE E — Update the context Provider value to include lastImportTimes:
+Add to the value object: lastImportTimes, setLastImportTimes,
 
-
+═══════════════════════════════════════
 After all changes run:
-npm run build && git add -A && git commit -m "Fix import: extract name from chat content, deduplicate customers and messages" && git push
+npm run build && git add -A && git commit -m "Traders: extract buying requests, skip already-imported messages" && git push
+═══════════════════════════════════════

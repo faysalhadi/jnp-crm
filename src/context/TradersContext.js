@@ -29,6 +29,7 @@ export function TradersProvider({ children, anthropicKey }) {
   const [savingTraderListings, setSavingTraderListings] = useState(false);
   const [traderImportResult, setTraderImportResult] = useState(null);
   const [showTraderMatches, setShowTraderMatches] = useState(false);
+  const [lastImportTimes, setLastImportTimes] = useState({});
 
   const loadTraderListings = useCallback(async () => {
     setTraderListingsLoading(true);
@@ -42,6 +43,22 @@ export function TradersProvider({ children, anthropicKey }) {
       .gte("created_at", thirtyDaysAgo)
       .order("created_at", { ascending: false });
     setTraderListings(data || []);
+
+    const { data: importTimes } = await supabase
+      .from("trader_inventory")
+      .select("source_group, created_at")
+      .order("created_at", { ascending: false });
+
+    if (importTimes) {
+      const times = {};
+      for (const row of importTimes) {
+        if (!times[row.source_group]) {
+          times[row.source_group] = row.created_at;
+        }
+      }
+      setLastImportTimes(times);
+    }
+
     setTraderListingsLoading(false);
   }, []);
 
@@ -52,6 +69,11 @@ export function TradersProvider({ children, anthropicKey }) {
     setTraderImportPreview(null);
 
     const cleanedText = cleanText(traderChatText);
+
+    // Get last import time for this group to skip old messages
+    const lastImport = lastImportTimes[traderGroup || "Other"];
+    const lastImportDate = lastImport ? new Date(lastImport) : null;
+
     const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/;
     const rawLines = cleanedText.split('\n');
     const mergedLines = [];
@@ -68,19 +90,32 @@ export function TradersProvider({ children, anthropicKey }) {
       'created this group', 'omitted', 'sticker', 'document omitted'];
     const sellSignals = ['wts', 'want to sale', 'want to sell',
       'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
+    const buySignals = ['wtb', 'want to buy', 'looking for', 'need',
+      'chahiye', 'koi hai', 'kisi ke pass', 'required', 'requirement',
+      'buying', 'anyone have', 'any one have', 'kya kisi', 'mil sakta'];
     const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad',
       'elitebook', 'latitude', 'surface', 'macbook', '840', '850',
       '5420', '7420', '640', '830', '845', '835'];
 
     const relevantLines = mergedLines.filter(line => {
+      // Skip messages older than last import for this group
+      if (lastImportDate) {
+        const dateMatch = line.match(/\[(\d{1,2})\/(\d{1,2})\/(\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/);
+        if (dateMatch) {
+          const [, day, month, year, time] = dateMatch;
+          const msgDate = new Date(`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')} ${time}`);
+          if (msgDate <= lastImportDate) return false;
+        }
+      }
       const lower = line.toLowerCase();
       if (skipContent.some(s => lower.includes(s))) return false;
       if (skipSenders.some(s =>
         line.includes('] ' + s + ':') ||
         line.includes('] ~' + s + ':'))) return false;
       const hasSellSignal = sellSignals.some(s => lower.includes(s));
+      const hasBuySignal = buySignals.some(s => lower.includes(s));
       const hasLaptop = laptopBrands.some(b => lower.includes(b));
-      return hasSellSignal || (hasLaptop && lower.includes('|'));
+      return hasSellSignal || hasBuySignal || (hasLaptop && lower.includes('|'));
     });
 
     if (relevantLines.length === 0) {
@@ -97,21 +132,32 @@ export function TradersProvider({ children, anthropicKey }) {
     const totalChunks = Math.ceil(relevantLines.length / chunkSize);
 
     const extractionPrompt = (chunkText) =>
-      `Extract laptop listings from this WhatsApp group chat.
+      `Extract laptop listings and buying requests from this WhatsApp group chat.
 Return ONLY a JSON array, no markdown.
 
-SELLING signals: WTS, Want to Sell, Available, New Shipment
-SKIP: RAM only, SSD only, phones, desktops, buying requests
+SELLING signals: WTS, Want to Sell, Available, New Shipment, For Sale
+BUYING signals: WTB, Want to Buy, Looking for, Need, Chahiye, Koi hai, Required, Anyone have
 
-Return format:
+Return format - use type "selling" or "buying":
 [{"type":"selling","category":"laptop","brand":"HP",
 "model":"EliteBook 840 G8","processor":"Core i7 11th Gen",
 "ram":"8GB","storage":"256GB","condition":"Used",
 "quantity":null,"price":null,"currency":"AED",
 "charger":"unknown","notes":"","trader_name":"sender name",
+"trader_number":""},
+{"type":"buying","category":"laptop","brand":"MacBook",
+"model":"Air M2","processor":"Apple M2",
+"ram":"8GB","storage":"256GB","condition":"any",
+"quantity":1,"price":null,"currency":"AED",
+"charger":"unknown","notes":"urgent","trader_name":"sender name",
 "trader_number":""}]
 
-If no listings found return [].
+RULES:
+- SELLING: trader has stock available for sale
+- BUYING: trader is looking to purchase something
+- SKIP: RAM only, SSD only, phones, desktops, greetings, off-topic
+- Include both selling and buying in the same output array
+- If no listings found return []
 
 Chat:
 ${chunkText}`;
@@ -241,6 +287,7 @@ ${chunkText}`;
       savingTraderListings, setSavingTraderListings,
       traderImportResult, setTraderImportResult,
       showTraderMatches, setShowTraderMatches,
+      lastImportTimes, setLastImportTimes,
       loadTraderListings,
       extractTraderListings,
       saveTraderListings,
