@@ -238,40 +238,49 @@ export default function ChatHeader() {
                 </div>
               )}
 
-              {/* stage pills — single scrollable row */}
-              <div style={{ display: "flex", gap: 4, overflowX: "auto", scrollbarWidth: "none", marginBottom: 10, paddingBottom: 2 }}>
-                {STAGES.map(s => (
-                  <button key={s.id} onClick={() => moveStage(s.id)}
-                    style={{ padding: "4px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                      background: s.id === activeDeal.stage ? "#6366F1" : "#F1F5F9",
-                      color: s.id === activeDeal.stage ? "#fff" : "#64748B" }}>
-                    {s.label}
-                  </button>
-                ))}
+              {/* stage pills */}
+              <div style={{ marginTop: 8, marginBottom: 8 }}>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {STAGES.map(s => (
+                    <button key={s.id} onClick={() => moveStage(s.id)}
+                      style={{
+                        padding: "3px 10px", borderRadius: 20, border: "none",
+                        fontSize: 10, fontWeight: 700, cursor: "pointer",
+                        background: s.id === activeDeal.stage ? s.color : "#F1F5F9",
+                        color: s.id === activeDeal.stage ? "#fff" : "#64748B",
+                        transition: "all 0.15s",
+                      }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {activeDeal.stage === "waiting" && (() => {
-                const autoCategory = getMatchCategory(activeDeal.brand, activeDeal.model, activeDeal.processor || activeDeal.ram);
+                const autoCategory = getMatchCategory(activeDeal.brand, activeDeal.model, activeDeal.processor || "");
                 const currentCategory = activeDeal.match_category || autoCategory || "none";
+                const currentCat = MATCH_CATEGORIES.find(c => c.id === currentCategory);
                 return (
-                  <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                  <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>MATCH CATEGORY</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "#D97706" }}>
-                        {MATCH_CATEGORIES.find(c => c.id === currentCategory)?.icon} {MATCH_CATEGORIES.find(c => c.id === currentCategory)?.label}
+                      <span style={{ fontSize: 12, color: "#D97706", flex: 1 }}>
+                        {currentCat?.icon} {currentCat?.label || "Not set"}
                       </span>
-                      <span style={{ fontSize: 10, color: "#94A3B8" }}>auto-assigned</span>
                       <select
                         value={currentCategory}
                         onChange={async (e) => {
                           await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
                           updateDeal({ match_category: e.target.value });
                         }}
-                        style={{ marginLeft: "auto", padding: "3px 8px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", fontSize: 11, color: "#D97706", outline: "none", cursor: "pointer" }}>
+                        style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", fontSize: 11, color: "#D97706", outline: "none", cursor: "pointer" }}>
                         {MATCH_CATEGORIES.map(c => (
                           <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
                         ))}
                       </select>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>
+                      Auto-detected from specs. Change if needed.
                     </div>
                   </div>
                 );

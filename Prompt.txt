@@ -1,43 +1,70 @@
-In src/constants/index.js, add these exports at the end of the file:
+Read src/components/chat/ChatHeader.js carefully first.
 
-export const MATCH_CATEGORIES = [
-  { id: "macbook",      label: "MacBook (any)",    icon: "🍎" },
-  { id: "high_gen_win", label: "High Gen Windows", icon: "💻" },
-  { id: "low_gen_win",  label: "Low Gen Windows",  icon: "🖥️" },
-  { id: "gaming",       label: "Gaming Laptop",    icon: "🎮" },
-  { id: "budget",       label: "Budget",           icon: "💰" },
-  { id: "none",         label: "No auto-match",    icon: "🚫" },
-];
+Add two things to the deal card section:
 
-export function getMatchCategory(brand, model, processor) {
-  const b = (brand || "").toLowerCase();
-  const m = (model || "").toLowerCase();
-  const p = (processor || "").toLowerCase();
-  if (b === "macbook" || b === "apple") return "macbook";
-  const gamingModels = ["g3", "g5", "g7", "g15", "g16", "omen", "legion", "ideapad gaming", "tuf", "rog", "nitro", "predator"];
-  if (gamingModels.some(g => m.includes(g))) return "gaming";
-  const budgetProcs = ["celeron", "pentium", "i3", "atom", "dual core"];
-  if (budgetProcs.some(bp => p.includes(bp))) return "budget";
-  if (b === "dell" || b === "hp" || b === "lenovo") {
-    const genMatch = p.match(/i[357]-(\d{4,5})/);
-    if (genMatch) {
-      const modelNum = genMatch[1];
-      const gen = modelNum.length === 4 ? parseInt(modelNum[0]) : parseInt(modelNum.slice(0, 2));
-      return gen >= 6 ? "high_gen_win" : "low_gen_win";
-    }
-    if (p.includes("ryzen")) return "high_gen_win";
-    return "high_gen_win";
-  }
-  return "none";
-}
+1. Replace StageBar with clickable stage pills so user can change stage including the new "waiting" stage
+2. When stage is "waiting", show a match category selector
 
-export function stockMatchesCategory(stockItem, category) {
-  if (!stockItem || !category || category === "none") return false;
-  const itemCat = getMatchCategory(stockItem.brand, stockItem.model, stockItem.processor);
-  return itemCat === category;
-}
+CHANGE 1 — Add imports at top of file:
+Add MATCH_CATEGORIES, getMatchCategory to the existing constants import line:
+import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory } from "../../constants";
 
-Then also add "waiting" to the STAGES array after "new_inquiry":
-{ id: "waiting", label: "Waiting", color: "#F59E0B", bg: "#FFFBEB" },
+CHANGE 2 — Remove StageBar import and usage
+Find: import StageBar from "../ui/StageBar";
+Remove that import line.
 
-Then run: npm run build && git add -A && git commit -m "Add missing MATCH_CATEGORIES and waiting stage to constants" && git push
+Find where StageBar is used in the deal card:
+<StageBar stageId={activeDeal.stage} />
+Replace it with clickable stage pills:
+
+<div style={{ marginTop: 8, marginBottom: 8 }}>
+  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+    {STAGES.map(s => (
+      <button key={s.id} onClick={() => moveStage(s.id)}
+        style={{
+          padding: "3px 10px", borderRadius: 20, border: "none",
+          fontSize: 10, fontWeight: 700, cursor: "pointer",
+          background: s.id === activeDeal.stage ? s.color : "#F1F5F9",
+          color: s.id === activeDeal.stage ? "#fff" : "#64748B",
+          transition: "all 0.15s",
+        }}>
+        {s.label}
+      </button>
+    ))}
+  </div>
+</div>
+
+CHANGE 3 — Add match category selector after the stage pills div, but ONLY when stage is "waiting":
+
+{activeDeal.stage === "waiting" && (() => {
+  const autoCategory = getMatchCategory(activeDeal.brand, activeDeal.model, activeDeal.processor || "");
+  const currentCategory = activeDeal.match_category || autoCategory || "none";
+  const currentCat = MATCH_CATEGORIES.find(c => c.id === currentCategory);
+  return (
+    <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>MATCH CATEGORY</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 12, color: "#D97706", flex: 1 }}>
+          {currentCat?.icon} {currentCat?.label || "Not set"}
+        </span>
+        <select
+          value={currentCategory}
+          onChange={async (e) => {
+            await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
+            updateDeal({ match_category: e.target.value });
+          }}
+          style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", fontSize: 11, color: "#D97706", outline: "none", cursor: "pointer" }}>
+          {MATCH_CATEGORIES.map(c => (
+            <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
+          ))}
+        </select>
+      </div>
+      <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>
+        Auto-detected from specs. Change if needed.
+      </div>
+    </div>
+  );
+})()}
+
+After changes run:
+npm run build && git add -A && git commit -m "Add stage pills and match category to deal card" && git push
