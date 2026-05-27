@@ -49,6 +49,7 @@ export function getMatchCategory(brand, model, processor) {
 }
 
 export function stockMatchesCategory(stockItem, category) {
+  if (!stockItem || !category || category === "none") return false;
   const itemCat = getMatchCategory(stockItem.brand, stockItem.model, stockItem.processor);
   return itemCat === category;
 }
