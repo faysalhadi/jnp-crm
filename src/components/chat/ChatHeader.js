@@ -270,7 +270,9 @@ export default function ChatHeader() {
                       <select
                         value={currentCategory}
                         onChange={async (e) => {
-                          await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
+                          console.log("Saving match_category:", e.target.value, "for deal:", activeDealId);
+                          const { error } = await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
+                          console.log("Save result error:", error);
                           updateDeal({ match_category: e.target.value });
                         }}
                         style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", fontSize: 11, color: "#D97706", outline: "none", cursor: "pointer" }}>
