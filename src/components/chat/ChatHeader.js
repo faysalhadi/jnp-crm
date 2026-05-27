@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import Badge from "../ui/Badge";
 import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory } from "../../constants";
@@ -44,11 +44,25 @@ export default function ChatHeader() {
   const { moveStage, handleConfirmSale, handleReserveDevice, generateSupplierReply } = useChatActions();
 
   const [dealExpanded, setDealExpanded] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState(activeCustomer?.notes || "");
+  const [notesSaving, setNotesSaving] = useState(false);
+
+  useEffect(() => {
+    setNotesValue(activeCustomer?.notes || "");
+  }, [activeCustomer?.id]); // eslint-disable-line
 
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);
   const addDeal = () => _addDeal(activeCustomerId, newDeal);
+
+  const saveNotes = async (val) => {
+    setNotesSaving(true);
+    await supabase.from("customers").update({ notes: val }).eq("id", activeCustomerId);
+    await loadCustomers();
+    setNotesSaving(false);
+  };
 
   const tier = TIERS[activeCustomer.tier] || TIERS.cold;
   const overdue = daysSince(activeCustomer.last_active) >= 1 && (activeCustomer.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
@@ -383,6 +397,59 @@ export default function ChatHeader() {
               <button onClick={() => setShowDeleteConfirm(false)} style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 14, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Notes row — works for all contact types */}
+      <div
+        onClick={() => setShowNotes(v => !v)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "7px 14px",
+          borderTop: "1px solid #F1F5F9",
+          cursor: "pointer",
+          background: notesValue ? "#FAFFF7" : "#fff",
+        }}>
+        <span style={{ fontSize: 13 }}>📝</span>
+        {notesValue && !showNotes ? (
+          <span style={{ fontSize: 12, color: "#475569", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {notesValue}
+          </span>
+        ) : (
+          <span style={{ fontSize: 12, color: "#94A3B8", flex: 1 }}>
+            {showNotes ? "Notes" : "Add notes about this contact..."}
+          </span>
+        )}
+        {notesSaving && <span style={{ fontSize: 10, color: "#10B981" }}>saving...</span>}
+        <span style={{ fontSize: 11, color: "#94A3B8" }}>{showNotes ? "▲" : "▼"}</span>
+      </div>
+
+      {showNotes && (
+        <div style={{ padding: "0 14px 10px", borderTop: "1px solid #F8FAFC" }}>
+          <textarea
+            value={notesValue}
+            onChange={e => setNotesValue(e.target.value)}
+            onBlur={() => saveNotes(notesValue)}
+            placeholder='e.g. "Deals in bulk, prefers HP. Pays cash. WhatsApp only after 6pm."'
+            rows={3}
+            autoFocus
+            style={{
+              width: "100%",
+              padding: "9px 11px",
+              borderRadius: 10,
+              border: "1px solid #E2E8F0",
+              fontSize: 12,
+              outline: "none",
+              resize: "none",
+              fontFamily: "inherit",
+              lineHeight: 1.6,
+              boxSizing: "border-box",
+              color: "#334155",
+              background: "#F8FAFC",
+            }}
+          />
         </div>
       )}
     </div>

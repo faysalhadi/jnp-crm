@@ -1,132 +1,85 @@
-Read src/context/TradersContext.js carefully first.
+In src/components/chat/ChatHeader.js, add a collapsible notes section that works for all contact types.
 
-Make two fixes:
+Read the file first.
 
-FIX 1 — Extract buying requests in addition to selling listings
-FIX 2 — Skip messages already imported from previous imports of the same group
+CHANGE 1 — Add useState import if not already there:
+Make sure useState is imported from React at the top.
 
-═══════════════════════════════════════
-FIX 1: Extract buying requests
-═══════════════════════════════════════
+CHANGE 2 — Add state variable inside the component after existing state destructuring:
+const [showNotes, setShowNotes] = useState(false);
+const [notesValue, setNotesValue] = useState(activeCustomer?.notes || "");
+const [notesSaving, setNotesSaving] = useState(false);
 
-In the extractTraderListings function:
+CHANGE 3 — Add a useEffect to sync notes when customer changes:
+Add after the existing variable declarations:
 
-CHANGE A — Update sellSignals to include buying signals too, and rename to relevantSignals:
+useEffect(() => {
+  setNotesValue(activeCustomer?.notes || "");
+}, [activeCustomer?.id]); // eslint-disable-line
 
-Replace:
-const sellSignals = ['wts', 'want to sale', 'want to sell',
-  'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
+CHANGE 4 — Add a saveNotes function after the addDeal function:
 
-With:
-const sellSignals = ['wts', 'want to sale', 'want to sell',
-  'available', 'shipment', 'w.t.sal', 'for sale', 'selling'];
-const buySignals = ['wtb', 'want to buy', 'looking for', 'need',
-  'chahiye', 'koi hai', 'kisi ke pass', 'required', 'requirement',
-  'buying', 'anyone have', 'any one have', 'kya kisi', 'mil sakta'];
+const saveNotes = async (val) => {
+  setNotesSaving(true);
+  await supabase.from("customers").update({ notes: val }).eq("id", activeCustomerId);
+  await loadCustomers();
+  setNotesSaving(false);
+};
 
-CHANGE B — Update the filter to include buying signals:
+CHANGE 5 — Find the closing </div> of the sticky header (the outermost div that has position: sticky). Just before it closes, add this notes row:
 
-Replace:
-const hasSellSignal = sellSignals.some(s => lower.includes(s));
-const hasLaptop = laptopBrands.some(b => lower.includes(b));
-return hasSellSignal || (hasLaptop && lower.includes('|'));
+{/* Notes row — works for all contact types */}
+<div
+  onClick={() => setShowNotes(v => !v)}
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "7px 14px",
+    borderTop: "1px solid #F1F5F9",
+    cursor: "pointer",
+    background: notesValue ? "#FAFFF7" : "#fff",
+  }}>
+  <span style={{ fontSize: 13 }}>📝</span>
+  {notesValue && !showNotes ? (
+    <span style={{ fontSize: 12, color: "#475569", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      {notesValue}
+    </span>
+  ) : (
+    <span style={{ fontSize: 12, color: "#94A3B8", flex: 1 }}>
+      {showNotes ? "Notes" : "Add notes about this contact..."}
+    </span>
+  )}
+  {notesSaving && <span style={{ fontSize: 10, color: "#10B981" }}>saving...</span>}
+  <span style={{ fontSize: 11, color: "#94A3B8" }}>{showNotes ? "▲" : "▼"}</span>
+</div>
 
-With:
-const hasSellSignal = sellSignals.some(s => lower.includes(s));
-const hasBuySignal = buySignals.some(s => lower.includes(s));
-const hasLaptop = laptopBrands.some(b => lower.includes(b));
-return hasSellSignal || hasBuySignal || (hasLaptop && lower.includes('|'));
+{showNotes && (
+  <div style={{ padding: "0 14px 10px", borderTop: "1px solid #F8FAFC" }}>
+    <textarea
+      value={notesValue}
+      onChange={e => setNotesValue(e.target.value)}
+      onBlur={() => saveNotes(notesValue)}
+      placeholder='e.g. "Deals in bulk, prefers HP. Pays cash. WhatsApp only after 6pm."'
+      rows={3}
+      autoFocus
+      style={{
+        width: "100%",
+        padding: "9px 11px",
+        borderRadius: 10,
+        border: "1px solid #E2E8F0",
+        fontSize: 12,
+        outline: "none",
+        resize: "none",
+        fontFamily: "inherit",
+        lineHeight: 1.6,
+        boxSizing: "border-box",
+        color: "#334155",
+        background: "#F8FAFC",
+      }}
+    />
+  </div>
+)}
 
-CHANGE C — Update the extractionPrompt to extract buying requests too:
-
-Replace the entire extractionPrompt function with:
-
-const extractionPrompt = (chunkText) =>
-  `Extract laptop listings and buying requests from this WhatsApp group chat.
-Return ONLY a JSON array, no markdown.
-
-SELLING signals: WTS, Want to Sell, Available, New Shipment, For Sale
-BUYING signals: WTB, Want to Buy, Looking for, Need, Chahiye, Koi hai, Required, Anyone have
-
-Return format - use type "selling" or "buying":
-[{"type":"selling","category":"laptop","brand":"HP",
-"model":"EliteBook 840 G8","processor":"Core i7 11th Gen",
-"ram":"8GB","storage":"256GB","condition":"Used",
-"quantity":null,"price":null,"currency":"AED",
-"charger":"unknown","notes":"","trader_name":"sender name",
-"trader_number":""},
-{"type":"buying","category":"laptop","brand":"MacBook",
-"model":"Air M2","processor":"Apple M2",
-"ram":"8GB","storage":"256GB","condition":"any",
-"quantity":1,"price":null,"currency":"AED",
-"charger":"unknown","notes":"urgent","trader_name":"sender name",
-"trader_number":""}]
-
-RULES:
-- SELLING: trader has stock available for sale
-- BUYING: trader is looking to purchase something
-- SKIP: RAM only, SSD only, phones, desktops, greetings, off-topic
-- Include both selling and buying in the same output array
-- If no listings found return []
-
-Chat:
-${chunkText}`;
-
-═══════════════════════════════════════
-FIX 2: Skip already-imported messages
-═══════════════════════════════════════
-
-The trader_inventory table has a source_group column. We need to track the last import timestamp per group and skip messages older than that.
-
-CHANGE A — Add a new state variable after existing state declarations:
-const [lastImportTimes, setLastImportTimes] = useState({});
-
-CHANGE B — In loadTraderListings function, after loading listings, also load last import times:
-
-Add this after setTraderListings(data || []):
-
-const { data: importTimes } = await supabase
-  .from("trader_inventory")
-  .select("source_group, created_at")
-  .order("created_at", { ascending: false });
-
-if (importTimes) {
-  const times = {};
-  for (const row of importTimes) {
-    if (!times[row.source_group]) {
-      times[row.source_group] = row.created_at;
-    }
-  }
-  setLastImportTimes(times);
-}
-
-CHANGE C — In extractTraderListings function, after cleanedText is created and before building mergedLines, add this date filter:
-
-// Get last import time for this group to skip old messages
-const lastImport = lastImportTimes[traderGroup || "Other"];
-const lastImportDate = lastImport ? new Date(lastImport) : null;
-
-CHANGE D — In the filter for relevantLines, add a date check at the start:
-
-Replace:
-const relevantLines = mergedLines.filter(line => {
-
-With:
-const relevantLines = mergedLines.filter(line => {
-  // Skip messages older than last import for this group
-  if (lastImportDate) {
-    const dateMatch = line.match(/\[(\d{1,2})\/(\d{1,2})\/(\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/);
-    if (dateMatch) {
-      const [, day, month, year, time] = dateMatch;
-      const msgDate = new Date(`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')} ${time}`);
-      if (msgDate <= lastImportDate) return false;
-    }
-  }
-
-CHANGE E — Update the context Provider value to include lastImportTimes:
-Add to the value object: lastImportTimes, setLastImportTimes,
-
-═══════════════════════════════════════
-After all changes run:
-npm run build && git add -A && git commit -m "Traders: extract buying requests, skip already-imported messages" && git push
-═══════════════════════════════════════
+After changes run:
+npm run build && git add -A && git commit -m "Add collapsible notes to all contact types in chat header" && git push
