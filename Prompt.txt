@@ -1,85 +1,510 @@
-In src/components/chat/ChatHeader.js, add a collapsible notes section that works for all contact types.
+Build two features:
+1. Pipeline view inside Contacts tab (toggle between Contacts/Pipeline with filter pills and sort)
+2. Contact detail sheet (bottom sheet when tapping the avatar in chat header)
 
-Read the file first.
+Read these files first:
+- src/components/tabs/CustomersTab.js
+- src/context/CustomerContext.js
+- src/components/chat/ChatHeader.js
+- src/constants/index.js
 
-CHANGE 1 — Add useState import if not already there:
-Make sure useState is imported from React at the top.
+═══════════════════════════════════════
+PART 1: Pipeline view in CustomersTab
+═══════════════════════════════════════
 
-CHANGE 2 — Add state variable inside the component after existing state destructuring:
-const [showNotes, setShowNotes] = useState(false);
-const [notesValue, setNotesValue] = useState(activeCustomer?.notes || "");
-const [notesSaving, setNotesSaving] = useState(false);
+CREATE new file src/components/tabs/PipelineView.js:
 
-CHANGE 3 — Add a useEffect to sync notes when customer changes:
-Add after the existing variable declarations:
+import React, { useState, useMemo } from "react";
+import { useCustomers } from "../../context/CustomerContext";
+import { STAGES } from "../../constants";
+import { daysSince } from "../../utils/helpers";
 
-useEffect(() => {
-  setNotesValue(activeCustomer?.notes || "");
-}, [activeCustomer?.id]); // eslint-disable-line
-
-CHANGE 4 — Add a saveNotes function after the addDeal function:
-
-const saveNotes = async (val) => {
-  setNotesSaving(true);
-  await supabase.from("customers").update({ notes: val }).eq("id", activeCustomerId);
-  await loadCustomers();
-  setNotesSaving(false);
+const STAGE_COLORS = {
+  new_inquiry:   { dot: "#888780", bg: "#F1EFE8", text: "#5F5E5A" },
+  waiting:       { dot: "#EF9F27", bg: "#FAEEDA", text: "#854F0B" },
+  interested:    { dot: "#378ADD", bg: "#E6F1FB", text: "#185FA5" },
+  negotiation:   { dot: "#378ADD", bg: "#E6F1FB", text: "#185FA5" },
+  closed:        { dot: "#534AB7", bg: "#EEEDFE", text: "#3C3489" },
+  lost:          { dot: "#94A3B8", bg: "#F1F5F9", text: "#64748B" },
+  reserved:      { dot: "#1D9E75", bg: "#E1F5EE", text: "#0F6E56" },
 };
 
-CHANGE 5 — Find the closing </div> of the sticky header (the outermost div that has position: sticky). Just before it closes, add this notes row:
+function getStageColor(stageId) {
+  return STAGE_COLORS[stageId] || { dot: "#94A3B8", bg: "#F1F5F9", text: "#64748B" };
+}
 
-{/* Notes row — works for all contact types */}
-<div
-  onClick={() => setShowNotes(v => !v)}
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "7px 14px",
-    borderTop: "1px solid #F1F5F9",
-    cursor: "pointer",
-    background: notesValue ? "#FAFFF7" : "#fff",
-  }}>
-  <span style={{ fontSize: 13 }}>📝</span>
-  {notesValue && !showNotes ? (
-    <span style={{ fontSize: 12, color: "#475569", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-      {notesValue}
-    </span>
-  ) : (
-    <span style={{ fontSize: 12, color: "#94A3B8", flex: 1 }}>
-      {showNotes ? "Notes" : "Add notes about this contact..."}
-    </span>
-  )}
-  {notesSaving && <span style={{ fontSize: 10, color: "#10B981" }}>saving...</span>}
-  <span style={{ fontSize: 11, color: "#94A3B8" }}>{showNotes ? "▲" : "▼"}</span>
+function getStageLabel(stageId) {
+  const s = STAGES.find(s => s.id === stageId);
+  return s?.label || stageId || "Unknown";
+}
+
+function getDaysSinceDeal(deal) {
+  if (!deal) return 0;
+  const date = deal.updated_at || deal.created_at;
+  if (!date) return 0;
+  return Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+}
+
+export default function PipelineView() {
+  const { customers, setActiveCustomerId, setActiveDealId, setView, setPendingSuggestion } = useCustomers();
+  const [stageFilter, setStageFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("recent");
+  const [showSort, setShowSort] = useState(false);
+
+  // Build flat list of all deals with customer info
+  const allDeals = useMemo(() => {
+    const deals = [];
+    for (const customer of customers) {
+      for (const deal of (customer.deals || [])) {
+        deals.push({ deal, customer });
+      }
+    }
+    return deals;
+  }, [customers]);
+
+  // Count per stage
+  const stageCounts = useMemo(() => {
+    const counts = { all: allDeals.length };
+    for (const { deal } of allDeals) {
+      counts[deal.stage] = (counts[deal.stage] || 0) + 1;
+    }
+    return counts;
+  }, [allDeals]);
+
+  // Filter by stage
+  const filtered = useMemo(() => {
+    let list = stageFilter === "all"
+      ? allDeals
+      : allDeals.filter(({ deal }) => deal.stage === stageFilter);
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      if (sortBy === "recent") {
+        const aTime = a.deal.updated_at || a.deal.created_at || "";
+        const bTime = b.deal.updated_at || b.deal.created_at || "";
+        return new Date(bTime) - new Date(aTime);
+      }
+      if (sortBy === "budget_high") {
+        return (b.deal.budget || b.deal.value || 0) - (a.deal.budget || a.deal.value || 0);
+      }
+      if (sortBy === "oldest") {
+        const aTime = a.deal.updated_at || a.deal.created_at || "";
+        const bTime = b.deal.updated_at || b.deal.created_at || "";
+        return new Date(aTime) - new Date(bTime);
+      }
+      return 0;
+    });
+
+    return list;
+  }, [allDeals, stageFilter, sortBy]);
+
+  // Pipeline value (open deals only)
+  const pipelineValue = useMemo(() => {
+    return allDeals
+      .filter(({ deal }) => deal.stage !== "closed" && deal.stage !== "lost")
+      .reduce((sum, { deal }) => sum + (Number(deal.budget) || Number(deal.value) || 0), 0);
+  }, [allDeals]);
+
+  const openCount = allDeals.filter(({ deal }) => deal.stage !== "closed" && deal.stage !== "lost").length;
+
+  // Stage pills to show
+  const stagePills = [
+    { id: "all", label: "All" },
+    ...STAGES.map(s => ({ id: s.id, label: s.label })),
+  ];
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+      {/* Filter pills + sort */}
+      <div style={{ background: "#fff", borderBottom: "1px solid #F1F5F9", padding: "8px 14px 10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none" }}>
+            {stagePills.map(pill => {
+              const count = stageCounts[pill.id] || 0;
+              if (pill.id !== "all" && !count) return null;
+              return (
+                <button
+                  key={pill.id}
+                  onClick={() => setStageFilter(pill.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "5px 10px", borderRadius: 20, border: "none",
+                    background: stageFilter === pill.id ? "#534AB7" : "#F1F5F9",
+                    color: stageFilter === pill.id ? "#fff" : "#64748B",
+                    fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0,
+                  }}>
+                  {pill.label}
+                  <span style={{
+                    fontSize: 10, padding: "1px 5px", borderRadius: 20,
+                    background: stageFilter === pill.id ? "rgba(255,255,255,0.25)" : "#fff",
+                    color: stageFilter === pill.id ? "#fff" : "#94A3B8",
+                  }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sort button */}
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <button
+              onClick={() => setShowSort(v => !v)}
+              style={{ padding: "5px 10px", borderRadius: 20, border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, fontWeight: 600, color: "#64748B", cursor: "pointer" }}>
+              ↕ {sortBy === "recent" ? "Recent" : sortBy === "budget_high" ? "Budget" : "Oldest"}
+            </button>
+            {showSort && (
+              <div style={{ position: "absolute", right: 0, top: 32, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", zIndex: 50, overflow: "hidden", minWidth: 140 }}>
+                {[
+                  { id: "recent", label: "Most recent" },
+                  { id: "budget_high", label: "Highest budget" },
+                  { id: "oldest", label: "Oldest first" },
+                ].map(opt => (
+                  <button key={opt.id} onClick={() => { setSortBy(opt.id); setShowSort(false); }}
+                    style={{ width: "100%", padding: "10px 14px", border: "none", borderBottom: "1px solid #F1F5F9", background: sortBy === opt.id ? "#F8F7FF" : "#fff", color: sortBy === opt.id ? "#534AB7" : "#334155", fontSize: 12, fontWeight: sortBy === opt.id ? 700 : 400, cursor: "pointer", textAlign: "left" }}>
+                    {sortBy === opt.id ? "✓ " : ""}{opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Summary stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "10px 14px 4px" }}>
+        <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "10px 12px" }}>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 3 }}>Open deals</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#0F172A" }}>{openCount}</div>
+        </div>
+        <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "10px 12px" }}>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 3 }}>Pipeline value</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#534AB7" }}>
+            AED {pipelineValue >= 1000 ? (pipelineValue / 1000).toFixed(1) + "k" : pipelineValue}
+          </div>
+        </div>
+      </div>
+
+      {/* Deal list */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 14px 100px" }}>
+        {filtered.length === 0 && (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>📋</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8" }}>No deals in this stage</div>
+          </div>
+        )}
+        {filtered.map(({ deal, customer }) => {
+          const days = getDaysSinceDeal(deal);
+          const isOverdue = days >= 3 && deal.stage !== "closed" && deal.stage !== "lost";
+          const isVeryOverdue = days >= 7 && deal.stage !== "closed" && deal.stage !== "lost";
+          const stageColor = getStageColor(deal.stage);
+          const budget = Number(deal.budget) || Number(deal.value) || 0;
+          const initials = (customer.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+          const deviceLabel = [deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD";
+
+          return (
+            <div
+              key={deal.id}
+              onClick={() => { setActiveCustomerId(customer.id); setActiveDealId(deal.id); setView("detail"); setPendingSuggestion(null); }}
+              style={{
+                background: "#fff",
+                borderRadius: 14,
+                border: `1px solid ${isVeryOverdue ? "#FEE2E2" : isOverdue ? "#FEF3C7" : "#F1F5F9"}`,
+                padding: "11px 13px",
+                marginBottom: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                cursor: "pointer",
+              }}>
+              {/* Avatar */}
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: stageColor.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: stageColor.text, flexShrink: 0 }}>
+                {initials}
+              </div>
+
+              {/* Info */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer.name}</div>
+                <div style={{ fontSize: 11, color: "#64748B", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: stageColor.dot, flexShrink: 0, display: "inline-block" }} />
+                  {getStageLabel(deal.stage)} · {deviceLabel}
+                </div>
+              </div>
+
+              {/* Right */}
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                {budget > 0 && (
+                  <div style={{ fontSize: 12, fontWeight: 700, color: deal.stage === "closed" ? "#10B981" : "#534AB7" }}>
+                    AED {Number(budget).toLocaleString()}
+                  </div>
+                )}
+                <div style={{ fontSize: 10, marginTop: 2, color: isVeryOverdue ? "#EF4444" : isOverdue ? "#D97706" : "#94A3B8", fontWeight: isOverdue ? 700 : 400 }}>
+                  {days === 0 ? "Today" : `${days}d ago`}{isVeryOverdue ? " ⚠️" : isOverdue ? " ⏰" : ""}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+═══════════════════════════════════════
+PART 2: Update CustomersTab to add toggle
+═══════════════════════════════════════
+
+In src/components/tabs/CustomersTab.js:
+
+ADD import at top:
+import { useState } from "react";
+import PipelineView from "./PipelineView";
+
+ADD state inside component after existing destructuring:
+const [viewMode, setViewMode] = useState("contacts");
+
+In the sticky header, after the title row div and BEFORE the stats row, add this toggle:
+
+<div style={{ display: "flex", gap: 0, borderRadius: 10, overflow: "hidden", border: "1px solid #F1F5F9", marginBottom: 14 }}>
+  <button
+    onClick={() => setViewMode("contacts")}
+    style={{ flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", background: viewMode === "contacts" ? "#534AB7" : "#F8FAFC", color: viewMode === "contacts" ? "#fff" : "#64748B" }}>
+    Contacts
+  </button>
+  <button
+    onClick={() => setViewMode("pipeline")}
+    style={{ flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", background: viewMode === "pipeline" ? "#534AB7" : "#F8FAFC", color: viewMode === "pipeline" ? "#fff" : "#64748B" }}>
+    Pipeline
+  </button>
 </div>
 
-{showNotes && (
-  <div style={{ padding: "0 14px 10px", borderTop: "1px solid #F8FAFC" }}>
-    <textarea
-      value={notesValue}
-      onChange={e => setNotesValue(e.target.value)}
-      onBlur={() => saveNotes(notesValue)}
-      placeholder='e.g. "Deals in bulk, prefers HP. Pays cash. WhatsApp only after 6pm."'
-      rows={3}
-      autoFocus
-      style={{
-        width: "100%",
-        padding: "9px 11px",
-        borderRadius: 10,
-        border: "1px solid #E2E8F0",
-        fontSize: 12,
-        outline: "none",
-        resize: "none",
-        fontFamily: "inherit",
-        lineHeight: 1.6,
-        boxSizing: "border-box",
-        color: "#334155",
-        background: "#F8FAFC",
-      }}
-    />
-  </div>
+Then wrap the existing customer list div and all filters with a condition. Find the closing </div> of the sticky header and the customer list below. Wrap the stats row, search bar, filter pills, and customer list in:
+
+{viewMode === "contacts" ? (
+  <>
+    {/* existing stats row */}
+    {/* existing search bar */}
+    {/* existing filter pills */}
+    {/* existing customer list */}
+  </>
+) : (
+  <PipelineView />
 )}
 
-After changes run:
-npm run build && git add -A && git commit -m "Add collapsible notes to all contact types in chat header" && git push
+Make sure the sticky header only contains the title row and the toggle. Move stats/search/filters inside the contacts conditional.
+
+
+═══════════════════════════════════════
+PART 3: Contact detail sheet
+═══════════════════════════════════════
+
+CREATE new file src/components/chat/ContactSheet.js:
+
+import React, { useState, useEffect } from "react";
+import { supabase } from "../../supabase";
+import { useCustomers } from "../../context/CustomerContext";
+import { TIERS, STAGES } from "../../constants";
+
+export default function ContactSheet({ onClose }) {
+  const {
+    activeCustomer,
+    activeCustomerId,
+    loadCustomers,
+    updateCustomer: _updateCustomer,
+  } = useCustomers();
+
+  const [notes, setNotes] = useState(activeCustomer?.notes || "");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [email, setEmail] = useState(activeCustomer?.email || "");
+
+  useEffect(() => {
+    setNotes(activeCustomer?.notes || "");
+    setEmail(activeCustomer?.email || "");
+  }, [activeCustomer?.id]); // eslint-disable-line
+
+  if (!activeCustomer) return null;
+
+  const tier = TIERS[activeCustomer.tier] || TIERS.cold;
+  const initials = (activeCustomer.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const closedDeals = (activeCustomer.deals || []).filter(d => d.stage === "closed");
+  const totalRevenue = closedDeals.reduce((a, d) => a + (Number(d.value) || 0), 0);
+  const totalDeals = (activeCustomer.deals || []).length;
+  const lastActive = activeCustomer.last_activity_at || activeCustomer.last_active;
+  const daysAgo = lastActive ? Math.floor((Date.now() - new Date(lastActive).getTime()) / 86400000) : null;
+
+  const saveNotes = async () => {
+    setNotesSaving(true);
+    await supabase.from("customers").update({ notes }).eq("id", activeCustomerId);
+    await loadCustomers();
+    setNotesSaving(false);
+  };
+
+  const saveEmail = async () => {
+    await supabase.from("customers").update({ email }).eq("id", activeCustomerId);
+    await loadCustomers();
+  };
+
+  const cType = activeCustomer.contact_type || "client";
+  const typeBadgeStyle = {
+    client:   { bg: "#EEF2FF", color: "#534AB7", label: "Client" },
+    trader:   { bg: "#FFFBEB", color: "#D97706", label: "🟡 Trader" },
+    supplier: { bg: "#EFF6FF", color: "#2563EB", label: "🔵 Supplier" },
+    walkin:   { bg: "#EEF2FF", color: "#534AB7", label: "⚡ Walk-in" },
+  }[cType] || { bg: "#EEF2FF", color: "#534AB7", label: "Client" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "flex-end" }}
+      onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: "20px 20px 0 0", width: "100%", maxHeight: "85vh", overflowY: "auto", paddingBottom: 20 }}>
+
+        {/* Handle */}
+        <div style={{ width: 36, height: 3, background: "#E2E8F0", borderRadius: 2, margin: "12px auto 16px" }} />
+
+        {/* Avatar + name */}
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, color: "#534AB7", margin: "0 auto 10px" }}>
+            {initials}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#0F172A" }}>{activeCustomer.name}</div>
+          <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: typeBadgeStyle.bg, color: typeBadgeStyle.color }}>{typeBadgeStyle.label}</span>
+            {cType === "client" && <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: tier.bg, color: tier.color }}>{tier.icon} {tier.label}</span>}
+            {activeCustomer.urgent && <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: "#FEF2F2", color: "#EF4444" }}>🔴 Urgent</span>}
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 16px", marginBottom: 16 }}>
+          {[
+            { label: "Deals", value: totalDeals },
+            { label: "Revenue", value: totalRevenue > 0 ? `AED ${totalRevenue >= 1000 ? (totalRevenue/1000).toFixed(1)+"k" : totalRevenue}` : "—", color: "#10B981" },
+            { label: "Last active", value: daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : daysAgo ? `${daysAgo}d ago` : "—" },
+          ].map(s => (
+            <div key={s.label} style={{ background: "#F8FAFC", borderRadius: 10, padding: "8px 10px", textAlign: "center" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: s.color || "#0F172A" }}>{s.value}</div>
+              <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Contact info */}
+        <div style={{ padding: "0 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>CONTACT INFO</div>
+          <div style={{ background: "#F8FAFC", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #F1F5F9" }}>
+              <span style={{ fontSize: 12, color: "#64748B" }}>Phone</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#534AB7" }}>{activeCustomer.number || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #F1F5F9" }}>
+              <span style={{ fontSize: 12, color: "#64748B" }}>Type</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#0F172A" }}>{typeBadgeStyle.label}</span>
+            </div>
+            <div style={{ padding: "10px 12px" }}>
+              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 4 }}>Email</div>
+              <input
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onBlur={saveEmail}
+                placeholder="Add email address..."
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Notes */}
+        <div style={{ padding: "0 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>
+            NOTES {notesSaving && <span style={{ color: "#10B981", fontWeight: 400 }}>• saving...</span>}
+          </div>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            onBlur={saveNotes}
+            placeholder={cType === "trader" ? 'e.g. "Deals in bulk, prefers HP. Pays cash. Reliable."' : 'e.g. "Prefers MacBook. Budget flexible. Comes weekends."'}
+            rows={3}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", lineHeight: 1.6, boxSizing: "border-box", color: "#334155", background: "#F8FAFC" }}
+          />
+        </div>
+
+        {/* Deal history */}
+        {(activeCustomer.deals || []).length > 0 && (
+          <div style={{ padding: "0 16px", marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>DEAL HISTORY</div>
+            <div style={{ background: "#F8FAFC", borderRadius: 12, overflow: "hidden" }}>
+              {(activeCustomer.deals || []).slice(0, 5).map((deal, i) => {
+                const stageLabel = STAGES.find(s => s.id === deal.stage)?.label || deal.stage;
+                const device = [deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD";
+                const isClosed = deal.stage === "closed";
+                return (
+                  <div key={deal.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", borderBottom: i < (activeCustomer.deals.length - 1) ? "1px solid #F1F5F9" : "none" }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#334155" }}>{device}</div>
+                      <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>
+                        {deal.created_at ? new Date(deal.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: isClosed ? "#10B981" : "#534AB7" }}>
+                        {(deal.value || deal.budget) ? `AED ${Number(deal.value || deal.budget).toLocaleString()}` : "—"}
+                      </div>
+                      <div style={{ fontSize: 10, color: isClosed ? "#10B981" : "#94A3B8", marginTop: 1 }}>{stageLabel}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, padding: "0 16px" }}>
+          {activeCustomer.number && (
+            <a href={`https://wa.me/${activeCustomer.number.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
+              style={{ flex: 1, padding: "11px 0", borderRadius: 12, background: "#ECFDF5", color: "#10B981", fontSize: 12, fontWeight: 700, textAlign: "center", textDecoration: "none" }}>
+              📱 WhatsApp
+            </a>
+          )}
+          <button onClick={onClose}
+            style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+═══════════════════════════════════════
+PART 4: Add avatar tap to ChatHeader
+═══════════════════════════════════════
+
+In src/components/chat/ChatHeader.js:
+
+ADD import at top:
+import { useState } from "react";
+import ContactSheet from "./ContactSheet";
+
+ADD state inside component:
+const [showContactSheet, setShowContactSheet] = useState(false);
+
+Find the avatar div (the circle with initials showing first letter of customer name). It currently looks like:
+<div style={{ width: 36, height: 36, borderRadius: "50%", ... }}>
+  {initials or first letter}
+</div>
+
+Wrap it in a button or make it clickable by adding onClick:
+onClick={() => setShowContactSheet(true)}
+Add cursor: "pointer" to its style
+
+After the closing </div> of the entire sticky header component, add:
+{showContactSheet && <ContactSheet onClose={() => setShowContactSheet(false)} />}
+
+
+═══════════════════════════════════════
+After all changes run:
+npm run build && git add -A && git commit -m "Add pipeline view, contact detail sheet, avatar tap" && git push
+═══════════════════════════════════════

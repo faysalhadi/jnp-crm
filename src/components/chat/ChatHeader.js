@@ -8,6 +8,7 @@ import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import FollowUpPanel from "./FollowUpPanel";
+import ContactSheet from "./ContactSheet";
 
 export default function ChatHeader() {
   const { setShowSideDrawer } = useUI();
@@ -44,6 +45,7 @@ export default function ChatHeader() {
   const { moveStage, handleConfirmSale, handleReserveDevice, generateSupplierReply } = useChatActions();
 
   const [dealExpanded, setDealExpanded] = useState(false);
+  const [showContactSheet, setShowContactSheet] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [notesValue, setNotesValue] = useState(activeCustomer?.notes || "");
   const [notesSaving, setNotesSaving] = useState(false);
@@ -71,6 +73,7 @@ export default function ChatHeader() {
   const currentStageLabel = STAGES.find(s => s.id === activeDeal?.stage)?.label || activeDeal?.stage || "";
 
   return (
+    <>
     <div style={{ background: "#fff", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 20 }}>
 
       {/* TOP ROW */}
@@ -81,7 +84,7 @@ export default function ChatHeader() {
           ←
         </button>
 
-        <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#6366F1", flexShrink: 0 }}>
+        <div onClick={() => setShowContactSheet(true)} style={{ width: 36, height: 36, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#6366F1", flexShrink: 0, cursor: "pointer" }}>
           {initials}
         </div>
 
@@ -453,5 +456,8 @@ export default function ChatHeader() {
         </div>
       )}
     </div>
+
+    {showContactSheet && <ContactSheet onClose={() => setShowContactSheet(false)} />}
+    </>
   );
 }
