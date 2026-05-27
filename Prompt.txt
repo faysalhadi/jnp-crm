@@ -1,17 +1,20 @@
 In src/components/chat/ChatHeader.js, find the match category select onChange handler:
 
 onChange={async (e) => {
-  await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
-  updateDeal({ match_category: e.target.value });
-}}
-
-Add console.log statements to debug:
-
-onChange={async (e) => {
   console.log("Saving match_category:", e.target.value, "for deal:", activeDealId);
   const { error } = await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
   console.log("Save result error:", error);
   updateDeal({ match_category: e.target.value });
 }}
 
-Run: npm run build && git add -A && git commit -m "Debug match category save" && git push
+Replace with:
+
+onChange={async (e) => {
+  const newCategory = e.target.value;
+  await supabase.from("deals").update({ match_category: newCategory }).eq("id", activeDealId);
+  await loadCustomers();
+}}
+
+Also remove the two console.log lines.
+
+Run: npm run build && git add -A && git commit -m "Fix match category not updating in UI after save" && git push
