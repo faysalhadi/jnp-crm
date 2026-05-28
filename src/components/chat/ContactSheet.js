@@ -13,10 +13,14 @@ export default function ContactSheet({ onClose }) {
   const [notes, setNotes] = useState(activeCustomer?.notes || "");
   const [notesSaving, setNotesSaving] = useState(false);
   const [email, setEmail] = useState(activeCustomer?.email || "");
+  const [contactType, setContactType] = useState(activeCustomer?.contact_type || "client");
+  const [typeEditing, setTypeEditing] = useState(false);
 
   useEffect(() => {
     setNotes(activeCustomer?.notes || "");
     setEmail(activeCustomer?.email || "");
+    setContactType(activeCustomer?.contact_type || "client");
+    setTypeEditing(false);
   }, [activeCustomer?.id]); // eslint-disable-line
 
   if (!activeCustomer) return null;
@@ -41,7 +45,14 @@ export default function ContactSheet({ onClose }) {
     await loadCustomers();
   };
 
-  const cType = activeCustomer.contact_type || "client";
+  const saveContactType = async (newType) => {
+    setContactType(newType);
+    setTypeEditing(false);
+    await supabase.from("customers").update({ contact_type: newType }).eq("id", activeCustomerId);
+    await loadCustomers();
+  };
+
+  const cType = contactType;
   const typeBadgeStyle = {
     client:   { bg: "#EEF2FF", color: "#534AB7", label: "Client" },
     trader:   { bg: "#FFFBEB", color: "#D97706", label: "🟡 Trader" },
@@ -94,9 +105,37 @@ export default function ContactSheet({ onClose }) {
               <span style={{ fontSize: 12, color: "#64748B" }}>Phone</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: "#534AB7" }}>{activeCustomer.number || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #F1F5F9" }}>
-              <span style={{ fontSize: 12, color: "#64748B" }}>Type</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#0F172A" }}>{typeBadgeStyle.label}</span>
+            <div style={{ padding: "10px 12px", borderBottom: "1px solid #F1F5F9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "#64748B" }}>Type</span>
+                <button onClick={() => setTypeEditing(e => !e)} style={{ fontSize: 11, fontWeight: 600, color: "#534AB7", background: "none", border: "none", cursor: "pointer", padding: "2px 6px" }}>
+                  {typeEditing ? "Cancel" : "Change"}
+                </button>
+              </div>
+              {typeEditing ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                  {[
+                    { id: "client",   emoji: "🔴", label: "Client" },
+                    { id: "trader",   emoji: "🟡", label: "Trader" },
+                    { id: "supplier", emoji: "🔵", label: "Supplier" },
+                    { id: "walkin",   emoji: "⚡", label: "Walk-in" },
+                  ].map(opt => (
+                    <button key={opt.id} onClick={() => saveContactType(opt.id)} style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                      border: contactType === opt.id ? "2px solid #534AB7" : "1.5px solid #E2E8F0",
+                      background: contactType === opt.id ? "#EEF2FF" : "#F8FAFC",
+                      fontSize: 12, fontWeight: 600,
+                      color: contactType === opt.id ? "#534AB7" : "#334155",
+                    }}>
+                      {opt.emoji} {opt.label}
+                      {contactType === opt.id && <span style={{ marginLeft: "auto", fontSize: 11 }}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#0F172A", marginTop: 4 }}>{typeBadgeStyle.label}</div>
+              )}
             </div>
             <div style={{ padding: "10px 12px" }}>
               <div style={{ fontSize: 12, color: "#64748B", marginBottom: 4 }}>Email</div>
