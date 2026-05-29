@@ -8,6 +8,7 @@ import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import FollowUpPanel from "./FollowUpPanel";
+import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
 
 export default function ChatHeader() {
@@ -43,28 +44,15 @@ export default function ChatHeader() {
     copiedSupWA, setCopiedSupWA,
   } = useChat();
   const { moveStage, handleConfirmSale, handleReserveDevice, generateSupplierReply } = useChatActions();
+  const { openBroadcast } = useBroadcast();
 
   const [dealExpanded, setDealExpanded] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
-  const [showNotes, setShowNotes] = useState(false);
-  const [notesValue, setNotesValue] = useState(activeCustomer?.notes || "");
-  const [notesSaving, setNotesSaving] = useState(false);
-
-  useEffect(() => {
-    setNotesValue(activeCustomer?.notes || "");
-  }, [activeCustomer?.id]); // eslint-disable-line
 
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);
   const addDeal = () => _addDeal(activeCustomerId, newDeal);
-
-  const saveNotes = async (val) => {
-    setNotesSaving(true);
-    await supabase.from("customers").update({ notes: val }).eq("id", activeCustomerId);
-    await loadCustomers();
-    setNotesSaving(false);
-  };
 
   const tier = TIERS[activeCustomer.tier] || TIERS.cold;
   const overdue = daysSince(activeCustomer.last_active) >= 1 && (activeCustomer.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
@@ -146,6 +134,8 @@ export default function ChatHeader() {
         <div style={{ display: "flex", gap: 5 }}>
           <button onClick={() => setShowAddDeal(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#6366F1" }}>+</button>
+          <button onClick={() => openBroadcast(null)} title="Broadcast"
+            style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>📣</button>
           <button onClick={() => setShowSideDrawer(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>📊</button>
           <button onClick={() => setShowDeleteConfirm(true)}
@@ -167,32 +157,11 @@ export default function ChatHeader() {
         </div>
       )}
 
-      {/* TRADER ACTIONS */}
-      {activeCustomer.contact_type === "trader" && (
-        <div style={{ display: "flex", gap: 8, padding: "0 14px 10px" }}>
-          {[
-            { label: "💰 Buy From", ctx: `I want to buy devices from ${activeCustomer.name}. Ask what they have available and at what price.` },
-            { label: "💵 Sell To", ctx: `I want to sell devices to ${activeCustomer.name}. Mention what stock I have available.` },
-          ].map(({ label, ctx }) => (
-            <button key={label} onClick={() => { setOutreachCustom(ctx); setOutreachMode(true); }}
-              style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "1px solid #FDE68A", background: "#FFFBEB", color: "#D97706", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+
 
       {/* SUPPLIER ACTIONS */}
       {activeCustomer.contact_type === "supplier" && (
         <div style={{ display: "flex", gap: 8, padding: "0 14px 10px" }}>
-          <button onClick={() => {
-            const email = window.prompt("Paste the email content from " + activeCustomer.name + ":");
-            if (!email?.trim()) return;
-            setOutreachCustom("Reply professionally to this email from the supplier: " + email.trim());
-            setOutreachMode(true);
-          }} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "1px solid #FECACA", background: "#FEF2F2", color: "#DC2626", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-            📧 Check Gmail
-          </button>
           <button onClick={() => { setSupplierReplyCtx(""); setSupplierReplyGmail(""); setSupplierReplyWA(""); setShowSupplierReply(true); }}
             style={{ flex: 1, padding: "8px 6px", borderRadius: 10, border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
             ✍️ Generate Reply
@@ -413,58 +382,6 @@ export default function ChatHeader() {
         </div>
       )}
 
-      {/* Notes row — works for all contact types */}
-      <div
-        onClick={() => setShowNotes(v => !v)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "7px 14px",
-          borderTop: "1px solid #F1F5F9",
-          cursor: "pointer",
-          background: notesValue ? "#FAFFF7" : "#fff",
-        }}>
-        <span style={{ fontSize: 13 }}>📝</span>
-        {notesValue && !showNotes ? (
-          <span style={{ fontSize: 12, color: "#475569", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {notesValue}
-          </span>
-        ) : (
-          <span style={{ fontSize: 12, color: "#94A3B8", flex: 1 }}>
-            {showNotes ? "Notes" : "Add notes about this contact..."}
-          </span>
-        )}
-        {notesSaving && <span style={{ fontSize: 10, color: "#10B981" }}>saving...</span>}
-        <span style={{ fontSize: 11, color: "#94A3B8" }}>{showNotes ? "▲" : "▼"}</span>
-      </div>
-
-      {showNotes && (
-        <div style={{ padding: "0 14px 10px", borderTop: "1px solid #F8FAFC" }}>
-          <textarea
-            value={notesValue}
-            onChange={e => setNotesValue(e.target.value)}
-            onBlur={() => saveNotes(notesValue)}
-            placeholder='e.g. "Deals in bulk, prefers HP. Pays cash. WhatsApp only after 6pm."'
-            rows={3}
-            autoFocus
-            style={{
-              width: "100%",
-              padding: "9px 11px",
-              borderRadius: 10,
-              border: "1px solid #E2E8F0",
-              fontSize: 12,
-              outline: "none",
-              resize: "none",
-              fontFamily: "inherit",
-              lineHeight: 1.6,
-              boxSizing: "border-box",
-              color: "#334155",
-              background: "#F8FAFC",
-            }}
-          />
-        </div>
-      )}
     </div>
 
     {showContactSheet && <ContactSheet onClose={() => setShowContactSheet(false)} />}

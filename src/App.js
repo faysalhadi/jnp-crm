@@ -12,9 +12,8 @@ import { useUI } from "./context/UIContext";
 import { useSales } from "./context/SalesContext";
 import { useParts } from "./context/PartsContext";
 import { useReservations } from "./context/ReservationsContext";
-import { useImport } from "./hooks/useImport";
-import { useChat } from "./context/ChatContext";
 import { useBroadcast } from "./hooks/useBroadcast";
+import { useImport } from "./hooks/useImport";
 
 import Spinner from "./components/ui/Spinner";
 import PartSaleModal from "./components/modals/PartSaleModal";
@@ -106,24 +105,11 @@ export default function App() {
     handleLogout,
   } = useAuth();
 
-  const {
-    setMessages,
-    setIncomingText, setReplyMode, setReplyingToId,
-    setDirectReplyText, setGeneratedReply, setGeneratedReplyLoading, setEditingGenerated,
-  } = useChat();
-
-  const chatFileInputRef = useRef(null);
-  const chatFilesInputRef = useRef(null);
 
   // ── sourcing alerts for dashboard ──
   const sourcingAlerts = useSourcingAlerts();
 
-  const {
-    importSingleChatFile,
-    importMultipleChatFiles,
-    importWhatsAppChat,
-    exportData,
-  } = useImport();
+  const { exportData } = useImport();
 
   const { openBroadcast } = useBroadcast();
 
@@ -139,38 +125,6 @@ export default function App() {
   }, []);
 
   // Note: tasks tab cache loading is handled after tasks is defined
-
-  // ── load messages for active deal ──
-  useEffect(() => {
-    if (!activeDealId) { setMessages([]); return; }
-    supabase.from("messages").select("*").eq("deal_id", activeDealId).order("ts", { ascending: true })
-      .then(({ data }) => setMessages(data || []));
-  }, [activeDealId]);
-
-  // Reset all chat input state when switching contacts
-  useEffect(() => {
-    setIncomingText(""); setReplyMode(null); setReplyingToId(null);
-    setDirectReplyText(""); setGeneratedReply(""); setGeneratedReplyLoading(false); setEditingGenerated(false);
-  }, [activeCustomerId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-create a conversation deal for traders/suppliers that have none,
-  // so the existing messages system (which requires deal_id) works unchanged.
-  useEffect(() => {
-    if (view !== "detail" || !activeCustomerId) return;
-    const c = customers.find(x => x.id === activeCustomerId);
-    if (!c) return;
-    const cType = c.contact_type || "client";
-    if (cType === "client" || cType === "walkin") return; // clients and walk-ins always have deals
-    if (c.deals && c.deals.length > 0) {
-      if (!activeDealId) setActiveDealId(c.deals[0].id);
-      return;
-    }
-    // No deals — create a silent conversation deal
-    supabase.from("deals")
-      .insert({ customer_id: activeCustomerId, stage: "new_inquiry" })
-      .select().single()
-      .then(({ data: d }) => { if (d) { setActiveDealId(d.id); loadCustomers(); } });
-  }, [activeCustomerId, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── auth/handleLogout: clears local UI state on logout ──
   // NOTE: handleAuth and handleLogout come from useAuth().
@@ -280,13 +234,8 @@ export default function App() {
   if (view === "settings") {
     return (
       <SettingsTab
-        importWhatsAppChat={importWhatsAppChat}
-        importSingleChatFile={importSingleChatFile}
-        importMultipleChatFiles={importMultipleChatFiles}
         exportData={exportData}
         handleLogoutWithUI={handleLogoutWithUI}
-        fileInputRef={chatFileInputRef}
-        multipleFileInputRef={chatFilesInputRef}
       />
     );
   }

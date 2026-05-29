@@ -1,28 +1,15 @@
-import { useCallback } from "react";
+import { useCallback } from "react"; // eslint-disable-line
 import { supabase } from "../supabase";
 import { useCustomers } from "../context/CustomerContext";
 import { useStock } from "../context/StockContext";
 import { useReservations } from "../context/ReservationsContext";
-import { useSales } from "../context/SalesContext";
 import { useChat } from "../context/ChatContext";
 import { useAuth } from "../context/AuthContext";
-import { callClaude, buildSystemPromptFromCache } from "../utils/claude";
+import { callClaude } from "../utils/claude";
 import { autoTier } from "../utils/helpers";
 import { STAGES } from "../constants";
 
 export function useChatActions() {
-  const {
-    messages, setMessages, setMsgLoading,
-    incomingText, setIncomingText,
-    replyMode, setReplyMode,
-    replyingToId, setReplyingToId,
-    directReplyText, setDirectReplyText,
-    generatedReply, setGeneratedReply,
-    setGeneratedReplyLoading, setEditingGenerated,
-    copied, setCopied, setEditSent,
-    outreachReason, outreachCustom, setOutreachMode, setOutreachReason, setOutreachCustom,
-    supplierReplyCtx, setSupplierReplyGmail, setSupplierReplyWA, setSupplierReplyLoading,
-  } = useChat();
   const { anthropicKey } = useAuth();
   const {
     activeCustomer, activeDeal, activeDealId, activeCustomerId,
@@ -32,12 +19,15 @@ export function useChatActions() {
     pendingSuggestion, setPendingSuggestion,
     showLossReason, setShowLossReason,
   } = useCustomers();
-  const { cachedStock, loadStock, refreshCachedStock, stock } = useStock();
-  const { loadTodaySales } = useSales();
+  const { loadStock, refreshCachedStock } = useStock();
   const {
     setShowLinkStock, setLinkStockDeal,
     setShowReservation,
   } = useReservations();
+  const {
+    supplierReplyCtx,
+    setSupplierReplyGmail, setSupplierReplyWA, setSupplierReplyLoading,
+  } = useChat();
 
   async function updateDeal(dealId, fields) {
     return _updateDeal(dealId, fields);
@@ -114,161 +104,11 @@ export function useChatActions() {
     if (stageId === "closed") { setLinkStockDeal({ ...activeDeal, ...fields }); setShowLinkStock(true); }
   }
 
-  async function addIncomingMessage() {
-    if (!incomingText.trim()) return;
-    let dealId = activeDealId;
-    if (!dealId && activeCustomer?.id) {
-      const { data: newDeal } = await supabase.from("deals").insert({
-        customer_id: activeCustomer.id,
-        stage: "new_inquiry",
-        brand: "", model: "",
-      }).select().single();
-      if (newDeal) {
-        dealId = newDeal.id;
-        setActiveDealId(newDeal.id);
-        await loadCustomers();
-      }
-    }
-    if (!dealId) return;
-    const content = incomingText.trim();
-    setIncomingText("");
-    const isVoice  = content.toLowerCase().startsWith("voice note:");
-    const isUrgent = /urgent|today|asap|same day|need it now|quickly/i.test(content);
-    const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId, role: "customer", content, is_voice: isVoice,
-    }).select().single();
-    if (msg) setMessages(prev => [...prev, msg]);
-    if (isUrgent) await updateCustomer(activeCustomerId, { urgent: true });
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-  }
-
-  async function generateAIReply(triggerMsgId) {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setReplyingToId(triggerMsgId);
-    setReplyMode("ai");
-    setGeneratedReplyLoading(true);
-    setGeneratedReply("");
-    setEditingGenerated(false);
-
-    const history = messages.map(m => ({
-      role: m.role === "customer" ? "user" : "assistant",
-      content: m.sent && m.sent !== "NOT_SENT" ? m.sent : m.content,
-    }));
-
-    const cType = activeCustomer?.contact_type || "client";
-    const systemPrompt = cType === "trader"
-      ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, a local laptop trader. Keep messages short, direct and casual. Return JSON with only a "reply" field (WhatsApp style, max 3 lines).`
-      : cType === "supplier"
-      ? `You are helping Faisal Hadi at Laptop for Less UAE communicate with ${activeCustomer.name}, an international laptop supplier. Write professional business messages. Return JSON with only a "reply" field (formal, 2-4 sentences).`
-      : buildSystemPromptFromCache(cachedStock);
-
-    try {
-      const raw = await callClaude(anthropicKey, history, systemPrompt);
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-      setGeneratedReply(parsed.reply || raw);
-      if ((cType === "client" || cType === "walkin") && parsed) {
-        const specUpdate = {};
-        if (parsed.brand && parsed.brand !== "unknown" && !activeDeal?.brand) specUpdate.brand = parsed.brand;
-        if (parsed.model && parsed.model !== "unknown" && !activeDeal?.model) specUpdate.model = parsed.model;
-        if (parsed.ram   && parsed.ram   !== "unknown") specUpdate.ram   = parsed.ram;
-        if (parsed.storage && parsed.storage !== "unknown") specUpdate.storage = parsed.storage;
-        if (parsed.condition && parsed.condition !== "unknown") specUpdate.condition = parsed.condition;
-        if (parsed.budget) specUpdate.budget = parsed.budget;
-        if (Object.keys(specUpdate).length) await updateDeal(activeDealId, specUpdate);
-        if (parsed.suggestedStage && parsed.suggestedStage !== activeDeal?.stage)
-          setPendingSuggestion({ stage: parsed.suggestedStage, reason: parsed.stageReason });
-        if (parsed.urgency) await updateCustomer(activeCustomerId, { urgent: true });
-      }
-    } catch {
-      setGeneratedReply("⚠️ Error generating. Check your API key in Settings.");
-    }
-    setGeneratedReplyLoading(false);
-  }
-
-  async function sendAIReply() {
-    const content = generatedReply.trim();
-    if (!content || !activeDealId) return;
-    const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId, role: "assistant", content, sent: content,
-    }).select().single();
-    if (msg) setMessages(prev => [...prev, msg]);
-    setGeneratedReply(""); setReplyMode(null); setReplyingToId(null); setEditingGenerated(false);
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-  }
-
-  async function sendDirectReply() {
-    const content = directReplyText.trim();
-    if (!content || !activeDealId) return;
-    const { data: msg } = await supabase.from("messages").insert({
-      deal_id: activeDealId, role: "assistant", content, sent: content,
-    }).select().single();
-    if (msg) setMessages(prev => [...prev, msg]);
-    setReplyMode(null); setReplyingToId(null);
-    await updateCustomer(activeCustomerId, { last_active: new Date().toISOString() });
-  }
-
-  async function generateOpeningMessage() {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setReplyMode("ai");
-    setGeneratedReplyLoading(true);
-    setGeneratedReply("");
-    const prompt = `Generate a friendly opening WhatsApp message from "Laptop for Less" (UAE laptop reseller) to a new client named ${activeCustomer?.name}. ${activeDeal?.brand ? `They are interested in: ${activeDeal.brand} ${activeDeal.model || ""}` : ""}${activeDeal?.budget ? `. Budget: AED ${activeDeal.budget}` : ""}. Keep it short, welcoming, ask what they're looking for. Return JSON with only a "reply" field.`;
-    try {
-      const raw = await callClaude(anthropicKey, [{ role: "user", content: prompt }], buildSystemPromptFromCache(cachedStock));
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let parsed; try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-      setGeneratedReply(parsed.reply || raw);
-    } catch { setGeneratedReply("Error generating. Check your API key."); }
-    setGeneratedReplyLoading(false);
-  }
-
-  async function confirmSent(msgId, text) {
-    await supabase.from("messages").update({ sent: text }).eq("id", msgId);
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, sent: text } : m));
-    setEditSent(null);
-    if (activeCustomer?.number) window.open(`https://wa.me/${activeCustomer.number.replace(/\D/g,"")}?text=${encodeURIComponent(text)}`, "_blank");
-  }
-
-  async function markNotSent(msgId) {
-    await supabase.from("messages").update({ sent: "NOT_SENT" }).eq("id", msgId);
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, sent: "NOT_SENT" } : m));
-  }
-
-  function copyMsg(text, id) {
-    navigator.clipboard.writeText(text);
-    setCopied(id); setTimeout(() => setCopied(null), 2000);
-  }
-
-  async function generateOutreach() {
-    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    const reason = outreachReason === "Custom message" ? outreachCustom : outreachReason;
-    if (!reason) return;
-    setMsgLoading(true);
-    const context = `Generate a WhatsApp outreach message to send to ${activeCustomer?.name}.
-Reason: ${reason}
-Customer history: ${activeDeal?.brand ? `Interested in ${activeDeal.brand} ${activeDeal.model || ""}` : "General customer"}
-Budget: ${activeDeal?.budget ? `AED ${activeDeal.budget}` : "Unknown"}
-Last stage: ${STAGES.find(s => s.id === activeDeal?.stage)?.label}
-Return JSON with only a "reply" field containing the message.`;
-    try {
-      const systemPrompt = buildSystemPromptFromCache(cachedStock);
-      const raw = await callClaude(anthropicKey, [{ role: "user", content: context }], systemPrompt);
-      const clean = raw.replace(/```json|```/g, "").trim();
-      let parsed;
-      try { parsed = JSON.parse(clean); } catch { parsed = { reply: raw }; }
-      const { data: aiMsg } = await supabase.from("messages").insert({ deal_id: activeDealId, role: "assistant", content: parsed.reply || raw }).select().single();
-      setMessages(prev => [...prev, aiMsg]);
-    } catch {
-      alert("Error generating message. Check your API key.");
-    } finally {
-      setMsgLoading(false); setOutreachMode(false); setOutreachReason(""); setOutreachCustom("");
-    }
-  }
-
   async function generateSupplierReply() {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    setSupplierReplyLoading(true); setSupplierReplyGmail(""); setSupplierReplyWA("");
+    setSupplierReplyLoading(true);
+    setSupplierReplyGmail("");
+    setSupplierReplyWA("");
     const sup = activeCustomer;
     const prompt = `You are writing communications on behalf of Faisal Hadi, Laptop for Less, Sharjah UAE.
 
@@ -286,22 +126,18 @@ Write TWO versions. Return JSON only:
       const raw = await callClaude(anthropicKey, [{ role: "user", content: prompt }],
         "You write professional supplier communications for a UAE laptop reseller. Return only valid JSON.");
       const p = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      setSupplierReplyGmail(p.gmail || ""); setSupplierReplyWA(p.whatsapp || "");
-    } catch { setSupplierReplyGmail("Error generating — check your API key."); }
+      setSupplierReplyGmail(p.gmail || "");
+      setSupplierReplyWA(p.whatsapp || "");
+    } catch {
+      setSupplierReplyGmail("Error generating — check your API key.");
+    }
     setSupplierReplyLoading(false);
   }
 
-  async function deleteMessage(msgId) {
-    await supabase.from("messages").delete().eq("id", msgId);
-    setMessages(prev => prev.filter(m => m.id !== msgId));
-  }
-
   return {
-    handleReserveDevice, handleConfirmSale, moveStage,
-    addIncomingMessage, generateAIReply, sendAIReply,
-    sendDirectReply, generateOpeningMessage,
-    confirmSent, markNotSent, copyMsg,
-    generateOutreach, generateSupplierReply,
-    deleteMessage,
+    handleReserveDevice,
+    handleConfirmSale,
+    moveStage,
+    generateSupplierReply,
   };
 }

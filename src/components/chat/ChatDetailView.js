@@ -1,16 +1,13 @@
 import React from "react";
-import PullToRefresh from "../ui/PullToRefresh";
 import LinkStockModal from "../modals/LinkStockModal";
 import ReservationModal from "../modals/ReservationModal";
 import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
-import { useTraders } from "../../context/TradersContext";
 import { useReservations } from "../../context/ReservationsContext";
 import { useStock } from "../../context/StockContext";
 import { useSales } from "../../context/SalesContext";
 import ChatHeader from "./ChatHeader";
-import MessageList from "./MessageList";
-import InputBar from "./InputBar";
+import NotesActivityView from "./NotesActivityView";
 
 const NAV_TABS = [
   { key: "home",      icon: "🏠", label: "Home" },
@@ -23,7 +20,6 @@ const NAV_TABS = [
 
 export default function ChatDetailView() {
   const { isMobile, setActiveTab, activeTab, showToast } = useUI();
-  const { traderListings, setTraderSearch } = useTraders();
   const {
     showLinkStock, setShowLinkStock,
     linkStockDeal, setLinkStockDeal,
@@ -83,10 +79,7 @@ export default function ChatDetailView() {
       {/* detail content */}
       <div style={isMobile ? { flex: 1, display: "flex", flexDirection: "column" } : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", maxWidth: "calc(100vw - 280px)" }}>
         <ChatHeader />
-        <PullToRefresh onRefresh={async () => { await loadCustomers(); }}>
-          <MessageList />
-        </PullToRefresh>
-        <InputBar />
+        <NotesActivityView />
       </div>
 
       {/* ── LINK STOCK MODAL (inside detail view so it renders when chat is open) ── */}
