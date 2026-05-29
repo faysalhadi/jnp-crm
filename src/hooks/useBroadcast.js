@@ -21,6 +21,7 @@ export function useBroadcast() {
     const matches = customers.filter(c =>
       (c.deals || []).some(d => {
         if (d.stage === "closed" || d.stage === "lost") return false;
+        if (!item) return true; // no item filter — show all open deals
         const brandMatch = !item.brand || !d.brand || d.brand.toLowerCase() === item.brand.toLowerCase();
         const budgetOk = !item.min_price || !d.budget || Number(d.budget) >= Number(item.min_price);
         return brandMatch || budgetOk;
