@@ -54,7 +54,7 @@ const TYPE_MAP = Object.fromEntries(TYPES.map(t => [t.id, t]));
 const EMPTY_FORM = {
   name: "", number: "", notes: "",
   // client
-  looking_for: "", budget: "", urgent: false,
+  looking_for: "", budget: "", urgent: false, lead_source: "",
   // trader
   group: "", usually_sells: "", usually_buys: "",
   // supplier
@@ -89,6 +89,7 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
       urgent:       type === "client" ? form.urgent : false,
       last_active:  new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
+      lead_source:  (type === "client" || type === "walkin") ? (form.lead_source || null) : null,
     };
 
     if (type === "trader") {
@@ -282,6 +283,29 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
                           boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
                         }} />
                       </button>
+                    </div>
+
+                    {/* Lead source */}
+                    <div>
+                      <div style={labelStyle}>HOW DID THEY FIND YOU?</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {[
+                          { id: "instagram",  label: "📸 Instagram" },
+                          { id: "dubizzle",   label: "🛒 Dubizzle" },
+                          { id: "whatsapp",   label: "💬 WhatsApp" },
+                          { id: "walkin",     label: "🚶 Walk-in" },
+                          { id: "referral",   label: "👥 Referral" },
+                          { id: "facebook",   label: "👍 Facebook" },
+                          { id: "other",      label: "🔗 Other" },
+                        ].map(src => (
+                          <button key={src.id} onClick={() => set("lead_source", form.lead_source === src.id ? "" : src.id)}
+                            style={{ padding: "6px 12px", borderRadius: 20, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                              background: form.lead_source === src.id ? "#6366F1" : "#F1F5F9",
+                              color:      form.lead_source === src.id ? "#fff"    : "#64748B" }}>
+                            {src.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </>
                 )}

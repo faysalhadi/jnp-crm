@@ -1,546 +1,481 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useUI } from "../../context/UIContext";
+import { useAuth } from "../../context/AuthContext";
+import { useStock } from "../../context/StockContext";
+import { useCustomers } from "../../context/CustomerContext";
+import { useSales } from "../../context/SalesContext";
 
 const WHATSAPP_NUMBER = "+971409423162";
-const BUSINESS_NAME = "Laptop for Less";
-const LOCATION = "Sharjah, UAE";
+const BUSINESS_NAME   = "Laptop for Less";
+const LOCATION        = "Sharjah, UAE";
 
-export default function MarketingTab({
-  stock,
-}) {
+const PLATFORMS = [
+  { id: "whatsapp_status", label: "WA Status",   emoji: "📲", color: "#25D366", bg: "#F0FDF4" },
+  { id: "whatsapp_groups", label: "WA Groups",   emoji: "💬", color: "#128C7E", bg: "#ECFDF5" },
+  { id: "instagram",       label: "Instagram",   emoji: "📸", color: "#E1306C", bg: "#FFF0F5" },
+  { id: "facebook",        label: "Facebook",    emoji: "👍", color: "#1877F2", bg: "#EFF6FF" },
+  { id: "linkedin",        label: "LinkedIn",    emoji: "💼", color: "#0A66C2", bg: "#EFF6FF" },
+  { id: "dubizzle",        label: "Dubizzle",    emoji: "🛒", color: "#FF6B35", bg: "#FFF5F0" },
+];
+
+const LEAD_SOURCES = [
+  { id: "instagram", label: "📸 Instagram" },
+  { id: "dubizzle",  label: "🛒 Dubizzle" },
+  { id: "whatsapp",  label: "💬 WhatsApp" },
+  { id: "walkin",    label: "🚶 Walk-in" },
+  { id: "referral",  label: "👥 Referral" },
+  { id: "facebook",  label: "👍 Facebook" },
+  { id: "other",     label: "🔗 Other" },
+];
+
+async function callClaude(key, prompt, system = "") {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2000,
+      system: system || "You are a marketing assistant for a UAE laptop reseller. Write engaging, authentic posts.",
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  const data = await res.json();
+  return data?.content?.[0]?.text || "";
+}
+
+export default function MarketingTab({ stock }) {
   const { isMobile, activeMarketingTab, setActiveMarketingTab } = useUI();
-  const [selectedDevices, setSelectedDevices] = useState([]);
-  const [generatedPost, setGeneratedPost] = useState(null);
-  const [copiedVersion, setCopiedVersion] = useState(null);
-  const [newGroupName, setNewGroupName] = useState("");
-  const [addingToBatch, setAddingToBatch] = useState(null);
-  const [groupBatches, setGroupBatches] = useState({ a: [], b: [], c: [] });
-  const [postedDates, setPostedDates] = useState({});
-  const canvasRef = useRef(null);
+  const { anthropicKey } = useAuth();
+  const { customers } = useCustomers();
+  const { salesHistory } = useSales();
 
-  useEffect(() => {
-    const savedBatches = localStorage.getItem("jnp_group_batches");
-    if (savedBatches) {
-      try { setGroupBatches(JSON.parse(savedBatches)); } catch {}
-    }
-    const savedDates = localStorage.getItem("jnp_posted_dates");
-    if (savedDates) {
-      try { setPostedDates(JSON.parse(savedDates)); } catch {}
-    }
-  }, []);
+  // Today tab
+  const [generatedPosts, setGeneratedPosts] = useState({});
+  const [generating, setGenerating]         = useState({});
+  const [copied, setCopied]                 = useState({});
+  const [postedDates, setPostedDates]       = useState({});
 
-  const today = new Date();
+  // Weekly plan
+  const [weeklyPlan, setWeeklyPlan]           = useState(null);
+  const [weeklyLoading, setWeeklyLoading]     = useState(false);
+
+  // Content library
+  const [library, setLibrary]                 = useState([]);
+  const [libGenerating, setLibGenerating]     = useState(false);
+
+  // Groups
+  const [groupBatches, setGroupBatches]       = useState({ a: [], b: [], c: [] });
+  const [addingToBatch, setAddingToBatch]     = useState(null);
+  const [newGroupName, setNewGroupName]       = useState("");
+
+  const today    = new Date();
   const todayKey = today.toISOString().split("T")[0];
-  const isPostedToday = !!postedDates[todayKey];
-
-  const TEMPLATES = [
-    {
-      day: "Monday",
-      name: "THE SHOWCASE",
-      theme: "Fresh stock",
-      deviceCount: 3,
-      openings: [
-        "Fresh stock just landed 🔥",
-        "New laptops just in 💻",
-        "Available now in Sharjah 📍",
-        "Quality laptops ready 🎯",
-      ],
-      body: (devices) =>
-        devices.map(d => `${d.brand} ${d.model} — ${d.condition}`).join("\n"),
-      closing: `All Grade A · ${LOCATION}\n📱 ${WHATSAPP_NUMBER}`,
-    },
-    {
-      day: "Tuesday",
-      name: "THE SPOTLIGHT",
-      theme: "Device of the day",
-      deviceCount: 1,
-      openings: [
-        "Device of the day 💻",
-        "Featured laptop today 🌟",
-        "Today's pick 🎯",
-        "Spotlight laptop ✨",
-      ],
-      body: (devices) => {
-        const d = devices[0];
-        if (!d) return "";
-        return `${d.brand} ${d.model}\n${d.processor || ""}\n${d.ram} RAM · ${d.ssd} Storage\nCondition: ${d.condition}\nLimited units available`;
-      },
-      closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
-    },
-    {
-      day: "Wednesday",
-      name: "THE B2B POST",
-      theme: "Bulk availability",
-      deviceCount: 3,
-      openings: [
-        "Attention laptop dealers 👋",
-        "Wholesale stock available 📦",
-        "Bulk laptops ready 💼",
-        "Dealers welcome 🤝",
-      ],
-      body: (devices) =>
-        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n") +
-        "\n\nWholesale pricing on request",
-      closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
-    },
-    {
-      day: "Thursday",
-      name: "THE QUALITY POST",
-      theme: "Why buy from us",
-      deviceCount: 2,
-      openings: [
-        "Why buy from us? ✅",
-        "Quality you can trust 🏆",
-        "Our promise to you 🤝",
-        "Trusted laptop supplier 💪",
-      ],
-      body: (devices) =>
-        `• Direct from UK/USA suppliers\n• Grade A condition guaranteed\n• Same day pickup Sharjah\n• Bulk orders welcome\n\nCurrently available:\n` +
-        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n"),
-      closing: `📱 ${WHATSAPP_NUMBER}`,
-    },
-    {
-      day: "Friday",
-      name: "THE URGENCY POST",
-      theme: "Last few units",
-      deviceCount: 3,
-      openings: [
-        "Last few units remaining ⚠️",
-        "Limited stock alert 🚨",
-        "Almost sold out ⏰",
-        "Grab them before they go 🏃",
-      ],
-      body: (devices) =>
-        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n") +
-        "\n\nDon't miss out",
-      closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
-    },
-    {
-      day: "Saturday",
-      name: "SOCIAL PROOF",
-      theme: "Happy customers",
-      deviceCount: 2,
-      openings: [
-        "Another happy customer 🙏",
-        "Trusted by many 🌟",
-        "Customers love us ❤️",
-        "Join our happy customers 😊",
-      ],
-      body: (devices) =>
-        `Sold this week — great feedback from our customers\n\nStill available:\n` +
-        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n"),
-      closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
-    },
-    {
-      day: "Sunday",
-      name: "WEEKLY RECAP",
-      theme: "Week summary",
-      deviceCount: 3,
-      openings: [
-        "This week at Laptop for Less 📊",
-        "Weekly stock update 📦",
-        "Fresh week fresh stock 🌅",
-        "New week new deals 💫",
-      ],
-      body: (devices) =>
-        `Currently available:\n` +
-        devices.map(d => `${d.brand} ${d.model} · ${d.condition}`).join("\n") +
-        "\n\nNew shipment coming soon 📦",
-      closing: `📱 ${WHATSAPP_NUMBER}\n📍 ${LOCATION}`,
-    },
-  ];
-
-  const dayIndex = today.getDay();
-  const templateIndex = dayIndex === 0 ? 6 : dayIndex - 1;
-  const todayTemplate = TEMPLATES[templateIndex];
-
-  function selectDevicesForTemplate(template) {
-    const available = stock.filter(s => s.status === "available");
-    if (!available.length) return [];
-    if (template.name === "THE URGENCY POST") {
-      return [...available]
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-        .slice(0, template.deviceCount);
-    }
-    if (template.name === "THE SPOTLIGHT") {
-      return [...available]
-        .sort((a, b) => {
-          const mA = (Number(a.max_price) || 0) - (Number(a.cost_price) || 0);
-          const mB = (Number(b.max_price) || 0) - (Number(b.cost_price) || 0);
-          return mB - mA;
-        })
-        .slice(0, 1);
-    }
-    if (template.name === "THE B2B POST") {
-      const seen = new Set();
-      return available.filter(d => {
-        const key = `${d.brand}-${d.model}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }).slice(0, template.deviceCount);
-    }
-    const seen = new Set();
-    return available.filter(d => {
-      const key = `${d.brand}-${d.model}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(0, template.deviceCount);
-  }
 
   useEffect(() => {
-    const devices = selectDevicesForTemplate(todayTemplate);
-    setSelectedDevices(devices);
-    generatePost(devices, todayTemplate);
-  }, [stock]); // eslint-disable-line react-hooks/exhaustive-deps
+    try { const s = localStorage.getItem("jnp_posted_dates"); if (s) setPostedDates(JSON.parse(s)); } catch {}
+    try { const s = localStorage.getItem("jnp_group_batches"); if (s) setGroupBatches(JSON.parse(s)); } catch {}
+    try { const s = localStorage.getItem("jnp_content_library"); if (s) setLibrary(JSON.parse(s)); } catch {}
+    try { const s = localStorage.getItem("jnp_weekly_plan"); if (s) {
+      const p = JSON.parse(s);
+      if (p.weekKey === todayKey.slice(0, 7)) setWeeklyPlan(p);
+    }} catch {}
+  }, []); // eslint-disable-line
 
-  function generatePost(devices, template) {
-    if (!devices.length) return;
-    const versions = template.openings.map(opening => {
-      const body = template.body(devices);
-      return `${opening}\n\n${body}\n\n${template.closing}`;
-    });
-    setGeneratedPost({ versions, template, devices });
+  const availableStock = (stock || []).filter(s => s.status === "available");
+
+  function stockSummary() {
+    return availableStock.slice(0, 8).map(s =>
+      `${s.brand || ""} ${s.model || ""} | ${s.processor || ""} | ${s.ram || ""} | ${s.ssd || ""} | Grade ${s.condition || ""} | AED ${s.max_price || 0}`
+    ).join("\n");
   }
 
-  function copyVersion(version, index) {
-    navigator.clipboard.writeText(version);
-    setCopiedVersion(index);
-    setTimeout(() => setCopiedVersion(null), 2000);
-  }
+  // ── Generate a single platform post ──────────────────────────────────────
+  async function generatePost(platformId) {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    if (!availableStock.length) { alert("No available stock to feature."); return; }
+    setGenerating(p => ({ ...p, [platformId]: true }));
 
-  function generateImageCard() {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1200;
-    canvas.height = 628;
-    const ctx = canvas.getContext("2d");
+    const platform = PLATFORMS.find(p => p.id === platformId);
+    const recentSales = (salesHistory || []).slice(0, 3).map(s =>
+      `${s.brand || ""} ${s.model || ""} AED ${s.sold_price || s.value || 0}`
+    ).join(", ");
 
-    ctx.fillStyle = "#0F172A";
-    ctx.fillRect(0, 0, 1200, 628);
+    const formatGuide = {
+      whatsapp_status: "Short 3-5 lines. One device. Emoji. No hashtags. End with phone number.",
+      whatsapp_groups: "4 different versions (Version 1/2/3/4). Each slightly different tone/opening. Feature 2-3 devices. Include price. End with phone number.",
+      instagram: "Engaging caption 4-6 lines. 1 device spotlighted. Lifestyle angle. End with 8-10 relevant hashtags like #laptopsharjah #uaelaptop #laptopuae #sharjah #dubaideals",
+      facebook: "2-3 paragraph post. Friendly tone. List devices with specs. End with WhatsApp number and location.",
+      linkedin: "Professional tone. 2-3 short paragraphs. Focus on bulk/B2B angle. No prices — 'contact for quote'. End with: Faisal Hadi | Laptop for Less | Sharjah UAE",
+      dubizzle: "Title + description format. Specific specs. Condition grade. Price. Location. Contact.",
+    };
 
-    ctx.fillStyle = "#6366F1";
-    ctx.fillRect(0, 0, 1200, 80);
+    const prompt = `Write a ${platform?.label} post for my laptop reselling business.
 
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = "bold 36px Arial";
-    ctx.fillText(BUSINESS_NAME.toUpperCase(), 40, 52);
+Business: ${BUSINESS_NAME}, ${LOCATION}
+WhatsApp: ${WHATSAPP_NUMBER}
+Date: ${today.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
 
-    ctx.font = "24px Arial";
-    ctx.textAlign = "right";
-    ctx.fillText("📍 " + LOCATION, 1160, 52);
-    ctx.textAlign = "left";
+Available Stock:
+${stockSummary()}
 
-    ctx.fillStyle = "#94A3B8";
-    ctx.font = "20px Arial";
-    ctx.fillText(todayTemplate.name, 40, 110);
+Recent Sales (for social proof): ${recentSales || "none"}
 
-    const devices = selectedDevices;
-    const startY = 150;
-    const spacing = devices.length > 2 ? 140 : 160;
+Format guide: ${formatGuide[platformId] || "Professional, engaging post"}
 
-    devices.forEach((d, i) => {
-      const y = startY + i * spacing;
+Write the post now. Make it feel authentic, not corporate. Use emojis naturally.`;
 
-      ctx.fillStyle = "#1E293B";
-      if (ctx.roundRect) {
-        ctx.beginPath();
-        ctx.roundRect(40, y, 1120, spacing - 15, 12);
-        ctx.fill();
-      } else {
-        ctx.fillRect(40, y, 1120, spacing - 15);
-      }
-
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 28px Arial";
-      ctx.fillText(
-        `${d.brand || ""} ${d.model || ""}`.trim() || "Device",
-        70, y + 38
-      );
-
-      ctx.fillStyle = "#94A3B8";
-      ctx.font = "20px Arial";
-      const specs = [d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join("  ·  ");
-      ctx.fillText(specs, 70, y + 70);
-
-      ctx.fillStyle = d.condition === "Grade A" ? "#10B981" : "#F59E0B";
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(70, y + 85, 100, 28, 6);
-      } else {
-        ctx.rect(70, y + 85, 100, 28);
-      }
-      ctx.fill();
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 14px Arial";
-      ctx.fillText(d.condition || "Grade A", 80, y + 104);
-    });
-
-    ctx.fillStyle = "#6366F1";
-    ctx.fillRect(0, 548, 1200, 80);
-
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = "bold 28px Arial";
-    ctx.fillText("📱 " + WHATSAPP_NUMBER, 40, 596);
-
-    ctx.textAlign = "right";
-    ctx.font = "22px Arial";
-    ctx.fillStyle = "#C7D2FE";
-    ctx.fillText("Contact for pricing", 1160, 596);
-    ctx.textAlign = "left";
-
-    const link = document.createElement("a");
-    link.download = `laptop-for-less-${todayKey}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  }
-
-  function getCalendarDays() {
-    const days = [];
-    for (let i = -3; i <= 10; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      const key = d.toISOString().split("T")[0];
-      const dayIdx = d.getDay();
-      const tIdx = dayIdx === 0 ? 6 : dayIdx - 1;
-      days.push({
-        date: d,
-        key,
-        template: TEMPLATES[tIdx],
-        posted: !!postedDates[key],
-        isToday: i === 0,
-        isPast: i < 0,
-      });
+    try {
+      const text = await callClaude(anthropicKey, prompt);
+      setGeneratedPosts(p => ({ ...p, [platformId]: text }));
+    } catch {
+      alert("Failed to generate. Check your API key.");
     }
-    return days;
+    setGenerating(p => ({ ...p, [platformId]: false }));
   }
 
-  const BATCH_LABELS = {
-    a: { label: "Batch A — Daily", subtitle: "Best 20 groups · Post every day", color: "#6366F1", bg: "#EEF2FF" },
-    b: { label: "Batch B — 3x Week", subtitle: "Next 50 groups · Mon/Wed/Fri", color: "#D97706", bg: "#FFFBEB" },
-    c: { label: "Batch C — Weekly", subtitle: "Remaining 130 groups · Rotated daily", color: "#10B981", bg: "#ECFDF5" },
-  };
+  // ── Generate full weekly plan ─────────────────────────────────────────────
+  async function generateWeeklyPlan() {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setWeeklyLoading(true);
+
+    const openDeals = customers
+      .filter(c => !c.contact_type || c.contact_type === "client" || c.contact_type === "walkin")
+      .flatMap(c => (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost"))
+      .length;
+
+    const topWanted = customers
+      .flatMap(c => (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").map(d => [d.brand, d.model].filter(Boolean).join(" ")))
+      .filter(Boolean).slice(0, 5).join(", ");
+
+    const prompt = `Create a 7-day social media content plan for my laptop reselling business.
+
+Business: ${BUSINESS_NAME}, ${LOCATION}
+Available Stock: ${availableStock.length} items
+Top categories in stock: ${[...new Set(availableStock.map(s => s.brand))].slice(0, 5).join(", ")}
+Open client deals: ${openDeals}
+Most wanted by clients: ${topWanted || "various"}
+
+Return JSON only:
+{
+  "weekKey": "${todayKey.slice(0, 7)}",
+  "days": [
+    {
+      "day": "Monday",
+      "theme": "Theme name",
+      "posts": [
+        {
+          "platform": "whatsapp_groups",
+          "time": "9:00 AM",
+          "content_type": "live|evergreen",
+          "caption": "pre-written caption or '[GENERATE ON DAY]' for live stock posts",
+          "note": "brief instruction"
+        }
+      ]
+    }
+  ],
+  "strategy": "2-3 sentence weekly strategy note"
+}
+
+Include 3-4 posts per day across platforms. Mix live stock posts (need same-day generation) with evergreen content (trust, educational, social proof — pre-written). Be specific.`;
+
+    try {
+      const raw = await callClaude(anthropicKey, prompt);
+      const clean = raw.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      setWeeklyPlan(parsed);
+      localStorage.setItem("jnp_weekly_plan", JSON.stringify(parsed));
+    } catch {
+      alert("Failed to generate weekly plan. Try again.");
+    }
+    setWeeklyLoading(false);
+  }
+
+  // ── Generate content library items ───────────────────────────────────────
+  async function generateLibraryContent(type) {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setLibGenerating(true);
+
+    const prompts = {
+      trust: `Write 3 short trust/social proof posts for a UAE laptop reseller. Each 3-4 lines. Authentic tone. For WhatsApp Status. Business: ${BUSINESS_NAME}, ${LOCATION}. Return as JSON array: [{"title":"...", "content":"..."}]`,
+      educational: `Write 3 educational posts about buying second-hand laptops. Topics: Grade A vs B, what to check, why refurbished. Each 4-5 lines. For Instagram/Facebook. Return as JSON array: [{"title":"...", "content":"..."}]`,
+      b2b: `Write 3 B2B/wholesale posts for businesses needing laptops in UAE. Professional but approachable. LinkedIn/WhatsApp. Business: ${BUSINESS_NAME}. Phone: ${WHATSAPP_NUMBER}. Return as JSON array: [{"title":"...", "content":"..."}]`,
+      faq: `Write 3 FAQ-style posts for a laptop reseller. Common questions: warranty, delivery, bulk orders. Reassuring tone. For Facebook/WhatsApp. Return as JSON array: [{"title":"...", "content":"..."}]`,
+    };
+
+    try {
+      const raw = await callClaude(anthropicKey, prompts[type]);
+      const clean = raw.replace(/```json|```/g, "").trim();
+      const items = JSON.parse(clean);
+      const tagged = items.map(i => ({ ...i, type, id: Date.now() + Math.random() }));
+      const updated = [...library, ...tagged];
+      setLibrary(updated);
+      localStorage.setItem("jnp_content_library", JSON.stringify(updated));
+    } catch {
+      alert("Failed to generate. Try again.");
+    }
+    setLibGenerating(false);
+  }
+
+  function deleteLibraryItem(id) {
+    const updated = library.filter(i => i.id !== id);
+    setLibrary(updated);
+    localStorage.setItem("jnp_content_library", JSON.stringify(updated));
+  }
+
+  function copyText(text, key) {
+    navigator.clipboard.writeText(text);
+    setCopied(p => ({ ...p, [key]: true }));
+    setTimeout(() => setCopied(p => ({ ...p, [key]: false })), 2000);
+  }
+
+  // ── Lead source stats ─────────────────────────────────────────────────────
+  const leadStats = LEAD_SOURCES.map(src => {
+    const leads  = customers.filter(c => c.lead_source === src.id).length;
+    const closed = customers.filter(c => c.lead_source === src.id)
+      .flatMap(c => c.deals || []).filter(d => d.stage === "closed").length;
+    return { ...src, leads, closed, rate: leads > 0 ? Math.round((closed / leads) * 100) : 0 };
+  }).filter(s => s.leads > 0).sort((a, b) => b.leads - a.leads);
+
+  const totalLeads = customers.filter(c => c.lead_source).length;
+
+  // ── Posting streak ────────────────────────────────────────────────────────
+  let streak = 0;
+  const check = new Date();
+  if (postedDates[todayKey]) streak++;
+  check.setDate(check.getDate() - 1);
+  for (let i = 0; i < 30; i++) {
+    const k = check.toISOString().split("T")[0];
+    if (postedDates[k]) { streak++; check.setDate(check.getDate() - 1); }
+    else break;
+  }
+
+  const TABS = [
+    { key: "today",    label: "Today" },
+    { key: "weekly",   label: "Weekly Plan" },
+    { key: "library",  label: "Library" },
+    { key: "groups",   label: "Groups" },
+    { key: "performance", label: "Performance" },
+  ];
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "#F8FAFC" }}>
 
       {/* Header */}
       <div style={{ background: "#fff", padding: "16px 16px 0", borderBottom: "1px solid #F1F5F9" }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", marginBottom: 14 }}>
-          📣 Marketing
-        </div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", marginBottom: 14 }}>📣 Marketing</div>
         <div style={{ display: "flex", gap: 0, overflowX: "auto", scrollbarWidth: "none" }}>
-          {[
-            { key: "today", label: "Today's Post" },
-            { key: "calendar", label: "Calendar" },
-            { key: "groups", label: "Groups" },
-          ].map(t => (
-            <button key={t.key}
-              onClick={() => setActiveMarketingTab(t.key)}
-              style={{
-                padding: "10px 20px", border: "none", background: "none",
-                cursor: "pointer", fontSize: 13, fontWeight: 700,
-                color: activeMarketingTab === t.key ? "#6366F1" : "#94A3B8",
-                borderBottom: activeMarketingTab === t.key ? "2px solid #6366F1" : "2px solid transparent",
-                whiteSpace: "nowrap",
-              }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setActiveMarketingTab(t.key)}
+              style={{ padding: "10px 16px", border: "none", background: "none", cursor: "pointer",
+                fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                color:        activeMarketingTab === t.key ? "#6366F1" : "#94A3B8",
+                borderBottom: activeMarketingTab === t.key ? "2px solid #6366F1" : "2px solid transparent" }}>
               {t.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "12px 12px 100px" : "16px 24px 40px" }}>
 
-        {/* ── TODAY'S POST TAB ── */}
+        {/* ── TODAY TAB ── */}
         {activeMarketingTab === "today" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-            <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>
-                    {todayTemplate.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-                    {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
-                  </div>
-                </div>
-                <div style={{
-                  padding: "4px 12px", borderRadius: 20,
-                  background: isPostedToday ? "#ECFDF5" : "#FEF9C3",
-                  color: isPostedToday ? "#059669" : "#D97706",
-                  fontSize: 11, fontWeight: 700,
-                }}>
-                  {isPostedToday ? "✅ Posted" : "⏳ Not posted"}
-                </div>
+            {/* Streak + mark posted */}
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1, background: "#fff", borderRadius: 14, padding: "12px 14px", border: "1px solid #F1F5F9", textAlign: "center" }}>
+                <div style={{ fontSize: 24 }}>🔥</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{streak}</div>
+                <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700 }}>DAY STREAK</div>
               </div>
-
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>
-                FEATURED DEVICES
+              <div style={{ flex: 1, background: "#fff", borderRadius: 14, padding: "12px 14px", border: "1px solid #F1F5F9", textAlign: "center" }}>
+                <div style={{ fontSize: 24 }}>📦</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#6366F1" }}>{availableStock.length}</div>
+                <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700 }}>IN STOCK</div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {selectedDevices.map((d, i) => (
-                  <div key={d.id || i} style={{
-                    padding: "8px 12px", background: "#F8FAFC",
-                    borderRadius: 10, border: "1px solid #F1F5F9",
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                  }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
-                        {d.brand} {d.model}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#94A3B8" }}>
-                        {[d.processor, d.ram, d.ssd, d.condition].filter(Boolean).join(" · ")}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, background: "#ECFDF5", color: "#059669", fontWeight: 700 }}>
-                      {d.condition || "Grade A"}
-                    </span>
-                  </div>
-                ))}
-                {selectedDevices.length === 0 && (
-                  <div style={{ fontSize: 12, color: "#94A3B8", padding: "8px 0" }}>
-                    No available stock found.
-                  </div>
-                )}
-              </div>
+              <button
+                onClick={() => {
+                  const updated = { ...postedDates, [todayKey]: new Date().toISOString() };
+                  setPostedDates(updated);
+                  localStorage.setItem("jnp_posted_dates", JSON.stringify(updated));
+                }}
+                disabled={!!postedDates[todayKey]}
+                style={{ flex: 2, borderRadius: 14, border: "none", fontSize: 12, fontWeight: 800, cursor: postedDates[todayKey] ? "default" : "pointer",
+                  background: postedDates[todayKey] ? "#ECFDF5" : "#10B981", color: postedDates[todayKey] ? "#059669" : "#fff" }}>
+                {postedDates[todayKey] ? "✅ Posted Today" : "Mark Posted"}
+              </button>
             </div>
 
-            <button onClick={generateImageCard}
-              style={{
-                width: "100%", padding: "14px 16px", borderRadius: 14,
-                border: "none", background: "#0F172A", color: "#fff",
-                fontSize: 14, fontWeight: 800, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              }}>
-              🖼 Download Image Card (1200×628)
-            </button>
-
-            {generatedPost && (
-              <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 12 }}>
-                  CAPTION VERSIONS — copy different one per batch
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {generatedPost.versions.map((version, i) => (
-                    <div key={i} style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "#6366F1" }}>
-                          Version {i + 1}
-                          {i === 0 ? " — Batch A" : i === 1 ? " — Batch B" : i === 2 ? " — Batch C" : " — Extra"}
-                        </span>
-                        <button
-                          onClick={() => copyVersion(version, i)}
-                          style={{
-                            padding: "4px 14px", borderRadius: 8, border: "none",
-                            background: copiedVersion === i ? "#ECFDF5" : "#6366F1",
-                            color: copiedVersion === i ? "#059669" : "#fff",
-                            fontSize: 11, fontWeight: 700, cursor: "pointer",
-                          }}>
-                          {copiedVersion === i ? "✓ Copied!" : "📋 Copy"}
-                        </button>
-                      </div>
-                      <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.7, whiteSpace: "pre-line" }}>
-                        {version}
-                      </div>
+            {/* Platform cards */}
+            {PLATFORMS.map(platform => {
+              const post = generatedPosts[platform.id];
+              const isGenerating = generating[platform.id];
+              const copyKey = platform.id;
+              return (
+                <div key={platform.id} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #F1F5F9" }}>
+                  <div style={{ padding: "12px 14px", background: platform.bg, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 18 }}>{platform.emoji}</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: platform.color }}>{platform.label}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ background: "#EEF2FF", borderRadius: 14, padding: 14, border: "1px solid #C7D2FE" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1", marginBottom: 10 }}>
-                📋 TODAY'S POSTING GUIDE
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {[
-                  { time: "9:00 AM", action: "Version 1 → Batch A groups (20 groups)", color: "#6366F1" },
-                  { time: "11:00 AM", action: "Version 2 → Batch B groups (25 groups)", color: "#D97706" },
-                  { time: "2:00 PM", action: "Version 3 → Batch C groups (25 groups)", color: "#10B981" },
-                  { time: "Any time", action: "Version 4 → WhatsApp Status + LinkedIn", color: "#64748B" },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: item.color, flexShrink: 0, minWidth: 75 }}>
-                      {item.time}
-                    </span>
-                    <span style={{ fontSize: 12, color: "#475569" }}>{item.action}</span>
+                    <button onClick={() => generatePost(platform.id)} disabled={isGenerating}
+                      style={{ padding: "6px 14px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 800, cursor: isGenerating ? "not-allowed" : "pointer",
+                        background: isGenerating ? "#E2E8F0" : platform.color, color: isGenerating ? "#94A3B8" : "#fff" }}>
+                      {isGenerating ? "⏳ Writing..." : post ? "↺ Regenerate" : "✨ Generate"}
+                    </button>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                const updated = { ...postedDates, [todayKey]: new Date().toISOString() };
-                setPostedDates(updated);
-                localStorage.setItem("jnp_posted_dates", JSON.stringify(updated));
-              }}
-              disabled={isPostedToday}
-              style={{
-                width: "100%", padding: 14, borderRadius: 14, border: "none",
-                background: isPostedToday ? "#ECFDF5" : "#10B981",
-                color: isPostedToday ? "#059669" : "#fff",
-                fontSize: 14, fontWeight: 800,
-                cursor: isPostedToday ? "default" : "pointer",
-              }}>
-              {isPostedToday ? "✅ Marked as Posted Today" : "✅ Mark as Posted"}
-            </button>
+                  {post && (
+                    <div style={{ padding: "12px 14px" }}>
+                      <div style={{ fontSize: 12, color: "#334155", lineHeight: 1.7, whiteSpace: "pre-line", marginBottom: 10 }}>
+                        {post}
+                      </div>
+                      <button onClick={() => copyText(post, copyKey)}
+                        style={{ width: "100%", padding: "9px 0", borderRadius: 10, border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                          background: copied[copyKey] ? "#ECFDF5" : "#F1F5F9", color: copied[copyKey] ? "#059669" : "#334155" }}>
+                        {copied[copyKey] ? "✓ Copied!" : "📋 Copy"}
+                      </button>
+                    </div>
+                  )}
+                  {!post && !isGenerating && (
+                    <div style={{ padding: "10px 14px", fontSize: 11, color: "#CBD5E1", textAlign: "center" }}>
+                      Tap Generate to create a {platform.label} post from your live stock
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* ── CALENDAR TAB ── */}
-        {activeMarketingTab === "calendar" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {(() => {
-              let streak = 0;
-              const check = new Date();
-              check.setDate(check.getDate() - 1);
-              while (true) {
-                const k = check.toISOString().split("T")[0];
-                if (postedDates[k]) { streak++; check.setDate(check.getDate() - 1); }
-                else break;
-              }
-              if (postedDates[todayKey]) streak++;
-              return (
-                <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9", textAlign: "center" }}>
-                  <div style={{ fontSize: 36 }}>🔥</div>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: "#0F172A" }}>
-                    {streak} day{streak !== 1 ? "s" : ""} streak
-                  </div>
-                  <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>
-                    Keep posting every day to build your audience
+        {/* ── WEEKLY PLAN TAB ── */}
+        {activeMarketingTab === "weekly" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>📅 Weekly Content Plan</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12, lineHeight: 1.6 }}>
+                Generated from your live stock and client data. Evergreen posts are pre-written. Live stock posts show a placeholder — tap Generate on the day.
+              </div>
+              <button onClick={generateWeeklyPlan} disabled={weeklyLoading}
+                style={{ width: "100%", padding: 12, borderRadius: 12, border: "none", fontWeight: 800, fontSize: 13, cursor: weeklyLoading ? "not-allowed" : "pointer",
+                  background: weeklyLoading ? "#E2E8F0" : "#6366F1", color: weeklyLoading ? "#94A3B8" : "#fff" }}>
+                {weeklyLoading ? "⏳ Generating plan..." : weeklyPlan ? "↺ Regenerate This Week" : "✨ Generate Weekly Plan"}
+              </button>
+            </div>
+
+            {weeklyPlan?.strategy && (
+              <div style={{ background: "#EEF2FF", borderRadius: 14, padding: "12px 14px", border: "1px solid #C7D2FE", fontSize: 12, color: "#4338CA", lineHeight: 1.6 }}>
+                💡 {weeklyPlan.strategy}
+              </div>
+            )}
+
+            {(weeklyPlan?.days || []).map((day, di) => (
+              <div key={di} style={{ background: "#fff", borderRadius: 16, border: "1px solid #F1F5F9", overflow: "hidden" }}>
+                <div style={{ padding: "10px 14px", background: "#F8FAFC", borderBottom: "1px solid #F1F5F9" }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{day.day}</span>
+                  {day.theme && <span style={{ fontSize: 11, color: "#94A3B8", marginLeft: 8 }}>{day.theme}</span>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                  {(day.posts || []).map((post, pi) => {
+                    const pl = PLATFORMS.find(p => p.id === post.platform);
+                    const isLive = post.content_type === "live";
+                    const copyKey = `week-${di}-${pi}`;
+                    return (
+                      <div key={pi} style={{ padding: "10px 14px", borderBottom: pi < day.posts.length - 1 ? "1px solid #F8FAFC" : "none" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 14 }}>{pl?.emoji || "📱"}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: pl?.color || "#64748B" }}>{pl?.label || post.platform}</span>
+                          <span style={{ fontSize: 10, color: "#CBD5E1" }}>{post.time}</span>
+                          <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, fontWeight: 700,
+                            background: isLive ? "#FFFBEB" : "#ECFDF5", color: isLive ? "#D97706" : "#059669" }}>
+                            {isLive ? "⚡ LIVE" : "✅ READY"}
+                          </span>
+                        </div>
+                        {post.note && <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>{post.note}</div>}
+                        {post.caption && post.caption !== "[GENERATE ON DAY]" && (
+                          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                            <div style={{ flex: 1, fontSize: 11, color: "#475569", lineHeight: 1.6, whiteSpace: "pre-line",
+                              background: "#F8FAFC", padding: "8px 10px", borderRadius: 8, maxHeight: 80, overflow: "hidden" }}>
+                              {post.caption.slice(0, 200)}{post.caption.length > 200 ? "…" : ""}
+                            </div>
+                            <button onClick={() => copyText(post.caption, copyKey)}
+                              style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 8, border: "none", background: copied[copyKey] ? "#ECFDF5" : "#F1F5F9",
+                                color: copied[copyKey] ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              {copied[copyKey] ? "✓" : "📋"}
+                            </button>
+                          </div>
+                        )}
+                        {(post.caption === "[GENERATE ON DAY]" || isLive) && (
+                          <div style={{ fontSize: 11, color: "#D97706", fontStyle: "italic", marginTop: 2 }}>
+                            Generate on the day using Today tab
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── CONTENT LIBRARY TAB ── */}
+        {activeMarketingTab === "library" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>📚 Evergreen Content</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12 }}>
+                Content that never goes stale. Generate once, reuse forever.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { type: "trust",       label: "🏆 Trust Posts",    sub: "Social proof" },
+                  { type: "educational", label: "📖 Educational",     sub: "Teach & engage" },
+                  { type: "b2b",         label: "💼 B2B Posts",       sub: "Business buyers" },
+                  { type: "faq",         label: "❓ FAQ Posts",       sub: "Answer objections" },
+                ].map(item => (
+                  <button key={item.type} onClick={() => generateLibraryContent(item.type)} disabled={libGenerating}
+                    style={{ padding: "12px 10px", borderRadius: 12, border: "1.5px solid #E2E8F0", background: "#F8FAFC",
+                      cursor: libGenerating ? "not-allowed" : "pointer", textAlign: "left", opacity: libGenerating ? 0.6 : 1 }}>
+                    <div style={{ fontSize: 16, marginBottom: 3 }}>{item.label.split(" ")[0]}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{item.label.slice(2)}</div>
+                    <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>{item.sub}</div>
+                  </button>
+                ))}
+              </div>
+              {libGenerating && <div style={{ fontSize: 12, color: "#6366F1", textAlign: "center", marginTop: 10 }}>✨ Writing content...</div>}
+            </div>
+
+            {library.length === 0 && (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "#CBD5E1" }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📚</div>
+                <div style={{ fontSize: 13, color: "#94A3B8" }}>Generate content above to build your library</div>
+              </div>
+            )}
+
+            {library.map(item => (
+              <div key={item.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #F1F5F9", overflow: "hidden" }}>
+                <div style={{ padding: "8px 12px", background: "#F8FAFC", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>{item.title}</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => copyText(item.content, `lib-${item.id}`)}
+                      style={{ padding: "3px 10px", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                        background: copied[`lib-${item.id}`] ? "#ECFDF5" : "#6366F1", color: copied[`lib-${item.id}`] ? "#059669" : "#fff" }}>
+                      {copied[`lib-${item.id}`] ? "✓" : "Copy"}
+                    </button>
+                    <button onClick={() => deleteLibraryItem(item.id)}
+                      style={{ padding: "3px 8px", borderRadius: 8, border: "none", background: "#FEF2F2", color: "#EF4444", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>
+                      ✕
+                    </button>
                   </div>
                 </div>
-              );
-            })()}
-            {getCalendarDays().map((day) => (
-              <div key={day.key} style={{
-                background: "#fff", borderRadius: 14, padding: "12px 14px",
-                border: day.isToday ? "2px solid #6366F1" : "1px solid #F1F5F9",
-                opacity: day.isPast && !day.posted ? 0.5 : 1,
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: day.isToday ? "#6366F1" : "#0F172A" }}>
-                        {day.isToday ? "TODAY — " : ""}
-                        {day.date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-                      {day.template.name} · {day.template.theme}
-                    </div>
-                  </div>
-                  <div style={{
-                    padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-                    background: day.posted ? "#ECFDF5" : day.isPast ? "#FEF2F2" : "#F8FAFC",
-                    color: day.posted ? "#059669" : day.isPast ? "#EF4444" : "#94A3B8",
-                  }}>
-                    {day.posted ? "✅ Posted" : day.isPast ? "❌ Missed" : "⏳ Upcoming"}
-                  </div>
+                <div style={{ padding: "10px 12px", fontSize: 12, color: "#475569", lineHeight: 1.7, whiteSpace: "pre-line" }}>
+                  {item.content}
                 </div>
               </div>
             ))}
@@ -550,106 +485,180 @@ export default function MarketingTab({
         {/* ── GROUPS TAB ── */}
         {activeMarketingTab === "groups" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ background: "#EEF2FF", borderRadius: 14, padding: 14, border: "1px solid #C7D2FE" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#4338CA", marginBottom: 4 }}>
-                💡 How to use batches
-              </div>
-              <div style={{ fontSize: 12, color: "#6366F1", lineHeight: 1.6 }}>
-                Add your best groups to Batch A — post there every day.
-                Add good groups to Batch B — post 3x per week.
-                Add the rest to Batch C — post once per week rotated.
-                Use Version 1 for A, Version 2 for B, Version 3 for C.
+
+            {/* Strategy card */}
+            <div style={{ background: "linear-gradient(135deg, #128C7E, #25D366)", borderRadius: 16, padding: 16, color: "#fff" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>💬 200 Groups Strategy</div>
+              <div style={{ fontSize: 11, lineHeight: 1.7, opacity: 0.9 }}>
+                <b>Batch A (20 groups)</b> — Post daily, Version 1{"\n"}
+                <b>Batch B (80 groups)</b> — Split into 4×20, rotate Mon-Thu, Version 2{"\n"}
+                <b>Batch C (100 groups)</b> — Split into 7×14, rotate daily, Version 3{"\n\n"}
+                ⚠️ Never post identical messages to 5+ groups in a row.{"\n"}
+                ⏰ Space batches 90 minutes apart.
               </div>
             </div>
 
-            {["a", "b", "c"].map(batchKey => {
-              const batch = BATCH_LABELS[batchKey];
-              const groups = groupBatches[batchKey] || [];
-              return (
-                <div key={batchKey} style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: batch.color }}>
-                      {batch.label}
-                    </div>
-                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-                      {batch.subtitle} · {groups.length} groups added
-                    </div>
+            {/* Daily schedule */}
+            <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #F1F5F9" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>📋 Daily Posting Schedule</div>
+              {[
+                { time: "9:00 AM",  batch: "Batch A", count: groupBatches.a.length || 20, version: "Version 1", color: "#6366F1" },
+                { time: "11:00 AM", batch: "Batch B (rotation)", count: Math.round((groupBatches.b.length || 80) / 4), version: "Version 2", color: "#D97706" },
+                { time: "2:00 PM",  batch: "Batch C (rotation)", count: Math.round((groupBatches.c.length || 100) / 7), version: "Version 3", color: "#10B981" },
+              ].map((s, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? "1px solid #F8FAFC" : "none" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: s.color, minWidth: 70, flexShrink: 0 }}>{s.time}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{s.batch}</div>
+                    <div style={{ fontSize: 10, color: "#94A3B8" }}>~{s.count} groups · {s.version}</div>
                   </div>
+                </div>
+              ))}
+            </div>
 
+            {/* Batch managers */}
+            {[
+              { key: "a", label: "Batch A", sub: "Post daily — your best 20 groups", color: "#6366F1", bg: "#EEF2FF" },
+              { key: "b", label: "Batch B", sub: "Post every 4 days — 80 groups", color: "#D97706", bg: "#FFFBEB" },
+              { key: "c", label: "Batch C", sub: "Post weekly — remaining 100 groups", color: "#10B981", bg: "#ECFDF5" },
+            ].map(batch => {
+              const groups = groupBatches[batch.key] || [];
+              return (
+                <div key={batch.key} style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: batch.color }}>{batch.label}</div>
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{batch.sub} · {groups.length} saved</div>
+                  </div>
                   {groups.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
                       {groups.map((name, i) => (
-                        <div key={i} style={{
-                          display: "flex", justifyContent: "space-between", alignItems: "center",
-                          padding: "7px 10px", background: batch.bg, borderRadius: 8,
-                        }}>
-                          <span style={{ fontSize: 13, color: "#0F172A", fontWeight: 600 }}>
-                            {name}
-                          </span>
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                          padding: "7px 10px", background: batch.bg, borderRadius: 8 }}>
+                          <span style={{ fontSize: 12, color: "#0F172A", fontWeight: 600 }}>{name}</span>
                           <button onClick={() => {
-                            const updated = { ...groupBatches, [batchKey]: groups.filter((_, idx) => idx !== i) };
+                            const updated = { ...groupBatches, [batch.key]: groups.filter((_, idx) => idx !== i) };
                             setGroupBatches(updated);
                             localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
-                          }}
-                            style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#FEF2F2", color: "#EF4444", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
-                            ✕
-                          </button>
+                          }} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#FEF2F2", color: "#EF4444", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>✕</button>
                         </div>
                       ))}
                     </div>
                   )}
-
-                  {addingToBatch === batchKey ? (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <input
-                        value={newGroupName}
-                        onChange={e => setNewGroupName(e.target.value)}
+                  {addingToBatch === batch.key ? (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
                         onKeyDown={e => {
                           if (e.key === "Enter" && newGroupName.trim()) {
-                            const updated = { ...groupBatches, [batchKey]: [...groups, newGroupName.trim()] };
+                            const updated = { ...groupBatches, [batch.key]: [...groups, newGroupName.trim()] };
                             setGroupBatches(updated);
                             localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
-                            setNewGroupName("");
-                            setAddingToBatch(null);
+                            setNewGroupName(""); setAddingToBatch(null);
                           }
                         }}
-                        placeholder="Group name..."
-                        autoFocus
-                        style={{
-                          flex: 1, padding: "8px 12px", borderRadius: 10,
-                          border: `1.5px solid ${batch.color}`, fontSize: 13, outline: "none",
-                        }}
-                      />
+                        placeholder="Group name..." autoFocus
+                        style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${batch.color}`, fontSize: 12, outline: "none" }} />
                       <button onClick={() => {
                         if (!newGroupName.trim()) return;
-                        const updated = { ...groupBatches, [batchKey]: [...groups, newGroupName.trim()] };
+                        const updated = { ...groupBatches, [batch.key]: [...groups, newGroupName.trim()] };
                         setGroupBatches(updated);
                         localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
-                        setNewGroupName("");
-                        setAddingToBatch(null);
-                      }}
-                        style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: batch.color, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                        Add
-                      </button>
+                        setNewGroupName(""); setAddingToBatch(null);
+                      }} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: batch.color, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Add</button>
                       <button onClick={() => { setAddingToBatch(null); setNewGroupName(""); }}
-                        style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>
-                        ✕
-                      </button>
+                        style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>✕</button>
                     </div>
                   ) : (
-                    <button onClick={() => setAddingToBatch(batchKey)}
-                      style={{
-                        width: "100%", padding: "9px", borderRadius: 10,
-                        border: `1.5px dashed ${batch.color}`,
-                        background: batch.bg, color: batch.color,
-                        fontSize: 12, fontWeight: 700, cursor: "pointer",
-                      }}>
-                      + Add Group to {batch.label.split(" — ")[0]}
+                    <button onClick={() => setAddingToBatch(batch.key)}
+                      style={{ width: "100%", padding: 9, borderRadius: 10, border: `1.5px dashed ${batch.color}`,
+                        background: batch.bg, color: batch.color, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      + Add Group to {batch.label}
                     </button>
                   )}
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── PERFORMANCE TAB ── */}
+        {activeMarketingTab === "performance" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+            <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>📊 Lead Sources</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12 }}>
+                Where your clients come from. Set source when adding a client.
+              </div>
+
+              {totalLeads === 0 ? (
+                <div style={{ textAlign: "center", padding: "30px 0", color: "#CBD5E1" }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+                  <div style={{ fontSize: 13, color: "#94A3B8" }}>No lead source data yet</div>
+                  <div style={{ fontSize: 11, color: "#CBD5E1", marginTop: 4 }}>Select source when adding clients</div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {leadStats.map((src, i) => {
+                    const maxLeads = leadStats[0]?.leads || 1;
+                    const barWidth = Math.round((src.leads / maxLeads) * 100);
+                    return (
+                      <div key={src.id} style={{ padding: "10px 12px", background: "#F8FAFC", borderRadius: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{src.label}</span>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, color: "#64748B" }}>{src.leads} leads</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: src.closed > 0 ? "#10B981" : "#94A3B8" }}>
+                              {src.closed} closed ({src.rate}%)
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ height: 6, background: "#E2E8F0", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${barWidth}%`, background: "#6366F1", borderRadius: 3, transition: "width 0.5s" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Best performer callout */}
+                  {leadStats[0] && (
+                    <div style={{ padding: "10px 12px", background: "#EEF2FF", borderRadius: 12, border: "1px solid #C7D2FE", marginTop: 4 }}>
+                      <div style={{ fontSize: 12, color: "#4338CA", fontWeight: 700 }}>
+                        💡 {leadStats[0].label} is your top source — {leadStats[0].leads} leads
+                      </div>
+                      {leadStats.find(s => s.rate > 0 && s !== leadStats[0]) && (
+                        <div style={{ fontSize: 11, color: "#6366F1", marginTop: 3 }}>
+                          Best conversion: {leadStats.sort((a, b) => b.rate - a.rate)[0].label} at {leadStats.sort((a, b) => b.rate - a.rate)[0].rate}%
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Posting consistency */}
+            <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>📅 Posting Consistency (last 14 days)</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {Array.from({ length: 14 }, (_, i) => {
+                  const d = new Date(); d.setDate(d.getDate() - (13 - i));
+                  const k = d.toISOString().split("T")[0];
+                  const posted = !!postedDates[k];
+                  const isToday = k === todayKey;
+                  return (
+                    <div key={k} title={d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                      style={{ width: 28, height: 28, borderRadius: 6, border: isToday ? "2px solid #6366F1" : "none",
+                        background: posted ? "#6366F1" : "#F1F5F9",
+                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: posted ? "#fff" : "#CBD5E1", fontWeight: 700 }}>
+                      {d.getDate()}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>
+                🔥 {streak} day streak · {Object.keys(postedDates).length} total days posted
+              </div>
+            </div>
           </div>
         )}
       </div>
