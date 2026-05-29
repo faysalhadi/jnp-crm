@@ -38,6 +38,7 @@ export default function PipelineView() {
   const allDeals = useMemo(() => {
     const deals = [];
     for (const customer of customers) {
+      if (customer.contact_type !== "client" && customer.contact_type !== "walkin" && customer.contact_type !== null && customer.contact_type !== undefined) continue;
       for (const deal of (customer.deals || [])) {
         deals.push({ deal, customer });
       }
