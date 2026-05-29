@@ -111,9 +111,17 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
         customer_id: c.id,
         stage:       "new_inquiry",
         budget:      form.budget ? parseFloat(form.budget) : null,
-        notes:       form.looking_for.trim() || null,
       }).select().single();
       deal = d;
+      // Save looking_for as first note in activity_log
+      if (d && form.looking_for.trim()) {
+        await supabase.from("activity_log").insert({
+          customer_id: c.id,
+          activity_type: "note",
+          note: "Looking for: " + form.looking_for.trim(),
+          logged_at: new Date().toISOString(),
+        });
+      }
     }
 
     if (type === "supplier") {

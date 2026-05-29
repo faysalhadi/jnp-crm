@@ -17,7 +17,8 @@ export default function ContactModalWrapper() {
   return (
     <ContactModal
       defaultType={contactModalPreType}
-      onClose={() => {
+      onClose={async () => {
+        await loadCustomers();
         setShowContactModal(false);
         setContactModalPreType(null);
       }}

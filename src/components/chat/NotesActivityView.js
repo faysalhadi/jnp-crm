@@ -24,15 +24,19 @@ export default function NotesActivityView() {
   } = useChat();
   const { generateSupplierReply } = useChatActions();
 
-  const [noteText, setNoteText] = useState("");
+  const [noteText, setNoteText]       = useState("");
   const [activityLog, setActivityLog] = useState([]);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]           = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [editingId, setEditingId]     = useState(null);
+  const [editText, setEditText]       = useState("");
+  const [deletingId, setDeletingId]   = useState(null);
   const recognitionRef = useRef(null);
 
   useEffect(() => {
     if (activeCustomerId) {
       setNoteText("");
+      setEditingId(null);
       fetchActivityLog(activeCustomerId);
     }
   }, [activeCustomerId]); // eslint-disable-line
@@ -51,10 +55,10 @@ export default function NotesActivityView() {
     if (!noteText.trim() || !activeCustomerId || saving) return;
     setSaving(true);
     await supabase.from("activity_log").insert({
-      customer_id: activeCustomerId,
+      customer_id:   activeCustomerId,
       activity_type: "note",
-      note: noteText.trim(),
-      logged_at: new Date().toISOString(),
+      note:          noteText.trim(),
+      logged_at:     new Date().toISOString(),
     });
     await supabase.from("customers")
       .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
@@ -68,15 +72,29 @@ export default function NotesActivityView() {
   async function logActivity(type) {
     if (!activeCustomerId) return;
     await supabase.from("activity_log").insert({
-      customer_id: activeCustomerId,
+      customer_id:   activeCustomerId,
       activity_type: type,
-      logged_at: new Date().toISOString(),
+      logged_at:     new Date().toISOString(),
     });
     await supabase.from("customers")
       .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
       .eq("id", activeCustomerId);
     await fetchActivityLog(activeCustomerId);
     loadCustomers();
+  }
+
+  async function saveEdit(id) {
+    if (!editText.trim()) return;
+    await supabase.from("activity_log").update({ note: editText.trim() }).eq("id", id);
+    setEditingId(null);
+    setEditText("");
+    await fetchActivityLog(activeCustomerId);
+  }
+
+  async function deleteEntry(id) {
+    await supabase.from("activity_log").delete().eq("id", id);
+    setDeletingId(null);
+    await fetchActivityLog(activeCustomerId);
   }
 
   function startVoice() {
@@ -91,7 +109,7 @@ export default function NotesActivityView() {
       setNoteText(transcript);
     };
     r.onerror = () => setIsRecording(false);
-    r.onend = () => setIsRecording(false);
+    r.onend   = () => setIsRecording(false);
     r.start();
     recognitionRef.current = r;
     setIsRecording(true);
@@ -104,7 +122,7 @@ export default function NotesActivityView() {
 
   function fmtDate(dateStr) {
     if (!dateStr) return "";
-    const d = new Date(dateStr);
+    const d     = new Date(dateStr);
     const today = new Date();
     const isToday = d.toDateString() === today.toDateString();
     if (isToday) return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -156,7 +174,6 @@ export default function NotesActivityView() {
             }}
           />
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {/* Mic button */}
             <button
               onClick={isRecording ? stopVoice : startVoice}
               title={isRecording ? "Stop recording" : "Voice note"}
@@ -169,7 +186,6 @@ export default function NotesActivityView() {
               }}>
               {isRecording ? "⏹" : "🎤"}
             </button>
-            {/* Save button */}
             <button
               onClick={saveNote}
               disabled={!noteText.trim() || saving}
@@ -177,7 +193,8 @@ export default function NotesActivityView() {
                 width: 36, height: 36, borderRadius: 10, border: "none",
                 background: noteText.trim() ? "#6366F1" : "#F1F5F9",
                 color: noteText.trim() ? "#fff" : "#CBD5E1",
-                fontSize: 18, fontWeight: 700, cursor: noteText.trim() ? "pointer" : "default",
+                fontSize: 18, fontWeight: 700,
+                cursor: noteText.trim() ? "pointer" : "default",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
               {saving ? "⏳" : "↑"}
@@ -200,9 +217,13 @@ export default function NotesActivityView() {
             No notes yet.<br />Add your first note above.
           </div>
         )}
+
         {activityLog.map((entry, i) => {
-          const type = ACTIVITY_TYPES.find(t => t.id === entry.activity_type);
+          const type   = ACTIVITY_TYPES.find(t => t.id === entry.activity_type);
           const isNote = entry.activity_type === "note";
+          const isEditing  = editingId === entry.id;
+          const isDeleting = deletingId === entry.id;
+
           return (
             <div key={entry.id || i} style={{
               padding: "10px 12px", borderRadius: 12,
@@ -210,29 +231,90 @@ export default function NotesActivityView() {
               border: "1px solid " + (isNote ? "#E2E8F0" : (type?.bg || "#F1F5F9")),
               boxShadow: isNote ? "0 1px 3px rgba(0,0,0,0.04)" : "none",
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                <div style={{ flex: 1 }}>
-                  {isNote ? (
-                    <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.6 }}>{entry.note}</div>
-                  ) : (
-                    <div style={{ fontSize: 12, fontWeight: 700, color: type?.color || "#64748B" }}>
-                      {type?.label || entry.activity_type}
-                      {entry.note && (
-                        <span style={{ fontWeight: 400, color: "#94A3B8", fontSize: 12 }}> — {entry.note}</span>
-                      )}
-                    </div>
-                  )}
+
+              {isEditing ? (
+                // ── Edit mode ──
+                <div>
+                  <textarea
+                    autoFocus
+                    value={editText}
+                    onChange={e => setEditText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(entry.id); }
+                      if (e.key === "Escape") { setEditingId(null); setEditText(""); }
+                    }}
+                    rows={3}
+                    style={{
+                      width: "100%", padding: "8px 10px", borderRadius: 8,
+                      border: "1.5px solid #6366F1", fontSize: 13,
+                      outline: "none", resize: "none", fontFamily: "inherit",
+                      lineHeight: 1.5, boxSizing: "border-box", marginBottom: 8,
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => saveEdit(entry.id)}
+                      style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", background: "#6366F1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      Save
+                    </button>
+                    <button onClick={() => { setEditingId(null); setEditText(""); }}
+                      style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-                <div style={{ fontSize: 10, color: "#CBD5E1", whiteSpace: "nowrap", marginTop: 2, flexShrink: 0 }}>
-                  {fmtDate(entry.logged_at)}
+              ) : isDeleting ? (
+                // ── Delete confirm ──
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ flex: 1, fontSize: 12, color: "#EF4444", fontWeight: 600 }}>Delete this entry?</span>
+                  <button onClick={() => deleteEntry(entry.id)}
+                    style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#EF4444", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    Delete
+                  </button>
+                  <button onClick={() => setDeletingId(null)}
+                    style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
+                    Cancel
+                  </button>
                 </div>
-              </div>
+              ) : (
+                // ── Normal view ──
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    {isNote ? (
+                      <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.6 }}>{entry.note}</div>
+                    ) : (
+                      <div style={{ fontSize: 12, fontWeight: 700, color: type?.color || "#64748B" }}>
+                        {type?.label || entry.activity_type}
+                        {entry.note && (
+                          <span style={{ fontWeight: 400, color: "#94A3B8", fontSize: 12 }}> — {entry.note}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, color: "#CBD5E1", whiteSpace: "nowrap" }}>
+                      {fmtDate(entry.logged_at)}
+                    </span>
+                    {isNote && (
+                      <button onClick={() => { setEditingId(entry.id); setEditText(entry.note || ""); }}
+                        title="Edit"
+                        style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#F1F5F9", color: "#94A3B8", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        ✏️
+                      </button>
+                    )}
+                    <button onClick={() => setDeletingId(entry.id)}
+                      title="Delete"
+                      style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#FEF2F2", color: "#EF4444", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* ── Supplier reply modal (moved from MessageList) ── */}
+      {/* ── Supplier reply modal ── */}
       {showSupplierReply && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
           <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
