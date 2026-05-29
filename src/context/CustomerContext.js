@@ -112,6 +112,16 @@ export function CustomerProvider({ children }) {
   }
 
   async function deleteCustomer(customerId) {
+    // delete related records first to avoid FK constraint errors
+    const { data: deals } = await supabase.from("deals").select("id").eq("customer_id", customerId);
+    const dealIds = (deals || []).map(d => d.id);
+    if (dealIds.length > 0) {
+      await supabase.from("deal_items").delete().in("deal_id", dealIds);
+      await supabase.from("deals").delete().in("id", dealIds);
+    }
+    await supabase.from("messages").delete().eq("customer_id", customerId);
+    await supabase.from("follow_ups").delete().eq("customer_id", customerId);
+    await supabase.from("activity_log").delete().eq("customer_id", customerId);
     await supabase.from("customers").delete().eq("id", customerId);
     setShowDeleteConfirm(false);
     setActiveCustomerId(null);
