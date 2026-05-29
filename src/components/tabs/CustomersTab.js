@@ -156,7 +156,7 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap }) {
 
 export default function CustomersTab() {
   const [viewMode, setViewMode] = useState("clients");
-  const { isMobile, setShowSideDrawer } = useUI();
+  const { isMobile, setShowSideDrawer, setShowSearch } = useUI();
   const {
     customers, loading,
     lastActivityMap, pendingFollowUpMap,
@@ -223,11 +223,13 @@ export default function CustomersTab() {
             <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>Clients</div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button onClick={() => setShowSearch(true)}
+              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              🔍
+            </button>
             <button onClick={() => setShowSideDrawer(true)}
-              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>📊</button>
-            <button onClick={() => { setContactModalPreType("client"); setShowContactModal(true); }}
-              style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-              + Client
+              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>
+              📊
             </button>
           </div>
         </div>

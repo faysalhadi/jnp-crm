@@ -3,7 +3,7 @@ import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
 
 export default function DesktopSidebar({ NAV_TABS }) {
-  const { activeTab, setActiveTab } = useUI();
+  const { activeTab, setActiveTab, setShowSearch } = useUI();
   const { setView, setActiveCustomerId, setActiveDealId } = useCustomers();
 
   return (
@@ -37,6 +37,7 @@ export default function DesktopSidebar({ NAV_TABS }) {
             <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>Faisal</div>
             <div style={{ fontSize: 10, color: "#94A3B8" }}>Owner</div>
           </div>
+          <button onClick={() => setShowSearch(true)} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }}>🔍</button>
           <button onClick={() => setView("settings")} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }}>⚙️</button>
         </div>
       </div>

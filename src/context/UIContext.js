@@ -10,6 +10,7 @@ export function UIProvider({ children }) {
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [activeMarketingTab, setActiveMarketingTab] = useState("today");
+  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -32,6 +33,7 @@ export function UIProvider({ children }) {
       installPromptEvent, setInstallPromptEvent,
       showInstallBanner, setShowInstallBanner,
       activeMarketingTab, setActiveMarketingTab,
+      showSearch, setShowSearch,
     }}>
       {children}
     </UIContext.Provider>

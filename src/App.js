@@ -37,6 +37,7 @@ import ToastNotification from "./components/layout/ToastNotification";
 import ReceiptModal from "./components/layout/ReceiptModal";
 import BroadcastModal from "./components/layout/BroadcastModal";
 import AuthScreen from "./components/layout/AuthScreen";
+import GlobalSearch from "./components/layout/GlobalSearch";
 import ApiKeySetup from "./components/layout/ApiKeySetup";
 import EditReservationModal from "./components/modals/EditReservationModal";
 import CompleteReservationModal from "./components/modals/CompleteReservationModal";
@@ -73,6 +74,7 @@ export default function App() {
     activeTab, setActiveTab,
     isMobile,
     showToast,
+    showSearch, setShowSearch,
     installPromptEvent, setInstallPromptEvent,
     showInstallBanner, setShowInstallBanner,
   } = useUI();
@@ -398,6 +400,9 @@ export default function App() {
           onComplete={() => { loadStock(); refreshCachedStock(); loadTodaySales(); loadCustomers(); setQuickSalePrefill(null); }}
         />
       )}
+
+      {/* ── GLOBAL SEARCH ── */}
+      {showSearch && <GlobalSearch onClose={() => setShowSearch(false)} />}
 
       {/* ── BROADCAST MODAL ── */}
       <BroadcastModal />
