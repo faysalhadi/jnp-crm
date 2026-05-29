@@ -122,7 +122,12 @@ export function CustomerProvider({ children }) {
     await supabase.from("messages").delete().eq("customer_id", customerId);
     await supabase.from("follow_ups").delete().eq("customer_id", customerId);
     await supabase.from("activity_log").delete().eq("customer_id", customerId);
-    await supabase.from("customers").delete().eq("id", customerId);
+    const { error } = await supabase.from("customers").delete().eq("id", customerId);
+    if (error) {
+      alert("Delete failed: " + error.message);
+      console.error("deleteCustomer error:", error);
+      return;
+    }
     setShowDeleteConfirm(false);
     setActiveCustomerId(null);
     setActiveDealId(null);
