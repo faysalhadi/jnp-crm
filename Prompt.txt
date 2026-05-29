@@ -1,20 +1,412 @@
-In src/components/chat/ChatHeader.js, find the match category select onChange handler:
+Read these files first:
+- src/components/tabs/TradersTab.js
+- src/context/TradersContext.js
 
-onChange={async (e) => {
-  console.log("Saving match_category:", e.target.value, "for deal:", activeDealId);
-  const { error } = await supabase.from("deals").update({ match_category: e.target.value }).eq("id", activeDealId);
-  console.log("Save result error:", error);
-  updateDeal({ match_category: e.target.value });
-}}
+Make these changes to support batch importing multiple WhatsApp group chat files at once with aggressive pre-filtering, gaming laptop support, and cross-group deduplication.
 
-Replace with:
+═══════════════════════════════════════
+CHANGE 1: TradersTab.js — Multi-file upload UI
+═══════════════════════════════════════
 
-onChange={async (e) => {
-  const newCategory = e.target.value;
-  await supabase.from("deals").update({ match_category: newCategory }).eq("id", activeDealId);
-  await loadCustomers();
-}}
+In the Import modal, find the SOURCE GROUP section. Replace the entire import modal content with this new version that supports multiple file uploads:
 
-Also remove the two console.log lines.
+The key UI changes:
+1. Replace the single group name input + textarea with a multi-file upload zone
+2. Auto-detect group name from filename
+3. Show per-file processing status
+4. Show combined preview with group labels
 
-Run: npm run build && git add -A && git commit -m "Fix match category not updating in UI after save" && git push
+Find the import modal div (starts with {showImportTrader && (...)})
+
+Replace the modal content inside the white card div with:
+
+<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+  <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>Import Group Chats</span>
+  <button onClick={() => { setShowImportTrader(false); setTraderImportPreview(null); setTraderImportResult(null); setTraderChatText(""); setBatchFiles([]); }}
+    style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+</div>
+
+{/* Multi-file upload zone */}
+<div
+  onClick={() => document.getElementById('batch-file-input').click()}
+  style={{ border: "2px dashed #E2E8F0", borderRadius: 12, padding: 20, textAlign: "center", background: "#F8FAFC", cursor: "pointer", marginBottom: 12 }}>
+  <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+  <div style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>
+    {batchFiles.length > 0 ? `${batchFiles.length} file${batchFiles.length > 1 ? 's' : ''} selected` : 'Tap to select group chat files'}
+  </div>
+  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>Select multiple .txt or .zip files at once</div>
+  <input
+    id="batch-file-input"
+    type="file"
+    multiple
+    accept=".txt,.zip"
+    style={{ display: "none" }}
+    onChange={e => setBatchFiles(Array.from(e.target.files))}
+  />
+</div>
+
+{/* File list with auto-detected names */}
+{batchFiles.length > 0 && (
+  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+    {batchFiles.map((f, i) => {
+      const groupName = detectGroupName(f.name);
+      return (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, background: "#F1F5F9" }}>
+          <span style={{ fontSize: 14 }}>📋</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{groupName}</div>
+            <div style={{ fontSize: 10, color: "#94A3B8" }}>{f.name}</div>
+          </div>
+          <button onClick={e => { e.stopPropagation(); setBatchFiles(prev => prev.filter((_, j) => j !== i)); }}
+            style={{ width: 20, height: 20, borderRadius: 4, border: "none", background: "#E2E8F0", cursor: "pointer", fontSize: 11 }}>✕</button>
+        </div>
+      );
+    })}
+  </div>
+)}
+
+{/* Extract button */}
+{batchFiles.length > 0 && !traderImportPreview && (
+  <button
+    onClick={extractBatchListings}
+    disabled={traderImportLoading}
+    style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: traderImportLoading ? "#E2E8F0" : "#6366F1", color: traderImportLoading ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: traderImportLoading ? "not-allowed" : "pointer", marginBottom: 12 }}>
+    {traderImportLoading ? "⏳ Processing..." : `Extract from ${batchFiles.length} group${batchFiles.length > 1 ? 's' : ''}`}
+  </button>
+)}
+
+{/* Status message */}
+{traderImportResult && !traderImportResult.success && (
+  <div style={{ padding: "10px 14px", borderRadius: 10, background: "#F8FAFC", fontSize: 12, color: "#475569", marginBottom: 12, whiteSpace: "pre-line" }}>
+    {traderImportResult.message}
+  </div>
+)}
+
+{/* Preview */}
+{traderImportPreview && traderImportPreview.length > 0 && (
+  <div>
+    <div style={{ fontSize: 12, fontWeight: 700, color: "#10B981", marginBottom: 10 }}>
+      ✅ Found {traderImportPreview.length} listings across {batchFiles.length} groups
+    </div>
+    <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+      {traderImportPreview.slice(0, 20).map((l, i) => (
+        <div key={i} style={{ padding: "8px 12px", borderRadius: 8, background: l.type === "buying" ? "#EEF2FF" : "#F0FDF4", border: `1px solid ${l.type === "buying" ? "#C7D2FE" : "#BBF7D0"}` }}>
+          <div style={{ display: "flex", justify: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: l.type === "buying" ? "#6366F1" : "#10B981" }}>
+              {l.type === "buying" ? "🔵 WTB" : "🟢 WTS"}
+            </span>
+            <span style={{ fontSize: 10, color: "#94A3B8" }}>{l.source_group}</span>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#0F172A", marginTop: 2 }}>
+            {[l.brand, l.model, l.processor, l.ram, l.storage].filter(Boolean).join(" · ")}
+          </div>
+          <div style={{ fontSize: 11, color: "#64748B" }}>👤 {l.trader_name}</div>
+        </div>
+      ))}
+      {traderImportPreview.length > 20 && (
+        <div style={{ textAlign: "center", fontSize: 12, color: "#94A3B8", padding: 8 }}>
+          +{traderImportPreview.length - 20} more listings
+        </div>
+      )}
+    </div>
+    <button onClick={saveTraderListings} disabled={savingTraderListings}
+      style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: savingTraderListings ? "#E2E8F0" : "#10B981", color: savingTraderListings ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: savingTraderListings ? "not-allowed" : "pointer" }}>
+      {savingTraderListings ? "Saving..." : `Save ${traderImportPreview.length} listings`}
+    </button>
+  </div>
+)}
+
+{traderImportResult?.success && (
+  <div style={{ textAlign: "center", padding: 20 }}>
+    <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+    <div style={{ fontSize: 16, fontWeight: 800, color: "#10B981" }}>Saved {traderImportResult.count} listings</div>
+  </div>
+)}
+
+
+═══════════════════════════════════════
+CHANGE 2: TradersTab.js — Add state and helper functions
+═══════════════════════════════════════
+
+Add these imports at the top of TradersTab.js:
+import { useState } from "react";
+
+Add these state variables inside TradersTab component after existing destructuring:
+const [batchFiles, setBatchFiles] = useState([]);
+
+Add this helper function inside TradersTab component:
+
+function detectGroupName(filename) {
+  // WhatsApp exports: "WhatsApp Chat with GroupName.txt" or "_chat.txt" inside zip
+  const cleaned = filename
+    .replace(/\.zip$|\.txt$/i, '')
+    .replace(/^WhatsApp.?Chat.?with.?/i, '')
+    .replace(/^WhatsApp.?Chat.?-?/i, '')
+    .replace(/_chat$/i, '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || filename;
+}
+
+Add this function inside TradersTab component:
+
+async function extractBatchListings() {
+  if (batchFiles.length === 0) return;
+  setTraderImportLoading(true);
+  setTraderImportResult(null);
+  setTraderImportPreview(null);
+
+  const allFiles = [];
+
+  // Read all files (handle both .txt and .zip)
+  for (const file of batchFiles) {
+    const groupName = detectGroupName(file.name);
+    let text = "";
+
+    if (file.name.endsWith('.zip')) {
+      // Use JSZip to extract .txt from zip
+      try {
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(file);
+        const txtFile = Object.values(zip.files).find(f => f.name.endsWith('.txt'));
+        if (txtFile) {
+          text = await txtFile.async('string');
+        }
+      } catch {
+        // If JSZip not available, skip this file
+        setTraderImportResult({ success: false, message: `⚠️ Could not read ${file.name} — try exporting as .txt instead of .zip` });
+        continue;
+      }
+    } else {
+      text = await file.text();
+    }
+
+    if (text) {
+      allFiles.push({ groupName, text });
+    }
+  }
+
+  if (allFiles.length === 0) {
+    setTraderImportResult({ success: false, message: "No readable files found." });
+    setTraderImportLoading(false);
+    return;
+  }
+
+  // Process all files through extractTraderListings with batch support
+  setTraderImportResult({ success: false, message: `Processing ${allFiles.length} group${allFiles.length > 1 ? 's' : ''}...` });
+  await extractBatchFiles(allFiles);
+  setTraderImportLoading(false);
+}
+
+
+═══════════════════════════════════════
+CHANGE 3: TradersContext.js — Add extractBatchFiles function
+═══════════════════════════════════════
+
+Add this new function inside TradersProvider, after the existing extractTraderListings function:
+
+async function extractBatchFiles(files) {
+  // files = [{groupName, text}]
+  const allListings = [];
+
+  for (let fileIdx = 0; fileIdx < files.length; fileIdx++) {
+    const { groupName, text } = files[fileIdx];
+    setTraderImportResult({ success: false, message: `⏳ Processing group ${fileIdx + 1}/${files.length}: ${groupName}` });
+
+    // Clean text
+    const cleanedText = cleanText(text);
+    const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/;
+    const rawLines = cleanedText.split('\n');
+    const mergedLines = [];
+    for (const line of rawLines) {
+      if (lineRegex.test(line.trim())) {
+        mergedLines.push(line);
+      } else if (line.trim() && mergedLines.length > 0) {
+        mergedLines[mergedLines.length - 1] += ' | ' + line.trim();
+      }
+    }
+
+    // AGGRESSIVE pre-filter
+    const skipContent = [
+      'end-to-end encrypted', 'added you', 'created this group', 'omitted',
+      'sticker', 'document omitted', 'changed their phone', 'changed this group',
+      'disappearing messages', 'waiting for this message', 'you were added',
+      'missed voice call', 'missed video call', 'added ~', 'added +',
+      'left', 'removed', 'joined using', 'security code changed',
+      'changed the subject', 'pinned a message', 'turned on', 'turned off',
+      'no longer', 'new number', 'tap to message', 'image omitted',
+      'video omitted', 'audio omitted', 'gif omitted', 'contact card omitted',
+      'location omitted', 'this message was deleted', 'null',
+    ];
+    const skipSenders = ['JNP', 'JNP Laptop Market', 'JNP With'];
+    const sellSignals = ['wts', 'want to sale', 'want to sell', 'available',
+      'shipment', 'w.t.sal', 'for sale', 'selling', 'i want to sale',
+      'i want to sell', 'w t s'];
+    const buySignals = ['wtb', 'want to buy', 'looking for', 'need', 'chahiye',
+      'koi hai', 'kisi ke pass', 'required', 'buying', 'anyone have',
+      'any one have', 'mil sakta', 'chahie', 'lena hai', 'i need', 'w t b',
+      'wanted', 'needed'];
+    const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad', 'elitebook',
+      'latitude', 'surface', 'macbook', '840', '850', '5420', '7420', '640',
+      '830', '845', '835', 'probook', 'zbook', 'pavilion', 'inspiron', 'vostro',
+      'xps', 'precision', 'ideapad', 'thinkbook', 'yoga', 'omen', 'spectre',
+      'envy', 'carbon', 'firefly', '7490', '7400', '7390', '5400', '5410',
+      '5430', '5500', '5520', '830', '840', '1040', '1030'];
+    const gamingBrands = ['asus', 'rog', 'alienware', 'msi', 'razer',
+      'gigabyte', 'aorus', 'legion', 'g15', 'g16', 'g14', 'g7', 'g5'];
+    const allBrands = [...laptopBrands, ...gamingBrands];
+    const specSignals = ['i3', 'i5', 'i7', 'i9', 'gen', 'gb', 'ssd', 'ram',
+      'core', 'ryzen', 'celeron', 'm1', 'm2', 'm3', '8gb', '16gb', '256', '512',
+      '1tb', 'pcs', 'qty', 'units', 'available'];
+    const priceSignals = ['aed', 'price', 'offer', 'rate'];
+
+    const relevantLines = mergedLines.filter(line => {
+      const lower = line.toLowerCase();
+      if (skipContent.some(s => lower.includes(s))) return false;
+      if (skipSenders.some(s =>
+        line.includes('] ' + s + ':') || line.includes('] ~' + s + ':'))) return false;
+      const hasBrand = allBrands.some(b => lower.includes(b));
+      if (!hasBrand) return false;
+      const hasSell = sellSignals.some(s => lower.includes(s));
+      const hasBuy = buySignals.some(s => lower.includes(s));
+      const hasSpec = specSignals.some(s => lower.includes(s));
+      const hasPrice = priceSignals.some(s => lower.includes(s));
+      return hasSell || hasBuy || hasSpec || hasPrice;
+    });
+
+    if (relevantLines.length === 0) continue;
+
+    // Send to Claude in chunks
+    const chunkSize = 30;
+    const totalChunks = Math.ceil(relevantLines.length / chunkSize);
+
+    const extractionPrompt = (chunkText) =>
+      `Extract laptop listings and buying requests from this WhatsApp group chat.
+Return ONLY a JSON array, no markdown.
+
+SELLING signals: WTS, Want to Sell, Available, New Shipment, For Sale
+BUYING signals: WTB, Want to Buy, Looking for, Need, Chahiye, Koi hai, Required
+
+Return format:
+[{"type":"selling","category":"laptop","brand":"HP","model":"EliteBook 840 G8",
+"processor":"Core i7 11th Gen","ram":"8GB","storage":"256GB","condition":"Used",
+"quantity":null,"price":null,"currency":"AED","charger":"unknown","notes":"",
+"trader_name":"sender name","trader_number":""},
+{"type":"buying","category":"laptop","brand":"MacBook","model":"Air M2",
+"processor":"Apple M2","ram":"8GB","storage":"256GB","condition":"any",
+"quantity":1,"price":null,"currency":"AED","charger":"unknown","notes":"urgent",
+"trader_name":"sender name","trader_number":""}]
+
+RULES:
+- SELLING: trader has stock for sale
+- BUYING: trader wants to purchase
+- Include gaming laptops (Asus ROG, Alienware, MSI, Legion gaming models)
+- SKIP: RAM/SSD only, phones, desktops, monitors, batteries, keyboards, greetings
+- If no listings found return []
+
+Chat:
+${chunkText}`;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = relevantLines.slice(i * chunkSize, (i + 1) * chunkSize);
+      setTraderImportResult({
+        success: false,
+        message: `⏳ Group ${fileIdx + 1}/${files.length}: ${groupName}\nChunk ${i + 1}/${totalChunks}...`
+      });
+
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 8000,
+            system: "You extract laptop inventory listings from WhatsApp group chats. Return only valid JSON arrays.",
+            messages: [{ role: "user", content: extractionPrompt(chunk.join('\n')) }],
+          }),
+        });
+        const data = await res.json();
+        if (data.error) continue;
+        const raw = data?.content?.[0]?.text || "[]";
+        const jsonMatch = raw.match(/\[[\s\S]*\]/);
+        const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
+        let chunkListings = [];
+        try { chunkListings = JSON.parse(clean); } catch {}
+        if (Array.isArray(chunkListings)) {
+          // Tag each listing with source group
+          chunkListings.forEach(l => { l.source_group = groupName; });
+          allListings.push(...chunkListings);
+        }
+      } catch { continue; }
+    }
+  }
+
+  // Cross-group deduplication
+  const seen = new Set();
+  const deduped = allListings.filter(l => {
+    const key = `${l.trader_name}|${l.brand}|${l.model}|${l.ram}|${l.storage}|${l.type}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  setTraderImportPreview(deduped);
+  if (deduped.length === 0) {
+    setTraderImportResult({ success: false, message: "No laptop listings found in any of the files." });
+  } else {
+    const savedCount = allListings.length - deduped.length;
+    setTraderImportResult({
+      success: false,
+      message: `✅ Found ${deduped.length} listings${savedCount > 0 ? ` (${savedCount} duplicates removed)` : ''}. Confirm to save.`
+    });
+  }
+}
+
+Also add extractBatchFiles to the context Provider value object:
+extractBatchFiles,
+
+Also update saveTraderListings to handle multiple groups — it should delete old listings per group before inserting new ones. Find the saveTraderListings function and update the delete query to handle multiple groups:
+
+Replace:
+const group = traderGroup || "Other";
+const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+await supabase.from("trader_inventory").delete().eq("source_group", group).lt("created_at", oneHourAgo);
+
+With:
+const groups = [...new Set((traderImportPreview || []).map(l => l.source_group).filter(Boolean))];
+const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+for (const group of groups) {
+  await supabase.from("trader_inventory").delete().eq("source_group", group).lt("created_at", oneHourAgo);
+}
+
+
+═══════════════════════════════════════
+CHANGE 4: Install jszip for zip file handling
+═══════════════════════════════════════
+
+Run this command first:
+npm install jszip
+
+Then make the code change above.
+
+
+═══════════════════════════════════════
+Also add extractBatchFiles to TradersTab.js destructuring from useTraders():
+extractBatchFiles,
+
+And pass it to the extractBatchListings function in TradersTab:
+async function extractBatchListings() {
+  ...
+  await extractBatchFiles(allFiles);
+  ...
+}
+═══════════════════════════════════════
+
+After all changes run:
+npm run build && git add -A && git commit -m "Batch import multiple group chats with aggressive filter and cross-group dedup" && git push

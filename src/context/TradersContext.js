@@ -234,19 +234,177 @@ ${chunkText}`;
     setTraderImportLoading(false);
   }
 
+  async function extractBatchFiles(files) {
+    const allListings = [];
+
+    for (let fileIdx = 0; fileIdx < files.length; fileIdx++) {
+      const { groupName, text } = files[fileIdx];
+      setTraderImportResult({ success: false, message: `⏳ Processing group ${fileIdx + 1}/${files.length}: ${groupName}` });
+
+      const cleanedText = cleanText(text);
+      const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/;
+      const rawLines = cleanedText.split('\n');
+      const mergedLines = [];
+      for (const line of rawLines) {
+        if (lineRegex.test(line.trim())) {
+          mergedLines.push(line);
+        } else if (line.trim() && mergedLines.length > 0) {
+          mergedLines[mergedLines.length - 1] += ' | ' + line.trim();
+        }
+      }
+
+      const skipContent = [
+        'end-to-end encrypted', 'added you', 'created this group', 'omitted',
+        'sticker', 'document omitted', 'changed their phone', 'changed this group',
+        'disappearing messages', 'waiting for this message', 'you were added',
+        'missed voice call', 'missed video call', 'added ~', 'added +',
+        'left', 'removed', 'joined using', 'security code changed',
+        'changed the subject', 'pinned a message', 'turned on', 'turned off',
+        'no longer', 'new number', 'tap to message', 'image omitted',
+        'video omitted', 'audio omitted', 'gif omitted', 'contact card omitted',
+        'location omitted', 'this message was deleted', 'null',
+      ];
+      const skipSenders = ['JNP', 'JNP Laptop Market', 'JNP With'];
+      const sellSignals = ['wts', 'want to sale', 'want to sell', 'available',
+        'shipment', 'w.t.sal', 'for sale', 'selling', 'i want to sale',
+        'i want to sell', 'w t s'];
+      const buySignals = ['wtb', 'want to buy', 'looking for', 'need', 'chahiye',
+        'koi hai', 'kisi ke pass', 'required', 'buying', 'anyone have',
+        'any one have', 'mil sakta', 'chahie', 'lena hai', 'i need', 'w t b',
+        'wanted', 'needed'];
+      const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad', 'elitebook',
+        'latitude', 'surface', 'macbook', '840', '850', '5420', '7420', '640',
+        '830', '845', '835', 'probook', 'zbook', 'pavilion', 'inspiron', 'vostro',
+        'xps', 'precision', 'ideapad', 'thinkbook', 'yoga', 'omen', 'spectre',
+        'envy', 'carbon', 'firefly', '7490', '7400', '7390', '5400', '5410',
+        '5430', '5500', '5520', '830', '840', '1040', '1030'];
+      const gamingBrands = ['asus', 'rog', 'alienware', 'msi', 'razer',
+        'gigabyte', 'aorus', 'legion', 'g15', 'g16', 'g14', 'g7', 'g5'];
+      const allBrands = [...laptopBrands, ...gamingBrands];
+      const specSignals = ['i3', 'i5', 'i7', 'i9', 'gen', 'gb', 'ssd', 'ram',
+        'core', 'ryzen', 'celeron', 'm1', 'm2', 'm3', '8gb', '16gb', '256', '512',
+        '1tb', 'pcs', 'qty', 'units', 'available'];
+      const priceSignals = ['aed', 'price', 'offer', 'rate'];
+
+      const relevantLines = mergedLines.filter(line => {
+        const lower = line.toLowerCase();
+        if (skipContent.some(s => lower.includes(s))) return false;
+        if (skipSenders.some(s =>
+          line.includes('] ' + s + ':') || line.includes('] ~' + s + ':'))) return false;
+        const hasBrand = allBrands.some(b => lower.includes(b));
+        if (!hasBrand) return false;
+        const hasSell = sellSignals.some(s => lower.includes(s));
+        const hasBuy = buySignals.some(s => lower.includes(s));
+        const hasSpec = specSignals.some(s => lower.includes(s));
+        const hasPrice = priceSignals.some(s => lower.includes(s));
+        return hasSell || hasBuy || hasSpec || hasPrice;
+      });
+
+      if (relevantLines.length === 0) continue;
+
+      const chunkSize = 30;
+      const totalChunks = Math.ceil(relevantLines.length / chunkSize);
+
+      const extractionPrompt = (chunkText) =>
+        `Extract laptop listings and buying requests from this WhatsApp group chat.
+Return ONLY a JSON array, no markdown.
+
+SELLING signals: WTS, Want to Sell, Available, New Shipment, For Sale
+BUYING signals: WTB, Want to Buy, Looking for, Need, Chahiye, Koi hai, Required
+
+Return format:
+[{"type":"selling","category":"laptop","brand":"HP","model":"EliteBook 840 G8",
+"processor":"Core i7 11th Gen","ram":"8GB","storage":"256GB","condition":"Used",
+"quantity":null,"price":null,"currency":"AED","charger":"unknown","notes":"",
+"trader_name":"sender name","trader_number":""},
+{"type":"buying","category":"laptop","brand":"MacBook","model":"Air M2",
+"processor":"Apple M2","ram":"8GB","storage":"256GB","condition":"any",
+"quantity":1,"price":null,"currency":"AED","charger":"unknown","notes":"urgent",
+"trader_name":"sender name","trader_number":""}]
+
+RULES:
+- SELLING: trader has stock for sale
+- BUYING: trader wants to purchase
+- Include gaming laptops (Asus ROG, Alienware, MSI, Legion gaming models)
+- SKIP: RAM/SSD only, phones, desktops, monitors, batteries, keyboards, greetings
+- If no listings found return []
+
+Chat:
+${chunkText}`;
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = relevantLines.slice(i * chunkSize, (i + 1) * chunkSize);
+        setTraderImportResult({
+          success: false,
+          message: `⏳ Group ${fileIdx + 1}/${files.length}: ${groupName}\nChunk ${i + 1}/${totalChunks}...`
+        });
+
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": anthropicKey,
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerous-direct-browser-access": "true",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 8000,
+              system: "You extract laptop inventory listings from WhatsApp group chats. Return only valid JSON arrays.",
+              messages: [{ role: "user", content: extractionPrompt(chunk.join('\n')) }],
+            }),
+          });
+          const data = await res.json();
+          if (data.error) continue;
+          const raw = data?.content?.[0]?.text || "[]";
+          const jsonMatch = raw.match(/\[[\s\S]*\]/);
+          const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
+          let chunkListings = [];
+          try { chunkListings = JSON.parse(clean); } catch {}
+          if (Array.isArray(chunkListings)) {
+            chunkListings.forEach(l => { l.source_group = groupName; });
+            allListings.push(...chunkListings);
+          }
+        } catch { continue; }
+      }
+    }
+
+    const seen = new Set();
+    const deduped = allListings.filter(l => {
+      const key = `${l.trader_name}|${l.brand}|${l.model}|${l.ram}|${l.storage}|${l.type}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    setTraderImportPreview(deduped);
+    if (deduped.length === 0) {
+      setTraderImportResult({ success: false, message: "No laptop listings found in any of the files." });
+    } else {
+      const savedCount = allListings.length - deduped.length;
+      setTraderImportResult({
+        success: false,
+        message: `✅ Found ${deduped.length} listings${savedCount > 0 ? ` (${savedCount} duplicates removed)` : ''}. Confirm to save.`
+      });
+    }
+  }
+
   async function saveTraderListings() {
     if (!traderImportPreview?.length) return;
     setSavingTraderListings(true);
-    const group = traderGroup || "Other";
+    const groups = [...new Set((traderImportPreview || []).map(l => l.source_group).filter(Boolean))];
     const oneHourAgo = new Date(
       Date.now() - 60 * 60 * 1000
     ).toISOString();
-    await supabase.from("trader_inventory")
-      .delete()
-      .eq("source_group", group)
-      .lt("created_at", oneHourAgo);
+    for (const group of groups) {
+      await supabase.from("trader_inventory")
+        .delete()
+        .eq("source_group", group)
+        .lt("created_at", oneHourAgo);
+    }
     const rows = traderImportPreview.map(l => ({
-      ...l, source_group: group, status: "active"
+      ...l, status: "active"
     }));
     const { error } = await supabase
       .from("trader_inventory").insert(rows);
@@ -260,7 +418,6 @@ ${chunkText}`;
         setShowImportTrader(false);
         setTraderImportPreview(null);
         setTraderChatText("");
-        setTraderGroup("");
         setTraderImportResult(null);
       }, 1800);
     } else {
@@ -290,6 +447,7 @@ ${chunkText}`;
       lastImportTimes, setLastImportTimes,
       loadTraderListings,
       extractTraderListings,
+      extractBatchFiles,
       saveTraderListings,
     }}>
       {children}

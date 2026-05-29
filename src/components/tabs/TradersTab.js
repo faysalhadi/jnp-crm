@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Spinner from "../ui/Spinner";
 import Badge from "../ui/Badge";
 import { timeAgo, daysSince } from "../../utils/helpers";
@@ -28,7 +28,66 @@ export default function TradersTab({
     showTraderMatches, setShowTraderMatches,
     extractTraderListings,
     saveTraderListings,
+    extractBatchFiles,
   } = useTraders();
+
+  const [batchFiles, setBatchFiles] = useState([]);
+
+  function detectGroupName(filename) {
+    const cleaned = filename
+      .replace(/\.zip$|\.txt$/i, '')
+      .replace(/^WhatsApp.?Chat.?with.?/i, '')
+      .replace(/^WhatsApp.?Chat.?-?/i, '')
+      .replace(/_chat$/i, '')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned || filename;
+  }
+
+  async function extractBatchListings() {
+    if (batchFiles.length === 0) return;
+    setTraderImportLoading(true);
+    setTraderImportResult(null);
+    setTraderImportPreview(null);
+
+    const allFiles = [];
+
+    for (const file of batchFiles) {
+      const groupName = detectGroupName(file.name);
+      let text = "";
+
+      if (file.name.endsWith('.zip')) {
+        try {
+          const JSZip = (await import('jszip')).default;
+          const zip = await JSZip.loadAsync(file);
+          const txtFile = Object.values(zip.files).find(f => f.name.endsWith('.txt'));
+          if (txtFile) {
+            text = await txtFile.async('string');
+          }
+        } catch {
+          setTraderImportResult({ success: false, message: `⚠️ Could not read ${file.name} — try exporting as .txt instead of .zip` });
+          continue;
+        }
+      } else {
+        text = await file.text();
+      }
+
+      if (text) {
+        allFiles.push({ groupName, text });
+      }
+    }
+
+    if (allFiles.length === 0) {
+      setTraderImportResult({ success: false, message: "No readable files found." });
+      setTraderImportLoading(false);
+      return;
+    }
+
+    setTraderImportResult({ success: false, message: `Processing ${allFiles.length} group${allFiles.length > 1 ? 's' : ''}...` });
+    await extractBatchFiles(allFiles);
+    setTraderImportLoading(false);
+  }
 
   useEffect(() => { loadTraderListings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
@@ -170,53 +229,107 @@ export default function TradersTab({
           <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>Import Group Chat</span>
-                <button onClick={() => { setShowImportTrader(false); setTraderImportPreview(null); setTraderImportResult(null); setTraderChatText(""); }} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+                <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>Import Group Chats</span>
+                <button onClick={() => { setShowImportTrader(false); setTraderImportPreview(null); setTraderImportResult(null); setTraderChatText(""); setBatchFiles([]); }}
+                  style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>SOURCE GROUP</div>
-                  <select value={traderGroup} onChange={e => setTraderGroup(e.target.value)} style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, outline: "none" }}>
-                    <option value="">Select group...</option>
-                    {["JNP Market","Computer Mall JNP","JNP WITH AFAQ","JNP COMPUTERS SHARJAH","JNP MARKET","JNP","SSD and HDD JNP","ELECTRO JNP Market MNA","Mohamed Elshayb","Other"].map(g => <option key={g}>{g}</option>)}
-                  </select>
+
+              {/* Multi-file upload zone */}
+              <div
+                onClick={() => document.getElementById('batch-file-input').click()}
+                style={{ border: "2px dashed #E2E8F0", borderRadius: 12, padding: 20, textAlign: "center", background: "#F8FAFC", cursor: "pointer", marginBottom: 12 }}>
+                <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>
+                  {batchFiles.length > 0 ? `${batchFiles.length} file${batchFiles.length > 1 ? 's' : ''} selected` : 'Tap to select group chat files'}
                 </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>PASTE CHAT EXPORT</div>
-                  <textarea value={traderChatText} onChange={e => setTraderChatText(e.target.value)} placeholder="Paste WhatsApp group chat export here..." rows={8}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>Select multiple .txt or .zip files at once</div>
+                <input
+                  id="batch-file-input"
+                  type="file"
+                  multiple
+                  accept=".txt,.zip"
+                  style={{ display: "none" }}
+                  onChange={e => setBatchFiles(Array.from(e.target.files))}
+                />
+              </div>
+
+              {/* File list with auto-detected names */}
+              {batchFiles.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                  {batchFiles.map((f, i) => {
+                    const groupName = detectGroupName(f.name);
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, background: "#F1F5F9" }}>
+                        <span style={{ fontSize: 14 }}>📋</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{groupName}</div>
+                          <div style={{ fontSize: 10, color: "#94A3B8" }}>{f.name}</div>
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); setBatchFiles(prev => prev.filter((_, j) => j !== i)); }}
+                          style={{ width: 20, height: 20, borderRadius: 4, border: "none", background: "#E2E8F0", cursor: "pointer", fontSize: 11 }}>✕</button>
+                      </div>
+                    );
+                  })}
                 </div>
-                <button onClick={extractTraderListings} disabled={traderImportLoading || !traderChatText.trim() || !anthropicKey}
-                  style={{ padding: 13, borderRadius: 12, border: "none", background: traderImportLoading || !traderChatText.trim() ? "#E2E8F0" : "#6366F1", color: traderImportLoading || !traderChatText.trim() ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
-                  {traderImportLoading ? "⏳ Extracting..." : "Extract Listings →"}
+              )}
+
+              {/* Extract button */}
+              {batchFiles.length > 0 && !traderImportPreview && (
+                <button
+                  onClick={extractBatchListings}
+                  disabled={traderImportLoading}
+                  style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: traderImportLoading ? "#E2E8F0" : "#6366F1", color: traderImportLoading ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: traderImportLoading ? "not-allowed" : "pointer", marginBottom: 12 }}>
+                  {traderImportLoading ? "⏳ Processing..." : `Extract from ${batchFiles.length} group${batchFiles.length > 1 ? 's' : ''}`}
                 </button>
-                {traderImportPreview && (
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 8 }}>PREVIEW — {traderImportPreview.length} listings found</div>
-                    <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #F1F5F9", marginBottom: 10 }}>
-                      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
-                        <thead><tr style={{ background: "#F8FAFC" }}>
-                          {["Type","Brand","Model","Price","Trader"].map(h => <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: "#94A3B8", fontWeight: 700, whiteSpace: "nowrap", borderBottom: "1px solid #F1F5F9" }}>{h}</th>)}
-                        </tr></thead>
-                        <tbody>
-                          {traderImportPreview.slice(0, 5).map((r, i) => (
-                            <tr key={i} style={{ borderBottom: "1px solid #F8FAFC" }}>
-                              {[r.type, r.brand, r.model, r.price ? `AED ${r.price}` : "—", r.trader_name].map((v, j) => <td key={j} style={{ padding: "6px 10px", color: "#475569", whiteSpace: "nowrap" }}>{v || "—"}</td>)}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {traderImportPreview.length > 5 && <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 8, textAlign: "center" }}>+{traderImportPreview.length - 5} more</div>}
-                    {traderImportResult && <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 8, background: traderImportResult.success ? "#ECFDF5" : "#FEF2F2", color: traderImportResult.success ? "#10B981" : "#EF4444", fontSize: 13, fontWeight: 700 }}>{traderImportResult.success ? `✅ Saved ${traderImportResult.count} listings!` : `❌ ${traderImportResult.message}`}</div>}
-                    <button onClick={saveTraderListings} disabled={savingTraderListings}
-                      style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: savingTraderListings ? "#E2E8F0" : "#10B981", color: savingTraderListings ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
-                      {savingTraderListings ? "Saving..." : `Save ${traderImportPreview.length} Listings →`}
-                    </button>
+              )}
+
+              {/* Status message */}
+              {traderImportResult && !traderImportResult.success && (
+                <div style={{ padding: "10px 14px", borderRadius: 10, background: "#F8FAFC", fontSize: 12, color: "#475569", marginBottom: 12, whiteSpace: "pre-line" }}>
+                  {traderImportResult.message}
+                </div>
+              )}
+
+              {/* Preview */}
+              {traderImportPreview && traderImportPreview.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#10B981", marginBottom: 10 }}>
+                    ✅ Found {traderImportPreview.length} listings across {batchFiles.length} groups
                   </div>
-                )}
-                {!anthropicKey && <div style={{ fontSize: 12, color: "#EF4444", textAlign: "center" }}>Add Anthropic API key in Settings first</div>}
-              </div>
+                  <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                    {traderImportPreview.slice(0, 20).map((l, i) => (
+                      <div key={i} style={{ padding: "8px 12px", borderRadius: 8, background: l.type === "buying" ? "#EEF2FF" : "#F0FDF4", border: `1px solid ${l.type === "buying" ? "#C7D2FE" : "#BBF7D0"}` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: l.type === "buying" ? "#6366F1" : "#10B981" }}>
+                            {l.type === "buying" ? "🔵 WTB" : "🟢 WTS"}
+                          </span>
+                          <span style={{ fontSize: 10, color: "#94A3B8" }}>{l.source_group}</span>
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "#0F172A", marginTop: 2 }}>
+                          {[l.brand, l.model, l.processor, l.ram, l.storage].filter(Boolean).join(" · ")}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#64748B" }}>👤 {l.trader_name}</div>
+                      </div>
+                    ))}
+                    {traderImportPreview.length > 20 && (
+                      <div style={{ textAlign: "center", fontSize: 12, color: "#94A3B8", padding: 8 }}>
+                        +{traderImportPreview.length - 20} more listings
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={saveTraderListings} disabled={savingTraderListings}
+                    style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: savingTraderListings ? "#E2E8F0" : "#10B981", color: savingTraderListings ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: savingTraderListings ? "not-allowed" : "pointer" }}>
+                    {savingTraderListings ? "Saving..." : `Save ${traderImportPreview.length} listings`}
+                  </button>
+                </div>
+              )}
+
+              {traderImportResult?.success && (
+                <div style={{ textAlign: "center", padding: 20 }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#10B981" }}>Saved {traderImportResult.count} listings</div>
+                </div>
+              )}
             </div>
           </div>
         </div>
