@@ -105,20 +105,19 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
 
   async function applyIntel(type) {
     if (!intel || !activeDeal) return;
-    const { supabase: sb } = await import("../../supabase");
     if (type === "budget" && intel.budgetUpdate) {
-      await sb.from("deals").update({ budget: intel.budgetUpdate }).eq("id", activeDeal.id);
+      await supabase.from("deals").update({ budget: intel.budgetUpdate }).eq("id", activeDeal.id);
       await loadCustomers();
     }
     if (type === "stage" && intel.stageUpdate) {
-      await sb.from("deals").update({ stage: intel.stageUpdate }).eq("id", activeDeal.id);
+      await supabase.from("deals").update({ stage: intel.stageUpdate }).eq("id", activeDeal.id);
       await loadCustomers();
     }
     if (type === "followup" && intel.followUpSuggestion) {
       const due = new Date();
       due.setDate(due.getDate() + (intel.followUpDays || 1));
       due.setHours(10, 0, 0, 0);
-      await sb.from("follow_ups").insert({
+      await supabase.from("follow_ups").insert({
         customer_id: activeCustomerId,
         due_at: due.toISOString(),
         note: intel.followUpSuggestion,

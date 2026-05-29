@@ -7,7 +7,7 @@ import { useUI } from "../../context/UIContext";
 
 export default function MorningBrief() {
   const { anthropicKey } = useAuth();
-  const { customers, setActiveCustomerId, setActiveDealId, setView, setPendingSuggestion } = useCustomers();
+  const { customers } = useCustomers();
   const { stock } = useStock();
   const { setActiveTab } = useUI();
 
