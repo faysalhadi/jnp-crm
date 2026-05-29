@@ -5,6 +5,7 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useSales } from "../../context/SalesContext";
 import DevicesView from "../stock/DevicesView";
 import PartsView from "../stock/PartsView";
+import LotsView from "../stock/LotsView";
 
 export default function StockTab({ openBroadcast, handleUpgradeApply }) {
   const { isMobile } = useUI();
@@ -20,6 +21,7 @@ export default function StockTab({ openBroadcast, handleUpgradeApply }) {
         {[
           { key: "devices", label: "💻 Devices" },
           { key: "parts",   label: "🔧 Parts" },
+          { key: "lots",    label: "📦 Lots" },
         ].map(v => (
           <button key={v.key} onClick={() => setStockView(v.key)}
             style={{ flex: 1, padding: "9px 0", borderRadius: 12, border: "none",
@@ -32,6 +34,8 @@ export default function StockTab({ openBroadcast, handleUpgradeApply }) {
       </div>
 
       {stockView === "parts" && <PartsView />}
+
+      {stockView === "lots" && <LotsView />}
 
       {stockView === "devices" && (
         <DevicesView
