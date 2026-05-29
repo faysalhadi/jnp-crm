@@ -8,6 +8,7 @@ import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import FollowUpPanel from "./FollowUpPanel";
+import BulkQuoteModal from "../modals/BulkQuoteModal";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
 
@@ -48,6 +49,7 @@ export default function ChatHeader() {
 
   const [dealExpanded, setDealExpanded] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
+  const [showBulkQuote, setShowBulkQuote] = useState(false);
 
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
@@ -337,13 +339,20 @@ export default function ChatHeader() {
                 🔒 Reserve
               </button>
               <button onClick={handleConfirmSale}
-                style={{ flex: 1, padding: "9px 8px", border: "none", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                 ⚡ Confirm Sale
+              </button>
+              <button onClick={() => setShowBulkQuote(true)}
+                style={{ flex: 1, padding: "9px 8px", border: "none", background: "#F0FDF4", color: "#059669", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                💼 Bulk
               </button>
             </div>
           )}
         </div>
       )}
+
+      {/* Bulk Quote Modal */}
+      {showBulkQuote && <BulkQuoteModal onClose={() => setShowBulkQuote(false)} />}
 
       {/* Follow-up, Notes & Activity Panel */}
       <FollowUpPanel />
