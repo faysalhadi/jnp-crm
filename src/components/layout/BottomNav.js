@@ -10,7 +10,7 @@ export default function BottomNav({ NAV_TABS, sourcingAlerts }) {
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
       {[
         { key: "home", icon: "🏠", label: "Home" },
-        { key: "customers", icon: "👥", label: "Contacts" },
+        { key: "customers", icon: "👥", label: "Clients" },
         { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
         { key: "sourcing", icon: "🌍", label: "Sourcing" },
         { key: "traders", icon: "🏪", label: "Traders" },

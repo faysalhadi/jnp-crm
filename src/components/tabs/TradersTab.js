@@ -4,14 +4,17 @@ import Badge from "../ui/Badge";
 import { timeAgo, daysSince } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
+import { useCustomers } from "../../context/CustomerContext";
 
 export default function TradersTab({
   anthropicKey,
   stock,
-  customers,
   activeDeal,
 }) {
   const { isMobile } = useUI();
+  const { customers, setActiveCustomerId, setActiveDealId, setView } = useCustomers();
+  const traderContacts = customers.filter(c => c.contact_type === "trader");
+
   const {
     traderListings, traderListingsLoading,
     loadTraderListings,
@@ -95,13 +98,57 @@ export default function TradersTab({
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Section toggle */}
         <div style={{ display: "flex", padding: "10px 12px 0", gap: 8, background: "#fff", borderBottom: "1px solid #F1F5F9" }}>
-          {[{ key: "inventory", label: "📋 Inventory" }, { key: "traders", label: "👤 Traders" }].map(s => (
+          {[{ key: "contacts", label: "👤 Contacts" }, { key: "inventory", label: "📋 Inventory" }, { key: "traders", label: "📊 By Trader" }].map(s => (
             <button key={s.key} onClick={() => setTraderSection(s.key)}
               style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: traderSection === s.key ? "#6366F1" : "#F1F5F9", color: traderSection === s.key ? "#fff" : "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
               {s.label}
             </button>
           ))}
         </div>
+
+        {traderSection === "contacts" && (
+          <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 100px" }}>
+            {traderContacts.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🏪</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No trader contacts yet</div>
+                <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>Add traders via the + button in Clients tab</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {traderContacts.map(c => {
+                  const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+                  return (
+                    <div key={c.id}
+                      onClick={() => { setActiveCustomerId(c.id); setActiveDealId(null); setView("detail"); }}
+                      style={{ background: "#fff", borderRadius: 16, padding: "12px 14px", border: "1.5px solid #F1F5F9", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#FFFBEB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, color: "#D97706", flexShrink: 0 }}>
+                        {initials}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{c.name}</div>
+                        <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {c.location || c.number || c.notes || "Trader"}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                        {c.number && (
+                          <a href={`https://wa.me/${c.number.replace(/\D/g,"")}`}
+                            target="_blank" rel="noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            style={{ padding: "4px 10px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                            WA
+                          </a>
+                        )}
+                        <span style={{ fontSize: 10, color: "#CBD5E1" }}>→</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {traderSection === "inventory" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>

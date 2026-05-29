@@ -7,7 +7,8 @@ const CustomerContext = createContext(null);
 export function CustomerProvider({ children }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [lastMsgMap, setLastMsgMap] = useState({});
+  const [lastActivityMap, setLastActivityMap] = useState({});
+  const [pendingFollowUpMap, setPendingFollowUpMap] = useState({});
   const [activeCustomerId, setActiveCustomerId] = useState(null);
   const [activeDealId, setActiveDealId] = useState(null);
   const [view, setView] = useState("list");
@@ -36,27 +37,29 @@ export function CustomerProvider({ children }) {
     setCustomers(custs || []);
     setLoading(false);
 
-    const dealIds = [];
-    const dealToCustomer = {};
-    (custs || []).forEach(c =>
-      (c.deals || []).forEach(d => {
-        dealIds.push(d.id);
-        dealToCustomer[d.id] = c.id;
-      })
-    );
-    if (!dealIds.length) return;
-    const { data: msgs } = await supabase
-      .from("messages")
-      .select("deal_id, role, content, sent, ts")
-      .in("deal_id", dealIds)
-      .order("ts", { ascending: false })
-      .limit(1000);
-    const map = {};
-    (msgs || []).forEach(msg => {
-      const cid = dealToCustomer[msg.deal_id];
-      if (cid && !map[cid]) map[cid] = msg;
-    });
-    setLastMsgMap(map);
+    const customerIds = (custs || []).map(c => c.id);
+    if (!customerIds.length) return;
+
+    // Last activity per customer (for preview)
+    const { data: activities } = await supabase
+      .from("activity_log")
+      .select("customer_id, activity_type, note, logged_at")
+      .in("customer_id", customerIds)
+      .order("logged_at", { ascending: false });
+    const actMap = {};
+    (activities || []).forEach(a => { if (!actMap[a.customer_id]) actMap[a.customer_id] = a; });
+    setLastActivityMap(actMap);
+
+    // Pending follow-ups per customer
+    const { data: followUps } = await supabase
+      .from("follow_ups")
+      .select("customer_id, due_at, note, status")
+      .in("customer_id", customerIds)
+      .eq("status", "pending")
+      .order("due_at", { ascending: true });
+    const fuMap = {};
+    (followUps || []).forEach(fu => { if (!fuMap[fu.customer_id]) fuMap[fu.customer_id] = fu; });
+    setPendingFollowUpMap(fuMap);
   }, []);
 
   const activeCustomer = customers.find(c => c.id === activeCustomerId);
@@ -171,7 +174,8 @@ export function CustomerProvider({ children }) {
     <CustomerContext.Provider value={{
       customers, setCustomers,
       loading,
-      lastMsgMap,
+      lastActivityMap,
+      pendingFollowUpMap,
       activeCustomerId, setActiveCustomerId,
       activeDealId, setActiveDealId,
       activeCustomer,

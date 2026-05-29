@@ -29,7 +29,8 @@ function getDaysSinceDeal(deal) {
 }
 
 export default function PipelineView() {
-  const { customers, setActiveCustomerId, setActiveDealId, setView, setPendingSuggestion } = useCustomers();
+  const { customers, setActiveCustomerId, setActiveDealId, setView, setPendingSuggestion, updateDeal } = useCustomers();
+  const [quickStageId, setQuickStageId] = useState(null);
   const [stageFilter, setStageFilter] = useState("all");
   const [sortBy, setSortBy] = useState("recent");
   const [showSort, setShowSort] = useState(false);
@@ -185,46 +186,86 @@ export default function PipelineView() {
           const initials = (customer.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
           const deviceLabel = [deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD";
 
+          const isQuickStage = quickStageId === deal.id;
+
           return (
-            <div
-              key={deal.id}
-              onClick={() => { setActiveCustomerId(customer.id); setActiveDealId(deal.id); setView("detail"); setPendingSuggestion(null); }}
-              style={{
-                background: "#fff",
-                borderRadius: 14,
-                border: `1px solid ${isVeryOverdue ? "#FEE2E2" : isOverdue ? "#FEF3C7" : "#F1F5F9"}`,
-                padding: "11px 13px",
-                marginBottom: 8,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                cursor: "pointer",
-              }}>
-              {/* Avatar */}
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: stageColor.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: stageColor.text, flexShrink: 0 }}>
-                {initials}
-              </div>
-
-              {/* Info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer.name}</div>
-                <div style={{ fontSize: 11, color: "#64748B", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: stageColor.dot, flexShrink: 0, display: "inline-block" }} />
-                  {getStageLabel(deal.stage)} · {deviceLabel}
+            <div key={deal.id} style={{
+              background: "#fff", borderRadius: 14, marginBottom: 8,
+              border: `1px solid ${isVeryOverdue ? "#FEE2E2" : isOverdue ? "#FEF3C7" : "#F1F5F9"}`,
+              overflow: "hidden",
+            }}>
+              {/* Main row */}
+              <div
+                onClick={() => { if (!isQuickStage) { setActiveCustomerId(customer.id); setActiveDealId(deal.id); setView("detail"); setPendingSuggestion(null); } }}
+                style={{ padding: "11px 13px", display: "flex", alignItems: "center", gap: 10, cursor: isQuickStage ? "default" : "pointer" }}>
+                {/* Avatar */}
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: stageColor.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: stageColor.text, flexShrink: 0 }}>
+                  {initials}
                 </div>
-              </div>
 
-              {/* Right */}
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                {budget > 0 && (
-                  <div style={{ fontSize: 12, fontWeight: 700, color: deal.stage === "closed" ? "#10B981" : "#534AB7" }}>
-                    AED {Number(budget).toLocaleString()}
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer.name}</div>
+                  <div style={{ fontSize: 11, color: "#64748B", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: stageColor.dot, flexShrink: 0, display: "inline-block" }} />
+                    {deviceLabel}
                   </div>
-                )}
-                <div style={{ fontSize: 10, marginTop: 2, color: isVeryOverdue ? "#EF4444" : isOverdue ? "#D97706" : "#94A3B8", fontWeight: isOverdue ? 700 : 400 }}>
-                  {days === 0 ? "Today" : `${days}d ago`}{isVeryOverdue ? " ⚠️" : isOverdue ? " ⏰" : ""}
+                </div>
+
+                {/* Right */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  {budget > 0 && (
+                    <div style={{ fontSize: 12, fontWeight: 700, color: deal.stage === "closed" ? "#10B981" : "#534AB7", textAlign: "right" }}>
+                      AED {Number(budget).toLocaleString()}
+                      <div style={{ fontSize: 10, color: isVeryOverdue ? "#EF4444" : isOverdue ? "#D97706" : "#94A3B8", fontWeight: isOverdue ? 700 : 400, marginTop: 1 }}>
+                        {days === 0 ? "Today" : `${days}d ago`}
+                      </div>
+                    </div>
+                  )}
+                  {/* Quick stage button */}
+                  <button
+                    onClick={e => { e.stopPropagation(); setQuickStageId(isQuickStage ? null : deal.id); }}
+                    title="Quick stage update"
+                    style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: isQuickStage ? "#EEF2FF" : "#F1F5F9", color: isQuickStage ? "#6366F1" : "#94A3B8", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    ⚡
+                  </button>
                 </div>
               </div>
+
+              {/* Stage label row */}
+              <div style={{ padding: "0 13px 8px", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: stageColor.bg, color: stageColor.text }}>
+                  {getStageLabel(deal.stage)}
+                </span>
+                {isVeryOverdue && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>⚠️ {days}d overdue</span>}
+              </div>
+
+              {/* Inline stage picker */}
+              {isQuickStage && (
+                <div style={{ padding: "8px 13px 12px", borderTop: "1px solid #F1F5F9", display: "flex", flexWrap: "wrap", gap: 5 }}>
+                  <div style={{ width: "100%", fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>MOVE TO STAGE</div>
+                  {STAGES.filter(s => s.id !== "closed" && s.id !== "lost").map(s => (
+                    <button key={s.id}
+                      onClick={async e => {
+                        e.stopPropagation();
+                        await updateDeal(deal.id, { stage: s.id });
+                        setQuickStageId(null);
+                      }}
+                      style={{
+                        padding: "4px 10px", borderRadius: 20, border: "none",
+                        background: s.id === deal.stage ? s.color : "#F1F5F9",
+                        color: s.id === deal.stage ? "#fff" : "#64748B",
+                        fontSize: 10, fontWeight: 700, cursor: "pointer",
+                      }}>
+                      {s.id === deal.stage ? "✓ " : ""}{s.label}
+                    </button>
+                  ))}
+                  <button onClick={e => { e.stopPropagation(); setActiveCustomerId(customer.id); setActiveDealId(deal.id); setView("detail"); setPendingSuggestion(null); }}
+                    style={{ padding: "4px 10px", borderRadius: 20, border: "1px solid #E2E8F0", background: "#fff", color: "#6366F1", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                    Open →
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

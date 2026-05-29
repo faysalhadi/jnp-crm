@@ -208,7 +208,7 @@ export default function App() {
   // ── nav tabs ──
   const NAV_TABS = [
     { key: "home",      icon: "🏠", label: "Home" },
-    { key: "customers", icon: "👥", label: "Contacts" },
+    { key: "customers", icon: "👥", label: "Clients" },
     { key: "stock",     icon: "📦", label: "Stock" },
     { key: "sourcing",  icon: "🌍", label: "Sourcing" },
     { key: "traders",   icon: "🏪", label: "Traders" },
@@ -308,7 +308,6 @@ export default function App() {
         <TradersTab
           anthropicKey={anthropicKey}
           stock={stock}
-          customers={customers}
           activeDeal={activeDeal}
         />
       )}
