@@ -37,7 +37,7 @@ export function useAskClaude() {
   async function buildContactsContext() {
     const { data: contacts } = await supabase
       .from("customers")
-      .select("name, number, contact_type, notes, location, last_active")
+      .select("name, number, contact_type, notes, location, last_active, deals(stage, brand, model, budget)")
       .order("last_active", { ascending: false });
     const lines = (contacts || []).map(c => {
       const type = c.contact_type || "client";
@@ -134,12 +134,33 @@ export function useAskClaude() {
     return `SPARE PARTS (${(parts || []).length} types):\n${lines || "(none)"}`;
   }
 
-  async function buildSmartContext(question) {
+  async function buildNotesContext(customerId) {
+    if (!customerId) return "";
+    const { data } = await supabase
+      .from("activity_log")
+      .select("activity_type, note, logged_at")
+      .eq("customer_id", customerId)
+      .order("logged_at", { ascending: false })
+      .limit(20);
+    if (!data || !data.length) return "";
+    const lines = data.map(a => {
+      const date = new Date(a.logged_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      return `${date} [${a.activity_type}]: ${a.note || ""}`;
+    }).join("\n");
+    return `RECENT NOTES & ACTIVITY:\n${lines}`;
+  }
+
+  async function buildSmartContext(question, activeCustomerId = null) {
     const type = detectQueryType(question);
     const date = new Date().toLocaleDateString("en-GB", {
       weekday: "long", day: "numeric", month: "long", year: "numeric",
     });
     let context = `Date: ${date}\nBusiness: Laptop for Less, Sharjah UAE\n\n`;
+    // Include active client notes if a client is selected
+    if (activeCustomerId) {
+      const notesCtx = await buildNotesContext(activeCustomerId);
+      if (notesCtx) context += notesCtx + "\n\n";
+    }
     switch (type) {
       case "contacts":
         context += await buildContactsContext();
@@ -150,9 +171,14 @@ export function useAskClaude() {
       case "margins":
         context += await buildMarginsContext();
         break;
-      case "followups":
-        context += await buildFollowupsContext();
+      case "followups": {
+        const [fuCtx, notesCtx] = await Promise.all([
+          buildFollowupsContext(),
+          buildNotesContext(null),
+        ]);
+        context += fuCtx;
         break;
+      }
       case "revenue":
         context += await buildRevenueContext();
         break;
@@ -174,7 +200,7 @@ export function useAskClaude() {
     return context;
   }
 
-  async function sendAskMessage(msg) {
+  async function sendAskMessage(msg, activeCustomerId = null) {
     const trimmed = (msg || "").trim();
     if (!trimmed) return;
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
@@ -182,7 +208,7 @@ export function useAskClaude() {
     setAskMessages(prev => [...prev, { role: "owner", content: trimmed }]);
     setAskLoading(true);
     try {
-      const context = await buildSmartContext(trimmed);
+      const context = await buildSmartContext(trimmed, activeCustomerId);
       const system = `You are a business analyst assistant for "Laptop for Less", a UAE laptop reselling business. The owner is asking about their business. Answer accurately using only the data provided. Be concise and direct. Format numbers with AED currency. Use emojis for readability. When recommending actions be specific.\n\n${context}`;
       const history = askMessages
         .map(m => ({ role: m.role === "owner" ? "user" : "assistant", content: m.content }))
@@ -200,5 +226,5 @@ export function useAskClaude() {
     setAskLoading(false);
   }
 
-  return { detectQueryType, buildSmartContext, sendAskMessage };
+  return { detectQueryType, buildSmartContext, buildNotesContext, sendAskMessage };
 }

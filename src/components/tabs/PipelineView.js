@@ -233,11 +233,15 @@ export default function PipelineView() {
               </div>
 
               {/* Stage label row */}
-              <div style={{ padding: "0 13px 8px", display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ padding: "0 13px 8px", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: stageColor.bg, color: stageColor.text }}>
                   {getStageLabel(deal.stage)}
                 </span>
-                {isVeryOverdue && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>⚠️ {days}d overdue</span>}
+                {isVeryOverdue && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>⚠️ {days}d no activity</span>}
+                {!isVeryOverdue && isOverdue && <span style={{ fontSize: 10, color: "#D97706", fontWeight: 700 }}>⏰ Follow up needed</span>}
+                {days >= 14 && deal.stage === "negotiation" && <span style={{ fontSize: 10, color: "#7C3AED", fontWeight: 700 }}>💡 14d in negotiation</span>}
+                {days >= 7 && deal.stage === "searching" && <span style={{ fontSize: 10, color: "#2563EB", fontWeight: 700 }}>🔍 Still searching {days}d</span>}
+                {days >= 21 && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "#FEF2F2" }}>Consider marking lost</span>}
               </div>
 
               {/* Inline stage picker */}

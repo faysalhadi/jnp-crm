@@ -7,6 +7,7 @@ const StockContext = createContext(null);
 
 export function StockProvider({ children }) {
   const [stock, setStock] = useState([]);
+  const [lastAddedStock, setLastAddedStock] = useState(null);
   const [stockLoading, setStockLoading] = useState(false);
   const [cachedStock, setCachedStock] = useState([]);
   const [stockFilter, setStockFilter] = useState("available");
@@ -78,6 +79,7 @@ export function StockProvider({ children }) {
         .from("stock").insert(payload).select().single();
       if (newItem) {
         setStock(prev => [newItem, ...prev]);
+        setLastAddedStock(newItem);
       } else {
         await loadStock();
       }
@@ -233,6 +235,7 @@ export function StockProvider({ children }) {
       stockFileInputRef,
       importStockFileRef,
       loadStock,
+      lastAddedStock, setLastAddedStock,
       refreshCachedStock,
       saveStock,
       deleteStockItem,

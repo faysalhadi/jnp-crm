@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabase";
 import { useCustomers } from "../../context/CustomerContext";
+import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 
@@ -12,7 +13,10 @@ const ACTIVITY_TYPES = [
 ];
 
 export default function NotesActivityView() {
-  const { activeCustomerId, activeCustomer, loadCustomers } = useCustomers();
+  const { activeCustomerId, activeCustomer, loadCustomers, activeDeal } = useCustomers();
+  const { anthropicKey } = useAuth();
+  const [intel, setIntel] = useState(null);
+  const [intelLoading, setIntelLoading] = useState(false);
   const {
     showSupplierReply, setShowSupplierReply,
     supplierReplyCtx, setSupplierReplyCtx,
@@ -51,6 +55,75 @@ export default function NotesActivityView() {
     setActivityLog(data || []);
   }
 
+  async function analyzeNote(noteText) {
+    if (!anthropicKey || !noteText.trim() || noteText.length < 20) return;
+    setIntelLoading(true);
+    const deal = activeDeal;
+    const prompt = `Extract actionable information from this sales note. Return JSON only, no other text.
+
+Note: "${noteText}"
+Current deal: ${deal ? `${deal.brand || ""} ${deal.model || ""}, Budget AED ${deal.budget || "unknown"}, Stage: ${deal.stage}` : "No active deal"}
+
+Return:
+{
+  "budgetUpdate": number or null,
+  "stageUpdate": "new_inquiry|requirement_noted|searching|device_found|negotiation|confirmed_pending_pickup|closed|lost|waiting" or null,
+  "followUpSuggestion": "description of suggested follow-up" or null,
+  "followUpDays": number or null,
+  "insight": "one sentence insight" or null
+}
+
+Only extract if clearly mentioned. budgetUpdate only if client explicitly stated a price/budget. stageUpdate only if the stage clearly changed.`;
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      const data = await res.json();
+      const raw = data?.content?.[0]?.text || "";
+      const clean = raw.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      const hasInsight = parsed.budgetUpdate || parsed.stageUpdate || parsed.followUpSuggestion || parsed.insight;
+      if (hasInsight) setIntel(parsed);
+    } catch {}
+    setIntelLoading(false);
+  }
+
+  async function applyIntel(type) {
+    if (!intel || !activeDeal) return;
+    const { supabase: sb } = await import("../../supabase");
+    if (type === "budget" && intel.budgetUpdate) {
+      await sb.from("deals").update({ budget: intel.budgetUpdate }).eq("id", activeDeal.id);
+      await loadCustomers();
+    }
+    if (type === "stage" && intel.stageUpdate) {
+      await sb.from("deals").update({ stage: intel.stageUpdate }).eq("id", activeDeal.id);
+      await loadCustomers();
+    }
+    if (type === "followup" && intel.followUpSuggestion) {
+      const due = new Date();
+      due.setDate(due.getDate() + (intel.followUpDays || 1));
+      due.setHours(10, 0, 0, 0);
+      await sb.from("follow_ups").insert({
+        customer_id: activeCustomerId,
+        due_at: due.toISOString(),
+        note: intel.followUpSuggestion,
+        status: "pending",
+      });
+    }
+    setIntel(null);
+  }
+
   async function saveNote() {
     if (!noteText.trim() || !activeCustomerId || saving) return;
     setSaving(true);
@@ -63,10 +136,12 @@ export default function NotesActivityView() {
     await supabase.from("customers")
       .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
       .eq("id", activeCustomerId);
+    const savedText = noteText.trim();
     setNoteText("");
     setSaving(false);
     await fetchActivityLog(activeCustomerId);
     loadCustomers();
+    analyzeNote(savedText);
   }
 
   async function logActivity(type) {
@@ -209,6 +284,41 @@ export default function NotesActivityView() {
           </div>
         )}
       </div>
+
+      {/* ── Note Intelligence Panel ── */}
+      {(intelLoading || intel) && (
+        <div style={{ padding: "8px 14px", background: "#EEF2FF", borderBottom: "1px solid #C7D2FE", flexShrink: 0 }}>
+          {intelLoading && (
+            <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 600 }}>🤖 Reading note...</div>
+          )}
+          {intel && !intelLoading && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#534AB7" }}>🤖 Claude noticed</span>
+                <button onClick={() => setIntel(null)} style={{ fontSize: 11, color: "#94A3B8", background: "none", border: "none", cursor: "pointer" }}>Dismiss</button>
+              </div>
+              {intel.insight && <div style={{ fontSize: 11, color: "#334155", lineHeight: 1.5 }}>{intel.insight}</div>}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {intel.budgetUpdate && activeDeal && (
+                  <button onClick={() => applyIntel("budget")} style={{ padding: "4px 10px", borderRadius: 20, border: "none", background: "#6366F1", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    Update budget → AED {intel.budgetUpdate.toLocaleString()}
+                  </button>
+                )}
+                {intel.stageUpdate && activeDeal && intel.stageUpdate !== activeDeal.stage && (
+                  <button onClick={() => applyIntel("stage")} style={{ padding: "4px 10px", borderRadius: 20, border: "none", background: "#10B981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    Move to {intel.stageUpdate.replace(/_/g, " ")}
+                  </button>
+                )}
+                {intel.followUpSuggestion && (
+                  <button onClick={() => applyIntel("followup")} style={{ padding: "4px 10px", borderRadius: 20, border: "none", background: "#F59E0B", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    📅 Set follow-up
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Activity feed ── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7 }}>

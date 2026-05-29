@@ -80,14 +80,14 @@ export const OUTREACH_REASONS = [
 ];
 
 export const QUICK_ACTIONS = [
-  { icon: "📦", label: "Stock Summary",     question: "Give me a full summary of my current stock by brand with total count and total value" },
-  { icon: "💰", label: "Best Margins",      question: "Which items in my stock have the best profit margin? Rank them" },
-  { icon: "⚠️", label: "Slow Moving",       question: "Which devices have been in stock for 7 or more days without selling?" },
+  { icon: "🎯", label: "Today's Focus",     question: "Who should I follow up with today? List them by priority with what I should say to each one." },
+  { icon: "📦", label: "Stock Summary",     question: "Give me a full summary of my current stock by brand with total count and total value." },
+  { icon: "💰", label: "Best Margins",      question: "Which items in my stock have the best profit margin right now? Rank them." },
   { icon: "🔍", label: "Match Stock",       question: "Which of my current stock items match what my open clients are looking for?" },
-  { icon: "❄️", label: "Cold Clients",      question: "Which clients have not replied in 3 or more days and what were they looking for?" },
-  { icon: "📊", label: "Revenue",           question: "What is my total revenue this month and how many deals did I close?" },
-  { icon: "💵", label: "Stock Value",       question: "What is the total value of my current available stock at max price and at cost price?" },
-  { icon: "📋", label: "Follow Ups Due",    question: "Who do I need to follow up with today and what should I say to each one?" },
+  { icon: "❄️", label: "Cold Clients",      question: "Which clients have not replied in 3 or more days and what were they looking for? What should I say to re-engage them?" },
+  { icon: "📊", label: "Revenue MTD",       question: "What is my total revenue this month? How many deals did I close and what was the average deal value?" },
+  { icon: "⚠️", label: "Slow Moving",       question: "Which devices have been in stock for 7 or more days without selling? Should I drop the price on any of them?" },
+  { icon: "💡", label: "Business Insight",  question: "Give me a quick business health summary. What is going well and what needs my attention right now?" },
 ];
 
 export const SOURCING_STAGES = ["Evaluating", "Bid Sent", "Won", "Paid", "Shipped", "Customs", "Arrived", "In Stock"];

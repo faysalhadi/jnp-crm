@@ -38,6 +38,7 @@ import ReceiptModal from "./components/layout/ReceiptModal";
 import BroadcastModal from "./components/layout/BroadcastModal";
 import AuthScreen from "./components/layout/AuthScreen";
 import GlobalSearch from "./components/layout/GlobalSearch";
+import StockMatchAlert from "./components/stock/StockMatchAlert";
 import ApiKeySetup from "./components/layout/ApiKeySetup";
 import EditReservationModal from "./components/modals/EditReservationModal";
 import CompleteReservationModal from "./components/modals/CompleteReservationModal";
@@ -403,6 +404,9 @@ export default function App() {
 
       {/* ── GLOBAL SEARCH ── */}
       {showSearch && <GlobalSearch onClose={() => setShowSearch(false)} />}
+
+      {/* ── STOCK MATCH ALERT ── */}
+      {lastAddedStock && <StockMatchAlert stockItem={lastAddedStock} onClose={() => setLastAddedStock(null)} />}
 
       {/* ── BROADCAST MODAL ── */}
       <BroadcastModal />

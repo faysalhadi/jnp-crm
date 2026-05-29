@@ -8,6 +8,7 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useStock } from "../../context/StockContext";
 import { useSales } from "../../context/SalesContext";
 import { useParts } from "../../context/PartsContext";
+import MorningBrief from "./MorningBrief";
 
 export default function HomeTab({ tasks, sourcingAlerts }) {
   const { activeTab, setActiveTab, isMobile } = useUI();
@@ -116,6 +117,9 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
         <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A" }}>{getGreeting()} 👋</div>
         <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
       </div>
+
+      {/* Morning Brief */}
+      <MorningBrief />
 
       {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10 }}>
