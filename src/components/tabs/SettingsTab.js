@@ -3,7 +3,6 @@ import { useAuth } from "../../context/AuthContext";
 import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { saveAnthropicKey } from "../../utils/helpers";
-import { MIGRATION_SQL } from "../../utils/migrations";
 
 export default function SettingsTab({ exportData, handleLogoutWithUI }) {
   const { anthropicKey, setAnthropicKey, keyInput, setKeyInput, session } = useAuth();
@@ -39,23 +38,6 @@ export default function SettingsTab({ exportData, handleLogoutWithUI }) {
           <button onClick={exportData}
             style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
             📥 Download Backup (JSON + CSV)
-          </button>
-        </div>
-
-        {/* Database Setup */}
-        <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 4, letterSpacing: 0.5 }}>🗄️ DATABASE SETUP</div>
-          <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 10, lineHeight: 1.5 }}>
-            To enable Lots feature, run this SQL once in your Supabase dashboard → SQL Editor.
-          </div>
-          <div style={{ background: "#0F172A", borderRadius: 10, padding: "10px 12px", marginBottom: 10, overflowX: "auto" }}>
-            <pre style={{ fontSize: 9, color: "#A5F3FC", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
-              {MIGRATION_SQL.trim()}
-            </pre>
-          </div>
-          <button onClick={() => { navigator.clipboard.writeText(MIGRATION_SQL.trim()); alert("SQL copied — paste in Supabase SQL Editor"); }}
-            style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: "#0F172A", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-            📋 Copy SQL
           </button>
         </div>
 

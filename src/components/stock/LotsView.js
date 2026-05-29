@@ -67,47 +67,92 @@ export default function LotsView() {
       try {
         const wb  = XLSX.read(ev.target.result, { type: "binary" });
         const ws  = wb.Sheets[wb.SheetNames[0]];
-        const raw = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-        // Try to find lot price from cell D6 (row index 5 in 0-based)
-        const lotPriceCell = ws["D6"];
-        if (lotPriceCell && lotPriceCell.v) {
-          setLotForm(f => ({ ...f, total_cost: String(lotPriceCell.v) }));
-        }
-        // Try lot name from D3
-        const lotNameCell = ws["D3"];
-        if (lotNameCell && lotNameCell.v) {
-          setLotForm(f => ({ ...f, name: String(lotNameCell.v) }));
-        }
-        // Try supplier from D4
-        const supplierCell = ws["D4"];
-        if (supplierCell && supplierCell.v) {
-          setLotForm(f => ({ ...f, supplier: String(supplierCell.v) }));
+        // Read all rows as array (preserves row positions for lot header fields)
+        const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        // Rows 0-2 are lot info fields (col 0 = label, col 1 = value)
+        // Format: "LOT NAME...", value | "SUPPLIER...", value | "LOT PURCHASE PRICE...", value
+        const getRowVal = (rowIdx) => {
+          const row = allRows[rowIdx] || [];
+          // Value is in column B (index 1) — could be any non-empty col after label
+          for (let ci = 1; ci < row.length; ci++) {
+            if (row[ci] !== "" && row[ci] !== null && row[ci] !== undefined) return String(row[ci]).trim();
+          }
+          return "";
+        };
+
+        const lotName     = getRowVal(0);
+        const lotSupplier = getRowVal(1);
+        const lotPrice    = getRowVal(2);
+
+        if (lotName)     setLotForm(f => ({ ...f, name: lotName }));
+        if (lotSupplier) setLotForm(f => ({ ...f, supplier: lotSupplier }));
+        if (lotPrice)    setLotForm(f => ({ ...f, total_cost: String(parseFloat(lotPrice.replace(/,/g, "")) || "") }));
+
+        // Find header row — first row containing "Brand" or "brand"
+        let headerRowIdx = -1;
+        for (let i = 0; i < allRows.length; i++) {
+          const row = allRows[i];
+          if (row.some(cell => String(cell).toLowerCase().trim() === "brand")) {
+            headerRowIdx = i;
+            break;
+          }
         }
 
-        // Parse rows — look for header row containing "Brand"
-        const rows = raw.filter(r => {
-          const brand = r["Brand"] || r["brand"] || r["BRAND"] || "";
-          const qty   = r["Qty in Lot"] || r["Qty"] || r["QTY"] || r["qty"] || "";
-          const mv    = r["Market Value (AED)"] || r["Market Value"] || r["MarketValue"] || "";
-          return brand && qty && mv;
-        }).map(r => {
-          const get = (...keys) => { for (const k of keys) { if (r[k] !== undefined && r[k] !== "") return r[k]; } return ""; };
-          return {
-            brand:        String(get("Brand", "brand", "BRAND") || ""),
-            model:        String(get("Model", "model", "MODEL") || ""),
-            processor:    String(get("Processor", "processor") || ""),
-            condition:    String(get("Condition (Grade A/B/C)", "Condition", "condition") || ""),
-            qty:          parseInt(get("Qty in Lot", "Qty", "QTY", "qty") || 1),
-            marketValue:  parseFloat(String(get("Market Value (AED)", "Market Value", "MarketValue") || "0").replace(/,/g, "")),
-            refurbCost:   parseFloat(String(get("Refurb Cost (AED)", "Refurb Cost", "RefurbCost") || "0").replace(/,/g, "")),
-            sellPrice:    parseFloat(String(get("My Sell Price (AED)", "Sell Price", "SellPrice") || "0").replace(/,/g, "")),
-            notes:        String(get("Notes", "notes") || ""),
-          };
-        });
+        if (headerRowIdx === -1) {
+          setUploadError("Could not find header row. Make sure your sheet has a row with 'Brand', 'Model', 'Qty' etc.");
+          return;
+        }
+
+        // Build column index map
+        const headers = allRows[headerRowIdx].map(h => String(h).trim().toLowerCase());
+        const colIdx = (names) => {
+          for (const n of names) {
+            const idx = headers.findIndex(h => h === n.toLowerCase() || h.includes(n.toLowerCase()));
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        };
+
+        const brandCol     = colIdx(["brand"]);
+        const modelCol     = colIdx(["model"]);
+        const processorCol = colIdx(["processor"]);
+        const ramCol       = colIdx(["ram"]);
+        const ssdCol       = colIdx(["ssd"]);
+        const condCol      = colIdx(["condition"]);
+        const qtyCol       = colIdx(["qty", "quantity"]);
+        const mvCol        = colIdx(["market value", "marketvalue"]);
+        const sellCol      = colIdx(["sell price", "max price", "my sell price"]);
+        const notesCol     = colIdx(["notes"]);
+
+        if (brandCol === -1 || modelCol === -1) {
+          setUploadError("Could not find Brand or Model columns.");
+          return;
+        }
+
+        const getCell = (row, idx) => idx >= 0 ? String(row[idx] || "").trim() : "";
+        const getNum  = (row, idx) => idx >= 0 ? parseFloat(String(row[idx] || "").replace(/,/g, "")) || 0 : 0;
+
+        const rows = allRows.slice(headerRowIdx + 1).filter(row => {
+          const brand = getCell(row, brandCol);
+          return brand && brand.length > 0;
+        }).map(row => ({
+          brand:       getCell(row, brandCol),
+          model:       getCell(row, modelCol),
+          processor:   getCell(row, processorCol),
+          ram:         getCell(row, ramCol),
+          ssd:         getCell(row, ssdCol),
+          condition:   getCell(row, condCol),
+          qty:         Math.max(1, parseInt(getCell(row, qtyCol)) || 1),
+          marketValue: getNum(row, mvCol),
+          sellPrice:   getNum(row, sellCol),
+          notes:       getCell(row, notesCol),
+          refurbCost:  0,
+        }));
 
         if (rows.length === 0) {
-          setUploadError("No valid rows found. Make sure your sheet has columns: Brand, Model, Qty in Lot, Market Value (AED), Refurb Cost (AED), My Sell Price (AED)");
+          setUploadError("No device rows found after the header row.");
           return;
         }
         setParsedRows(rows);

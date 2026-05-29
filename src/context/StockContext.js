@@ -126,13 +126,27 @@ export function StockProvider({ children }) {
   }
 
   function downloadStockTemplate() {
+    // Unified template — works for both regular import and lot import
+    // Lot fields (rows 1-3) are optional — fill them to create a lot
+    const lotInfo = [
+      ["LOT NAME (optional — leave blank for regular import)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+      ["SUPPLIER (optional)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+      ["LOT PURCHASE PRICE AED (optional — total paid incl. refurb)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+      [], // spacer
+    ];
     const headers = [["Brand","Model","Processor","RAM","SSD","Screen",
-      "Condition","Charger","Box","Activation Lock","Cost Price",
-      "Min Price","Max Price","Serial Number","Notes"]];
-    const ws = XLSX.utils.aoa_to_sheet(headers);
+      "Condition","Charger","Box","Activation Lock","Qty",
+      "Market Value (AED)","Cost Price","Min Price","Max Price","Serial Number","Notes"]];
+    const sample = [
+      ["HP","EliteBook 840 G8","Core i5 11th Gen","8GB","256GB","14","Grade A","yes","no","no",5,1600,"","",1850,"",""],
+      ["Dell","Latitude 5490","Core i7 8th Gen","8GB","256GB","14","Grade A","yes","no","no",3,1450,"","",1700,"",""],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([...lotInfo, ...headers, ...sample]);
+    // Column widths
+    ws["!cols"] = [18,22,20,8,8,8,12,8,6,14,6,16,10,10,12,14,20].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Stock");
-    XLSX.writeFile(wb, "stock-import-template.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Stock Import");
+    XLSX.writeFile(wb, "JNP_Stock_Import_Template.xlsx");
   }
 
   function handleStockFileSelect(file) {
@@ -149,25 +163,32 @@ export function StockProvider({ children }) {
         }
         return "";
       };
-      const mapped = rows.map(r => ({
-        brand: col(r, "Brand") || null,
-        model: col(r, "Model") || null,
-        processor: col(r, "Processor") || null,
-        ram: col(r, "RAM", "Ram") || null,
-        ssd: col(r, "SSD", "Ssd") || null,
-        screen: col(r, "Screen", "Screen Size") || null,
-        condition: col(r, "Condition") || null,
-        charger: col(r, "Charger").toLowerCase() || null,
-        box: col(r, "Box").toLowerCase() || null,
-        activation_lock: col(r, "Activation Lock").toLowerCase() || null,
-        cost_price: parseFloat(col(r, "Cost Price")) || null,
-        min_price: parseFloat(col(r, "Min Price")) || null,
-        max_price: parseFloat(col(r, "Max Price")) || null,
-        serial_number: col(r, "Serial Number", "Serial") || null,
-        notes: col(r, "Notes") || null,
-        status: "available",
-      })).filter(r => r.brand || r.model);
-      setImportPreview(mapped);
+      // Expand rows by Qty — one row with Qty 5 becomes 5 stock items
+      const expanded = [];
+      rows.forEach(r => {
+        const qty = parseInt(col(r, "Qty", "QTY", "qty", "Quantity")) || 1;
+        const base = {
+          brand:           col(r, "Brand") || null,
+          model:           col(r, "Model") || null,
+          processor:       col(r, "Processor") || null,
+          ram:             col(r, "RAM", "Ram") || null,
+          ssd:             col(r, "SSD", "Ssd") || null,
+          screen:          col(r, "Screen", "Screen Size") || null,
+          condition:       col(r, "Condition") || null,
+          charger:         col(r, "Charger").toLowerCase() || null,
+          box:             col(r, "Box").toLowerCase() || null,
+          activation_lock: col(r, "Activation Lock").toLowerCase() || null,
+          cost_price:      parseFloat(col(r, "Cost Price")) || null,
+          min_price:       parseFloat(col(r, "Min Price")) || null,
+          max_price:       parseFloat(col(r, "Max Price", "Sell Price")) || null,
+          serial_number:   qty === 1 ? (col(r, "Serial Number", "Serial") || null) : null,
+          notes:           col(r, "Notes") || null,
+          status:          "available",
+        };
+        if (!base.brand && !base.model) return;
+        for (let i = 0; i < qty; i++) expanded.push({ ...base });
+      });
+      setImportPreview(expanded);
       setImportStockResult(null);
     };
     reader.readAsArrayBuffer(file);
