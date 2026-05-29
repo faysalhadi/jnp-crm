@@ -16,7 +16,7 @@ export default function MorningBrief() {
   const [collapsed, setCollapsed] = useState(false);
   const [lastGenerated, setLastGenerated] = useState(null);
 
-  // Auto-generate once per day
+  // Load cached brief from today — never auto-call API
   useEffect(() => {
     const stored = localStorage.getItem("morning_brief");
     if (stored) {
@@ -26,12 +26,10 @@ export default function MorningBrief() {
         if (genDate === new Date().toDateString()) {
           setBrief(parsed.brief);
           setLastGenerated(parsed.date);
-          return;
         }
       } catch {} // eslint-disable-line
     }
-    if (anthropicKey && customers.length > 0) generate();
-  }, [anthropicKey, customers.length]); // eslint-disable-line
+  }, []); // eslint-disable-line
 
   const generate = useCallback(async () => {
     if (!anthropicKey || loading) return;
@@ -123,13 +121,19 @@ Write a brief morning summary in this exact JSON format. Be specific, actionable
       setBrief(parsed);
       setLastGenerated(now2);
       localStorage.setItem("morning_brief", JSON.stringify({ brief: parsed, date: now2 }));
-    } catch {
-      setBrief({ greeting: "Good morning! Here's your day.", priority: [], stockAlert: null, insight: null });
+    } catch (e) {
+      console.error("Morning brief error:", e);
+      setLoading(false);
+      return;
     }
     setLoading(false);
   }, [anthropicKey, customers, stock, loading]); // eslint-disable-line
 
-  if (!anthropicKey) return null;
+  if (!anthropicKey) return (
+    <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "12px 16px", border: "1px dashed #E2E8F0", textAlign: "center" }}>
+      <div style={{ fontSize: 12, color: "#94A3B8" }}>🤖 Add your Anthropic API key in Settings to enable Morning Brief</div>
+    </div>
+  );
 
   return (
     <div style={{ background: "linear-gradient(135deg, #534AB7 0%, #7C3AED 100%)", borderRadius: 20, padding: 16, color: "#fff", boxShadow: "0 4px 20px rgba(83,74,183,0.3)" }}>

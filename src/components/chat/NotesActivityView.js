@@ -58,6 +58,7 @@ export default function NotesActivityView() {
   async function analyzeNote(noteText) {
     if (!anthropicKey || !noteText.trim() || noteText.length < 20) return;
     setIntelLoading(true);
+    setIntel(null);
     const deal = activeDeal;
     const prompt = `Extract actionable information from this sales note. Return JSON only, no other text.
 
@@ -95,7 +96,10 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
       const parsed = JSON.parse(clean);
       const hasInsight = parsed.budgetUpdate || parsed.stageUpdate || parsed.followUpSuggestion || parsed.insight;
       if (hasInsight) setIntel(parsed);
-    } catch {}
+    } catch (e) {
+      // Silently fail — note intelligence is optional enhancement
+      console.log("Note intel skipped:", e?.message);
+    }
     setIntelLoading(false);
   }
 
