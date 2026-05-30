@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import FollowUpPanel from "../chat/FollowUpPanel";
+import SupplierNotesView from "../chat/SupplierNotesView";
 import { supabase } from "../../supabase";
 import {
   STAGES, STAGE_MAP, DEFAULT_RATE, DUTY_PCT,
@@ -327,113 +329,149 @@ export function SectionToggle({ section, setSection, deals, suppliers }) {
 // ══════════════════════════════════════════════════════════════════════════════
 //  SUPPLIER DETAIL
 // ══════════════════════════════════════════════════════════════════════════════
-export function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, onUpdate }) {
-  const [notes,    setNotes]    = useState(supplier.notes || "");
-  const [savingNote, setSaving] = useState(false);
-  const supDeals = deals.filter(d =>
-    d.supplier_id === supplier.id || d.supplier_name === supplier.name
-  );
-  const wonDeal  = supDeals.filter(d =>
-    ["bid_won","payment_due","paid","in_transit","in_customs","arrived","in_stock"].includes(d.status)
-  ).length;
-  const totalUSD = supDeals.reduce((s, d) => s + (Number(d.our_bid_usd||0) * Number(d.units_bid||0)), 0);
-  const totalAED = totalUSD * rate;
+export function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, onUpdate, onDelete }) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting]                   = useState(false);
+  const [editing, setEditing]                     = useState(false);
+  const [editForm, setEditForm]                   = useState({
+    name:     supplier.name     || "",
+    email:    supplier.email    || "",
+    number:   supplier.number   || "",
+    location: supplier.location || "",
+    currency: supplier.currency || "",
+  });
+  const [saving, setSaving] = useState(false);
 
-  async function saveNotes() {
+  const supDeals = deals.filter(d => d.supplier_id === supplier.id || d.supplier_name === supplier.name);
+  const wonDeals = supDeals.filter(d => ["bid_won","payment_due","paid","in_transit","in_customs","arrived","in_stock"].includes(d.status));
+  const openDeals = supDeals.filter(d => !["in_stock","cancelled"].includes(d.status));
+  const totalAED  = supDeals.reduce((s, d) => s + (Number(d.our_bid_usd||0) * Number(d.units_bid||0) * rate), 0);
+
+  async function saveEdit() {
     setSaving(true);
-    const { data } = await supabase.from("customers").update({ notes }).eq("id", supplier.id).select().single();
+    const { data } = await supabase.from("customers").update({
+      name:     editForm.name,
+      email:    editForm.email,
+      number:   editForm.number,
+      location: editForm.location,
+      currency: editForm.currency,
+    }).eq("id", supplier.id).select().single();
     if (data) onUpdate(data);
     setSaving(false);
+    setEditing(false);
+  }
+
+  async function deleteSupplier() {
+    setDeleting(true);
+    // Delete sourcing deals first
+    await supabase.from("sourcing_deals").delete().eq("supplier_id", supplier.id);
+    // Delete activity log
+    await supabase.from("activity_log").delete().eq("customer_id", supplier.id);
+    // Delete follow_ups
+    await supabase.from("follow_ups").delete().eq("customer_id", supplier.id);
+    // Delete customer
+    await supabase.from("customers").delete().eq("id", supplier.id);
+    setDeleting(false);
+    if (onDelete) onDelete(supplier.id);
+    onBack();
   }
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 100px", display: "flex", flexDirection: "column", gap: 12 }}>
+
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={onBack} style={{
-          width: 36, height: 36, borderRadius: 10, border: "none",
-          background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", cursor: "pointer", fontSize: 18,
-        }}>←</button>
+        <button onClick={onBack} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", cursor: "pointer", fontSize: 18 }}>←</button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{supplier.name}</div>
           <div style={{ fontSize: 11, color: "#94A3B8" }}>{supplier.location || "—"} · {supplier.currency || "USD"}</div>
         </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setEditing(v => !v)}
+            style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid #E2E8F0", background: editing ? "#EEF2FF" : "#fff", color: editing ? "#6366F1" : "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            {editing ? "Cancel" : "✏️ Edit"}
+          </button>
+          <button onClick={() => setShowDeleteConfirm(true)}
+            style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid #FEE2E2", background: "#FFF5F5", color: "#EF4444", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            🗑
+          </button>
+        </div>
       </div>
 
-      {/* Contact info */}
-      <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 10 }}>CONTACT</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {supplier.email && (
-            <a href={`mailto:${supplier.email}`} style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-              <span style={{ width: 28, height: 28, borderRadius: 8, background: "#FEF2F2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>📧</span>
-              <span style={{ fontSize: 13, color: "#DC2626", fontWeight: 600 }}>{supplier.email}</span>
-            </a>
-          )}
-          {supplier.number && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 28, height: 28, borderRadius: 8, background: "#F0FDF4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>💬</span>
-              <span style={{ fontSize: 13, color: "#16A34A", fontWeight: 600 }}>{supplier.number}</span>
-            </div>
-          )}
+      {/* Edit form */}
+      {editing && (
+        <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 12 }}>EDIT SUPPLIER</div>
           {[
-            { label: "Location",  value: supplier.location },
-            { label: "Currency",  value: supplier.currency },
-            { label: "Payment",   value: supplier.payment_method },
-          ].filter(it => it.value).map(it => (
-            <div key={it.label} style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 12, color: "#94A3B8" }}>{it.label}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#0F172A" }}>{it.value}</span>
+            { label: "Name",     key: "name" },
+            { label: "Email",    key: "email",    placeholder: "supplier@email.com" },
+            { label: "WhatsApp", key: "number",   placeholder: "+44 7xxx" },
+            { label: "Location", key: "location", placeholder: "UK, UAE..." },
+            { label: "Currency", key: "currency", placeholder: "GBP, USD, AED" },
+          ].map(f => (
+            <div key={f.key} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 3 }}>{f.label}</div>
+              <input value={editForm[f.key]} onChange={e => setEditForm(p => ({ ...p, [f.key]: e.target.value }))}
+                placeholder={f.placeholder || ""}
+                style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
             </div>
           ))}
+          <button onClick={saveEdit} disabled={saving}
+            style={{ width: "100%", marginTop: 4, padding: 11, borderRadius: 10, border: "none", background: saving ? "#E2E8F0" : "#6366F1", color: saving ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
         </div>
+      )}
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 8 }}>
+        {supplier.number && (
+          <a href={`https://wa.me/${(supplier.number || "").replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
+            style={{ flex: 1, padding: "10px 0", borderRadius: 12, background: "#25D366", color: "#fff", fontWeight: 800, fontSize: 13, textAlign: "center", textDecoration: "none" }}>
+            💬 WhatsApp
+          </a>
+        )}
+        {supplier.email && (
+          <a href={`mailto:${supplier.email}`}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 12, background: "#FEF2F2", color: "#DC2626", fontWeight: 800, fontSize: 13, textAlign: "center", textDecoration: "none", border: "1px solid #FECACA" }}>
+            📧 Gmail
+          </a>
+        )}
       </div>
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
         {[
-          { label: "Total deals",  value: supDeals.length, color: "#6366F1", bg: "#EEF2FF" },
-          { label: "Won / closed", value: wonDeal,         color: "#059669", bg: "#ECFDF5" },
-          { label: "Total value",  value: totalAED >= 1000 ? `AED ${(totalAED/1000).toFixed(0)}k` : `AED ${Math.round(totalAED)}`, color: "#D97706", bg: "#FFFBEB" },
+          { label: "Total deals",  value: supDeals.length,  color: "#6366F1", bg: "#EEF2FF" },
+          { label: "Won",          value: wonDeals.length,  color: "#059669", bg: "#ECFDF5" },
+          { label: "Total spent",  value: totalAED >= 1000 ? `AED ${(totalAED/1000).toFixed(0)}k` : `AED ${Math.round(totalAED)}`, color: "#D97706", bg: "#FFFBEB" },
         ].map(s => (
-          <div key={s.label} style={{ background: s.bg, borderRadius: 12, padding: "10px 12px", textAlign: "center" }}>
+          <div key={s.label} style={{ background: s.bg, borderRadius: 12, padding: "10px 8px", textAlign: "center" }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.value}</div>
             <div style={{ fontSize: 10, fontWeight: 600, color: s.color, opacity: 0.8, marginTop: 2 }}>{s.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Notes (editable) */}
-      <div style={{ background: "#fff", borderRadius: 16, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>NOTES / PAYMENT TERMS</div>
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          rows={3}
-          placeholder="Payment terms, bid schedule, reliability notes…"
-          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0",
-                   fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical",
-                   fontFamily: "inherit", lineHeight: 1.5 }}
-        />
-        {notes !== (supplier.notes || "") && (
-          <button onClick={saveNotes} disabled={savingNote} style={{
-            marginTop: 8, padding: "6px 16px", borderRadius: 8, border: "none",
-            background: savingNote ? "#E2E8F0" : "#6366F1",
-            color: savingNote ? "#94A3B8" : "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
-          }}>
-            {savingNote ? "Saving…" : "Save Notes"}
-          </button>
-        )}
+      {/* Follow-up */}
+      <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+        <FollowUpPanel customerId={supplier.id} />
+      </div>
+
+      {/* Notes & Activity */}
+      <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", minHeight: 300, display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid #F1F5F9", background: "#F8FAFC" }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#0F172A" }}>📝 Notes & Activity</span>
+        </div>
+        <SupplierNotesView customerId={supplier.id} />
       </div>
 
       {/* Deal history */}
       <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>
         DEAL HISTORY ({supDeals.length})
       </div>
-
       {supDeals.length === 0 ? (
-        <div style={{ background: "#fff", borderRadius: 16, padding: 28, textAlign: "center",
-                      color: "#CBD5E1", fontSize: 13, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 28, textAlign: "center", color: "#CBD5E1", fontSize: 13, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
           No deals with this supplier yet
         </div>
       ) : (
@@ -442,21 +480,16 @@ export function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, on
           const purUSD = Number(d.our_bid_usd||0) * Number(d.units_bid||0);
           return (
             <div key={d.id} onClick={() => onSelectDeal(d.id)}
-              style={{ background: "#fff", borderRadius: 14, padding: "12px 14px",
-                       boxShadow: "0 1px 4px rgba(0,0,0,0.06)", cursor: "pointer",
-                       borderLeft: `3px solid ${st.color}` }}>
+              style={{ background: "#fff", borderRadius: 14, padding: "12px 14px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", cursor: "pointer", borderLeft: `3px solid ${st.color}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {d.lot_name || "—"}
-                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.lot_name || "—"}</div>
                   <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
                     {d.units_bid ? `${Number(d.units_bid).toLocaleString()} units` : "—"}
                     {purUSD > 0 ? ` · ${fmtUSD(purUSD)}` : ""}
                   </div>
                 </div>
-                <span style={{ fontSize: 10, fontWeight: 700, color: st.color, background: st.bg,
-                               padding: "2px 8px", borderRadius: 8, whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: st.color, background: st.bg, padding: "2px 8px", borderRadius: 8, whiteSpace: "nowrap" }}>
                   {st.emoji} {st.label}
                 </span>
               </div>
@@ -465,10 +498,35 @@ export function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, on
           );
         })
       )}
+
+      {/* Delete confirm */}
+      {showDeleteConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: 24, maxWidth: 340, width: "100%" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>Delete {supplier.name}?</div>
+            <div style={{ fontSize: 13, color: "#64748B", marginBottom: 20, lineHeight: 1.6 }}>
+              This will permanently delete this supplier and all their sourcing deals, notes, and follow-ups.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={deleteSupplier} disabled={deleting}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#EF4444", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                {deleting ? "Deleting…" : "Yes, Delete"}
+              </button>
+              <button onClick={() => setShowDeleteConfirm(false)}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 14, cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  SUPPLIERS LIST
+// ══════════════════════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════════════════
 //  SUPPLIERS LIST
 // ══════════════════════════════════════════════════════════════════════════════

@@ -71,6 +71,7 @@ export default function SourcingModule({ anthropicKey, onAddToStock }) {
         onBack={() => setSelectedSup(null)}
         onSelectDeal={id => setSelected(id)}
         onUpdate={updated => setSuppliers(ss => ss.map(s => s.id === updated.id ? updated : s))}
+        onDelete={id => { setSuppliers(ss => ss.filter(s => s.id !== id)); setSelectedSup(null); }}
       />
     );
   }

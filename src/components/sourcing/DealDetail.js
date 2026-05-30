@@ -64,6 +64,9 @@ export default function DealDetail({ deal: initialDeal, suppliers, rate, anthrop
   const [editing,    setEditing]    = useState(false);
   const [editForm,   setEditForm]   = useState({});
 
+  const [showDeleteDeal, setShowDeleteDeal] = useState(false);
+  const [deletingDeal, setDeletingDeal]   = useState(false);
+
   // lot conversion
   const [showMove,     setShowMove]     = useState(false);
   const [lotRows,      setLotRows]      = useState([]);
@@ -292,6 +295,17 @@ Write TWO reply versions. Return JSON only:
   function getLatestAllocation() {
     if (!lotRows.length) return [];
     return allocateLotCost(lotRows, landed);
+  }
+
+  // ── delete deal ──────────────────────────────────────────────────────────
+  async function handleDeleteDeal() {
+    setDeletingDeal(true);
+    await supabase.from("activity_log").delete().eq("sourcing_deal_id", d.id);
+    await supabase.from("sourcing_messages").delete().eq("deal_id", d.id).catch(() => {});
+    const { error } = await supabase.from("sourcing_deals").delete().eq("id", d.id);
+    if (error) { alert("Delete failed: " + error.message); setDeletingDeal(false); return; }
+    setDeletingDeal(false);
+    onBack();
   }
 
   // ── convert to lot ────────────────────────────────────────────────────────
@@ -858,6 +872,28 @@ Write TWO reply versions. Return JSON only:
       {/* ══════════════════════════════════════════════════════════════════════
           MOVE TO STOCK
       ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── Delete Deal Confirm ── */}
+      {showDeleteDeal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: 24, maxWidth: 340, width: "100%" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>Delete this deal?</div>
+            <div style={{ fontSize: 13, color: "#64748B", marginBottom: 20, lineHeight: 1.6 }}>
+              "{d.lot_name || d.supplier_name}" will be permanently deleted along with all its notes.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleDeleteDeal} disabled={deletingDeal}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#EF4444", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                {deletingDeal ? "Deleting…" : "Yes, Delete"}
+              </button>
+              <button onClick={() => setShowDeleteDeal(false)}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 14, cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Convert to Lot Modal ── */}
       {showMove && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
