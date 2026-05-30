@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useUI } from "../../context/UIContext";
 import GroupsTab from "./GroupsTab";
+import FacebookPostingTab from "./FacebookPostingTab";
 import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -256,10 +257,11 @@ Include 3-4 posts per day across platforms. Mix live stock posts (need same-day 
   }
 
   const TABS = [
-    { key: "today",    label: "Today" },
-    { key: "weekly",   label: "Weekly Plan" },
-    { key: "library",  label: "Library" },
-    { key: "groups",   label: "Groups" },
+    { key: "today",       label: "Today" },
+    { key: "facebook",    label: "📘 Facebook" },
+    { key: "weekly",      label: "Weekly Plan" },
+    { key: "library",     label: "Library" },
+    { key: "groups",      label: "Groups" },
     { key: "performance", label: "Performance" },
   ];
 
@@ -488,6 +490,11 @@ Include 3-4 posts per day across platforms. Mix live stock posts (need same-day 
           <GroupsTab />
         )}
 
+
+        {/* ── FACEBOOK TAB ── */}
+        {activeMarketingTab === "facebook" && (
+          <FacebookPostingTab />
+        )}
 
         {/* ── PERFORMANCE TAB ── */}
         {activeMarketingTab === "performance" && (
