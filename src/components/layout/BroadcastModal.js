@@ -20,9 +20,9 @@ export default function BroadcastModal() {
   if (!showBroadcast) return null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
-      <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", zIndex: 500, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ padding: "16px 12px 80px", display: "flex", flexDirection: "column", alignItems: "center", minHeight: "100%" }}>
+        <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480, flexShrink: 0 }}>
 
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>

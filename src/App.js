@@ -410,9 +410,6 @@ export default function App() {
       {/* ── STOCK MATCH ALERT ── */}
       {lastAddedStock && <StockMatchAlert stockItem={lastAddedStock} onClose={() => setLastAddedStock(null)} />}
 
-      {/* ── BROADCAST MODAL ── */}
-      <BroadcastModal />
-
       {/* ── SIDE DRAWER ── */}
       <SideDrawer handleLogout={handleLogoutWithUI} />
 
@@ -444,6 +441,9 @@ export default function App() {
 
       {/* ── ContactModal ── */}
       <ContactModalWrapper />
+
+      {/* ── BROADCAST MODAL ── */}
+      <BroadcastModal />
 
       {/* bottom tab bar — mobile only */}
       <BottomNav NAV_TABS={NAV_TABS} sourcingAlerts={sourcingAlerts} />
