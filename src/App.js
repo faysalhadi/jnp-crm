@@ -44,6 +44,7 @@ import EditReservationModal from "./components/modals/EditReservationModal";
 import CompleteReservationModal from "./components/modals/CompleteReservationModal";
 import SettingsTab from "./components/tabs/SettingsTab";
 
+
 // ── main ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const {
@@ -447,6 +448,6 @@ export default function App() {
       {/* bottom tab bar — mobile only */}
       <BottomNav NAV_TABS={NAV_TABS} sourcingAlerts={sourcingAlerts} />
       </div>{/* end content area */}
-    </div>
+      </div>
   );
 }

@@ -37,20 +37,31 @@ export function useBroadcast() {
   async function generateBroadcastMessages() {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
     setBroadcastLoading(true);
-    const selected = broadcastClients.filter(c => broadcastSelected.has(c.id));
-    const device = [broadcastItem?.brand, broadcastItem?.model].filter(Boolean).join(" ");
-    const specs = [broadcastItem?.ram, broadcastItem?.ssd, broadcastItem?.condition].filter(Boolean).join(", ");
-    const msgs = await Promise.all(selected.map(async c => {
-      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
-      const prompt = `Write a short WhatsApp message to ${c.name} about: ${device} ${specs} AED ${broadcastItem?.max_price}. Their interest: ${deal?.brand || "laptop"} budget AED ${deal?.budget || "unknown"}. Personal, friendly, under 40 words, 1-2 emojis. Return message text only.`;
-      try {
-        const text = await callClaude(anthropicKey, [{ role: "user", content: prompt }], "You write short friendly WhatsApp messages for Laptop for Less UAE.");
-        return { client: c, message: text.trim(), deal };
-      } catch {
-        return { client: c, message: `Hey ${c.name}! 👋 Just got a ${device} — ${specs}. AED ${broadcastItem?.max_price}. Interested? 😊`, deal };
-      }
-    }));
-    setBroadcastMessages(msgs); setBroadcastStep("messages"); setBroadcastLoading(false);
+    try {
+      const selected = broadcastClients.filter(c => broadcastSelected.has(c.id));
+      const device = broadcastItem ? [broadcastItem.brand, broadcastItem.model].filter(Boolean).join(" ") : "";
+      const specs  = broadcastItem ? [broadcastItem.ram, broadcastItem.ssd, broadcastItem.condition].filter(Boolean).join(", ") : "";
+      const price  = broadcastItem?.max_price || "";
+      const msgs = await Promise.all(selected.map(async c => {
+        const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+        const interest = deal ? `${deal.brand || "laptop"} budget AED ${deal.budget || "unknown"}` : "laptop";
+        const about = device ? `${device}${specs ? " — " + specs : ""}${price ? " AED " + price : ""}` : "available laptops";
+        const prompt = `Write a short WhatsApp message to ${c.name} about: ${about}. Their interest: ${interest}. Personal, friendly, under 40 words, 1-2 emojis. Return message text only.`;
+        try {
+          const text = await callClaude(anthropicKey, [{ role: "user", content: prompt }], "You write short friendly WhatsApp messages for Laptop for Less UAE.");
+          return { client: c, message: text.trim(), deal };
+        } catch {
+          const fallback = device
+            ? `Hey ${c.name}! 👋 Just got a ${device}${price ? " — AED " + price : ""}. Interested? 😊`
+            : `Hey ${c.name}! 👋 We have some great laptops available. Let me know what you need! 😊`;
+          return { client: c, message: fallback, deal };
+        }
+      }));
+      setBroadcastMessages(msgs); setBroadcastStep("messages");
+    } catch (e) {
+      console.error("Broadcast generate error:", e);
+    }
+    setBroadcastLoading(false);
   }
 
   return {

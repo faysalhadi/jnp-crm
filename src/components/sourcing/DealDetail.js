@@ -300,12 +300,20 @@ Write TWO reply versions. Return JSON only:
   // ── delete deal ──────────────────────────────────────────────────────────
   async function handleDeleteDeal() {
     setDeletingDeal(true);
-    await supabase.from("activity_log").delete().eq("sourcing_deal_id", d.id);
-    await supabase.from("sourcing_messages").delete().eq("deal_id", d.id).catch(() => {});
-    const { error } = await supabase.from("sourcing_deals").delete().eq("id", d.id);
-    if (error) { alert("Delete failed: " + error.message); setDeletingDeal(false); return; }
-    setDeletingDeal(false);
-    onBack();
+    try {
+      // Delete child records — each wrapped so one failure doesn't block the rest
+      try { await supabase.from("sourcing_messages").delete().eq("deal_id", d.id); } catch {}
+      // Try deleting deal-specific activity log entries (column may not exist yet)
+      try { await supabase.from("activity_log").delete().eq("sourcing_deal_id", d.id); } catch {}
+      // Delete the deal itself
+      const { error } = await supabase.from("sourcing_deals").delete().eq("id", d.id);
+      if (error) { alert("Delete failed: " + error.message); setDeletingDeal(false); return; }
+      setDeletingDeal(false);
+      onBack();
+    } catch (e) {
+      alert("Delete failed: " + e.message);
+      setDeletingDeal(false);
+    }
   }
 
   // ── convert to lot ────────────────────────────────────────────────────────
