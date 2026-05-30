@@ -10,6 +10,7 @@ import {
 import SourcingCalculator from "./SourcingCalculator";
 import SourcingMessages from "./SourcingMessages";
 import SupplierNotesView from "../chat/SupplierNotesView";
+import FollowUpPanel from "../chat/FollowUpPanel";
 
 // ── Cost allocation helper ────────────────────────────────────────────────────
 function allocateLotCost(rows, lotCost) {
@@ -467,6 +468,13 @@ Write TWO reply versions. Return JSON only:
                 background: "rgba(255,255,255,0.15)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
               📦 Convert to Lot →
             </button>
+          </div>
+        )}
+
+        {/* Follow-up panel */}
+        {d.supplier_id && (
+          <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+            <FollowUpPanel customerId={d.supplier_id} />
           </div>
         )}
 

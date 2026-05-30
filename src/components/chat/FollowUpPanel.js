@@ -17,8 +17,9 @@ const TIME_OPTIONS = [
   { label: "1 week",   hours: 168 },
 ];
 
-export default function FollowUpPanel() {
-  const { activeCustomer, activeCustomerId, loadCustomers } = useCustomers();
+export default function FollowUpPanel({ customerId: propCustomerId = null }) {
+  const { activeCustomer, activeCustomerId: ctxCustomerId, loadCustomers } = useCustomers();
+  const activeCustomerId = propCustomerId || ctxCustomerId;
   const [expanded, setExpanded] = useState(false);
   const [followUp, setFollowUp] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
