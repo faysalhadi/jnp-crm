@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "../../supabase";
 import {
   STAGES, STAGE_MAP, MILESTONES, DEFAULT_RATE, DUTY_PCT,
@@ -8,6 +9,17 @@ import {
 } from "./SourcingHelpers";
 import SourcingCalculator from "./SourcingCalculator";
 import SourcingMessages from "./SourcingMessages";
+
+// ── Cost allocation helper ────────────────────────────────────────────────────
+function allocateLotCost(rows, lotCost) {
+  const totalMarket = rows.reduce((s, r) => s + r.qty * r.marketValue, 0);
+  if (totalMarket === 0) return rows.map(r => ({ ...r, allocatedCostPerUnit: 0, totalCostPerUnit: 0 }));
+  return rows.map(r => {
+    const share    = (r.qty * r.marketValue) / totalMarket;
+    const perUnit  = (lotCost * share) / r.qty;
+    return { ...r, allocatedCostPerUnit: Math.round(perUnit), totalCostPerUnit: Math.round(perUnit) };
+  });
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DEAL DETAIL — timeline + milestone detection
@@ -50,12 +62,13 @@ export default function DealDetail({ deal: initialDeal, suppliers, rate, anthrop
   const [editing,    setEditing]    = useState(false);
   const [editForm,   setEditForm]   = useState({});
 
-  // move to stock
-  const [showMove,   setShowMove]   = useState(false);
-  const [moveForm,   setMoveForm]   = useState({
-    units_arrived: "", actual_shipping: "",
-    brand: "", model: "", processor: "", ram: "", ssd: "", condition: "Used",
-  });
+  // lot conversion
+  const [showMove,     setShowMove]     = useState(false);
+  const [lotRows,      setLotRows]      = useState([]);
+  const [lotAllocated, setLotAllocated] = useState([]);
+  const [lotName,      setLotName]      = useState("");
+  const [uploadError,  setUploadError]  = useState(null);
+  const [lotSaving,    setLotSaving]    = useState(false);
 
   const timelineRef = useRef(null);
   const d  = deal;
@@ -217,6 +230,119 @@ Write TWO reply versions. Return JSON only:
     setReplyLoading(false);
   }
 
+  // ── parse uploaded sheet ──────────────────────────────────────────────────
+  function handleSheetUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadError(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb       = XLSX.read(ev.target.result, { type: "binary" });
+        const ws       = wb.Sheets[wb.SheetNames[0]];
+        const allRows  = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        // Read lot name from row 0
+        const getRowVal = (idx) => {
+          const row = allRows[idx] || [];
+          for (let ci = 1; ci < row.length; ci++) {
+            if (row[ci] !== "" && row[ci] !== null && row[ci] !== undefined) return String(row[ci]).trim();
+          }
+          return "";
+        };
+        const sheetLotName = getRowVal(0);
+        if (sheetLotName) setLotName(sheetLotName);
+
+        // Find header row
+        let headerRowIdx = -1;
+        for (let i = 0; i < allRows.length; i++) {
+          if (allRows[i].some(cell => String(cell).toLowerCase().trim() === "brand")) { headerRowIdx = i; break; }
+        }
+        if (headerRowIdx === -1) { setUploadError("No header row found with 'Brand' column."); return; }
+
+        const headers = allRows[headerRowIdx].map(h => String(h).trim().toLowerCase());
+        const colIdx  = (names) => { for (const n of names) { const idx = headers.findIndex(h => h.includes(n.toLowerCase())); if (idx >= 0) return idx; } return -1; };
+        const brandCol = colIdx(["brand"]); const modelCol = colIdx(["model"]); const procCol = colIdx(["processor"]);
+        const ramCol   = colIdx(["ram"]);   const ssdCol   = colIdx(["ssd"]);   const condCol = colIdx(["condition"]);
+        const qtyCol   = colIdx(["qty","quantity"]); const mvCol = colIdx(["market value","marketvalue"]);
+        const sellCol  = colIdx(["sell price","max price","my sell"]);
+        const getCell  = (row, idx) => idx >= 0 ? String(row[idx] || "").trim() : "";
+        const getNum   = (row, idx) => idx >= 0 ? parseFloat(String(row[idx] || "").replace(/,/g, "")) || 0 : 0;
+
+        const rows = allRows.slice(headerRowIdx + 1)
+          .filter(row => getCell(row, brandCol))
+          .map(row => ({
+            brand: getCell(row, brandCol), model: getCell(row, modelCol), processor: getCell(row, procCol),
+            ram: getCell(row, ramCol), ssd: getCell(row, ssdCol), condition: getCell(row, condCol),
+            qty: Math.max(1, parseInt(getCell(row, qtyCol)) || 1),
+            marketValue: getNum(row, mvCol), sellPrice: getNum(row, sellCol), refurbCost: 0,
+          }));
+
+        if (!rows.length) { setUploadError("No device rows found."); return; }
+        setLotRows(rows);
+        setUploadError(null);
+      } catch (err) { setUploadError("Could not read file: " + err.message); }
+    };
+    reader.readAsBinaryString(file);
+  }
+
+  // Recalculate allocation when rows change (use landed cost as lot cost)
+  function getLatestAllocation() {
+    if (!lotRows.length) return [];
+    return allocateLotCost(lotRows, landed);
+  }
+
+  // ── convert to lot ────────────────────────────────────────────────────────
+  async function handleConvertToLot() {
+    const allocated = getLatestAllocation();
+    if (!allocated.length) return;
+    setLotSaving(true);
+
+    // 1. Create lot record
+    const { data: lot, error: lotErr } = await supabase.from("lots").insert({
+      name:          lotName || d.lot_name || d.supplier_name || "Unnamed Lot",
+      supplier:      d.supplier_name || null,
+      purchase_date: new Date().toISOString().split("T")[0],
+      total_cost:    Math.round(landed),
+      total_devices: allocated.reduce((s, r) => s + r.qty, 0),
+      status:        "active",
+    }).select().single();
+
+    if (lotErr) { alert("Failed to create lot: " + lotErr.message); setLotSaving(false); return; }
+
+    // 2. Insert stock items
+    const stockItems = [];
+    for (const row of allocated) {
+      for (let i = 0; i < row.qty; i++) {
+        stockItems.push({
+          brand: row.brand || null, model: row.model || null,
+          processor: row.processor || null, ram: row.ram || null,
+          ssd: row.ssd || null, condition: row.condition || null,
+          cost_price:         row.totalCostPerUnit,
+          min_price:          row.sellPrice ? Math.round(row.sellPrice * 0.92) : null,
+          max_price:          row.sellPrice || null,
+          lot_id:             lot.id,
+          allocated_lot_cost: row.allocatedCostPerUnit,
+          refurb_cost:        0,
+          status:             "available",
+        });
+      }
+    }
+
+    for (let i = 0; i < stockItems.length; i += 20) {
+      const { error } = await supabase.from("stock").insert(stockItems.slice(i, i + 20));
+      if (error) { alert("Stock insert failed: " + error.message); setLotSaving(false); return; }
+    }
+
+    // 3. Mark deal as in_stock
+    await patchDeal({ status: "in_stock", shipping_cost_aed: localShipping, landed_cost_aed: landed });
+    setShowMove(false);
+    setLotRows([]); setLotAllocated([]); setLotName(""); setUploadError(null);
+    if (onAddToStock) onAddToStock();
+    showToast(`✅ Lot created · ${stockItems.length} devices added to stock`);
+    setLotSaving(false);
+  }
+
   // ── move to stock ────────────────────────────────────────────────────────
   async function handleMoveToStock() {
     const units   = Number(moveForm.units_arrived) || Number(d.units_bid) || 1;
@@ -335,20 +461,10 @@ Write TWO reply versions. Return JSON only:
               {d.units_bid ? `${Number(d.units_bid).toLocaleString()} units` : "—"}
               {costPerUnit > 0 ? ` · est. cost ${fmtAED(costPerUnit)}/unit` : ""}
             </div>
-            <button onClick={() => {
-              setMoveForm({
-                units_arrived:   String(d.units_bid || ""),
-                actual_shipping: String(localShipping || d.shipping_cost_aed || ""),
-                brand:     "", model:     d.lot_name || "",
-                processor: "", ram:       "", ssd: "", condition: "Used",
-              });
-              setShowMove(true);
-            }} style={{
-              padding: "9px 20px", borderRadius: 10, border: "2px solid rgba(255,255,255,0.4)",
-              background: "rgba(255,255,255,0.15)", color: "#fff",
-              fontWeight: 800, fontSize: 13, cursor: "pointer",
-            }}>
-              Move to Stock →
+            <button onClick={() => { setLotName(d.lot_name || d.supplier_name || ""); setShowMove(true); }}
+              style={{ padding: "9px 20px", borderRadius: 10, border: "2px solid rgba(255,255,255,0.4)",
+                background: "rgba(255,255,255,0.15)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+              📦 Convert to Lot →
             </button>
           </div>
         )}
@@ -739,110 +855,109 @@ Write TWO reply versions. Return JSON only:
       {/* ══════════════════════════════════════════════════════════════════════
           MOVE TO STOCK
       ══════════════════════════════════════════════════════════════════════ */}
-      {showMove && (() => {
-        // Live cost preview inside the modal
-        const mUnits  = Number(moveForm.units_arrived) || Number(d.units_bid) || 1;
-        const mShip   = moveForm.actual_shipping !== "" ? Number(moveForm.actual_shipping) : localShipping;
-        const mPurAED = Number(d.our_bid_usd || 0) * mUnits * localRate;
-        const mDuty   = mPurAED * DUTY_PCT;
-        const mLanded = mPurAED + mShip + mDuty;
-        const mCostPer= mUnits > 0 ? Math.round(mLanded / mUnits) : 0;
+      {/* ── Convert to Lot Modal ── */}
+      {showMove && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 420 }}>
 
-        return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, overflowY: "auto" }}>
-            <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 420 }}>
-
-                {/* Header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>📦 Move to Stock</div>
-                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{d.supplier_name} · {d.lot_name || "—"}</div>
-                  </div>
-                  <button onClick={() => setShowMove(false)} style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>📦 Convert to Lot</div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{d.supplier_name} · {d.lot_name || "—"}</div>
                 </div>
-
-                {/* ── Section 1: Quantity & shipping ── */}
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>QUANTITY & COST</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                  {[
-                    { label: "UNITS ARRIVED",      key: "units_arrived",   ph: String(d.units_bid || 0), type: "number" },
-                    { label: "SHIPPING PAID (AED)", key: "actual_shipping", ph: String(localShipping || 0), type: "number" },
-                  ].map(({ label, key, ph, type }) => (
-                    <div key={key}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
-                      <input type={type} value={moveForm[key]}
-                        onChange={e => setMoveForm(f => ({ ...f, [key]: e.target.value }))}
-                        placeholder={ph}
-                        style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Live cost preview */}
-                <div style={{ background: "#EEF2FF", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: "#4338CA" }}>Purchase ({mUnits} units × ${d.our_bid_usd || 0} × {localRate})</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#4338CA" }}>{fmtAED(mPurAED)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: "#4338CA" }}>Shipping</span>
-                    <span style={{ fontSize: 12, color: "#4338CA" }}>{fmtAED(mShip)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, color: "#4338CA" }}>Import duty (5%)</span>
-                    <span style={{ fontSize: 12, color: "#4338CA" }}>{fmtAED(mDuty)}</span>
-                  </div>
-                  <div style={{ borderTop: "1px solid #C7D2FE", paddingTop: 6,
-                                display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: "#4338CA" }}>Cost per unit</span>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: "#4338CA" }}>{fmtAED(mCostPer)}</span>
-                  </div>
-                </div>
-
-                {/* ── Section 2: Device specs ── */}
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>DEVICE SPECS (applied to all units)</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                  {[
-                    { label: "BRAND",     key: "brand",     ph: "e.g. Dell" },
-                    { label: "MODEL",     key: "model",     ph: "e.g. Latitude 5420" },
-                    { label: "PROCESSOR", key: "processor", ph: "e.g. Core i5 11th" },
-                    { label: "RAM",       key: "ram",       ph: "e.g. 8GB" },
-                    { label: "STORAGE",   key: "ssd",       ph: "e.g. 256GB SSD" },
-                  ].map(({ label, key, ph }) => (
-                    <div key={key}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
-                      <input value={moveForm[key]}
-                        onChange={e => setMoveForm(f => ({ ...f, [key]: e.target.value }))}
-                        placeholder={ph}
-                        style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-                    </div>
-                  ))}
-                  <div>
-                    <div style={{ fontSize: 9, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>CONDITION</div>
-                    <select value={moveForm.condition}
-                      onChange={e => setMoveForm(f => ({ ...f, condition: e.target.value }))}
-                      style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", background: "#fff" }}>
-                      {["New", "Like New", "Used", "Refurbished"].map(c => <option key={c}>{c}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "9px 12px", marginBottom: 14, fontSize: 11, color: "#64748B" }}>
-                  This will create <strong>{mUnits} stock record{mUnits !== 1 ? "s" : ""}</strong> at <strong>{fmtAED(mCostPer)}/unit</strong> and mark this deal as In Stock.
-                </div>
-
-                <button onClick={handleMoveToStock} style={{
-                  width: "100%", padding: 13, borderRadius: 12, border: "none",
-                  background: "#0891B2", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer",
-                }}>
-                  ✅ Add {mUnits} Device{mUnits !== 1 ? "s" : ""} to Stock
-                </button>
+                <button onClick={() => { setShowMove(false); setLotRows([]); setUploadError(null); }}
+                  style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
               </div>
+
+              {/* Landed cost summary */}
+              <div style={{ padding: "10px 14px", borderRadius: 12, background: "#EEF2FF", border: "1px solid #C7D2FE", marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#4338CA", marginBottom: 6 }}>LANDED COST (used for allocation)</div>
+                {[
+                  { l: "Purchase", v: fmtAED(Number(d.our_bid_usd || 0) * Number(d.units_bid || 0) * localRate) },
+                  { l: "Shipping", v: fmtAED(localShipping) },
+                  { l: "Duty 5%",  v: fmtAED((Number(d.our_bid_usd || 0) * Number(d.units_bid || 0) * localRate) * 0.05) },
+                  { l: "Total",    v: fmtAED(landed), bold: true },
+                ].map((row, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
+                    <span style={{ fontSize: 11, color: "#4338CA" }}>{row.l}</span>
+                    <span style={{ fontSize: 11, fontWeight: row.bold ? 800 : 600, color: "#4338CA" }}>{row.v}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Lot name */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>LOT NAME</div>
+                <input value={lotName} onChange={e => setLotName(e.target.value)}
+                  placeholder={d.lot_name || d.supplier_name || "e.g. HP/Dell Mixed May 2025"}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+              </div>
+
+              {/* Upload sheet */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>UPLOAD PRICING SHEET</div>
+                <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, lineHeight: 1.5 }}>
+                  Use the JNP Stock Import Template. Fill Brand, Model, Qty, Market Value, Sell Price for each model.
+                </div>
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleSheetUpload}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1.5px dashed #E2E8F0", fontSize: 12, boxSizing: "border-box", background: "#F8FAFC" }} />
+                {uploadError && <div style={{ fontSize: 11, color: "#EF4444", marginTop: 5, fontWeight: 600 }}>{uploadError}</div>}
+              </div>
+
+              {/* Allocation preview */}
+              {lotRows.length > 0 && (() => {
+                const alloc = getLatestAllocation();
+                const totalDevices = alloc.reduce((s, r) => s + r.qty, 0);
+                return (
+                  <>
+                    <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12, marginBottom: 12, border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>
+                        Cost Allocation Preview ({totalDevices} devices)
+                      </div>
+                      {alloc.map((row, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                          padding: "6px 0", borderBottom: i < alloc.length - 1 ? "1px solid #F1F5F9" : "none" }}>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "#0F172A" }}>
+                              {row.brand} {row.model} {row.condition ? `· ${row.condition}` : ""} ×{row.qty}
+                            </div>
+                            {row.processor && <div style={{ fontSize: 10, color: "#94A3B8" }}>{row.processor}</div>}
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: "#EF4444" }}>Cost {fmtAED(row.totalCostPerUnit)}</div>
+                            {row.sellPrice > 0 && (
+                              <div style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>
+                                Profit {fmtAED(row.sellPrice - row.totalCostPerUnit)}
+                                {" "}({row.sellPrice > 0 ? (((row.sellPrice - row.totalCostPerUnit) / row.sellPrice) * 100).toFixed(1) : 0}%)
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button onClick={handleConvertToLot} disabled={lotSaving}
+                      style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", fontWeight: 800, fontSize: 14,
+                        cursor: lotSaving ? "not-allowed" : "pointer",
+                        background: lotSaving ? "#E2E8F0" : "#10B981",
+                        color: lotSaving ? "#94A3B8" : "#fff" }}>
+                      {lotSaving ? `⏳ Creating lot...` : `✅ Create Lot & Add ${totalDevices} Devices to Stock`}
+                    </button>
+                  </>
+                );
+              })()}
+
+              {lotRows.length === 0 && (
+                <div style={{ textAlign: "center", padding: "16px 0", color: "#CBD5E1", fontSize: 12 }}>
+                  Upload your pricing sheet to preview cost allocation
+                </div>
+              )}
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 }
