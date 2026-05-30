@@ -431,6 +431,10 @@ Write TWO reply versions. Return JSON only:
             </div>
           </div>
           <StageBadge status={d.status} />
+          <button onClick={() => setShowDeleteDeal(true)}
+            style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid #FEE2E2", background: "#FFF5F5", color: "#EF4444", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            🗑
+          </button>
         </div>
 
         {/* Stage selector */}

@@ -16,7 +16,7 @@ export default function BroadcastModal() {
     broadcastSent, setBroadcastSent,
     generateBroadcastMessages,
   } = useBroadcast();
-  if (!showBroadcast || !broadcastItem) return null;
+  if (!showBroadcast) return null;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 300, overflowY: "auto" }}>
       <div style={{ minHeight: "100%", padding: "16px 12px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -25,11 +25,18 @@ export default function BroadcastModal() {
             <span style={{ fontWeight: 800, fontSize: 17, color: "#0F172A" }}>📢 Broadcast</span>
             <button onClick={() => setShowBroadcast(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
-          {/* Device summary */}
-          <div style={{ background: "#EEF2FF", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "#4338CA" }}>{[broadcastItem.brand, broadcastItem.model].filter(Boolean).join(" ")}</div>
-            <div style={{ fontSize: 12, color: "#818CF8" }}>{[broadcastItem.ram, broadcastItem.ssd, broadcastItem.condition].filter(Boolean).join(" · ")} · AED {broadcastItem.max_price?.toLocaleString()}</div>
-          </div>
+          {/* Device summary — only if broadcast from a specific stock item */}
+          {broadcastItem && (
+            <div style={{ background: "#EEF2FF", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#4338CA" }}>{[broadcastItem.brand, broadcastItem.model].filter(Boolean).join(" ")}</div>
+              <div style={{ fontSize: 12, color: "#818CF8" }}>{[broadcastItem.ram, broadcastItem.ssd, broadcastItem.condition].filter(Boolean).join(" · ")} · AED {broadcastItem.max_price?.toLocaleString()}</div>
+            </div>
+          )}
+          {!broadcastItem && (
+            <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#64748B" }}>
+              Broadcasting to all clients with open deals
+            </div>
+          )}
 
           {broadcastStep === "clients" && (
             <>
