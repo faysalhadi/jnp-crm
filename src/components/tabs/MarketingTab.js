@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useUI } from "../../context/UIContext";
+import { FACEBOOK_GROUPS } from "../../constants/facebookGroups";
 import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -483,102 +484,90 @@ Include 3-4 posts per day across platforms. Mix live stock posts (need same-day 
         )}
 
         {/* ── GROUPS TAB ── */}
-        {activeMarketingTab === "groups" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {activeMarketingTab === "groups" && (() => {
+          const BATCH_CONFIG = [
+            { key: "a",        label: "Batch A",   sub: "Post daily",      color: "#6366F1", bg: "#EEF2FF", time: "9:00 AM",  count: FACEBOOK_GROUPS.a.length },
+            { key: "b",        label: "Batch B",   sub: "Post regularly",  color: "#D97706", bg: "#FFFBEB", time: "11:00 AM", count: FACEBOOK_GROUPS.b.length },
+            { key: "c",        label: "Batch C",   sub: "Rotate weekly",   color: "#10B981", bg: "#ECFDF5", time: "2:00 PM",  count: FACEBOOK_GROUPS.c.length },
+            { key: "sourcing", label: "Sourcing",  sub: "Find stock here",  color: "#2563EB", bg: "#EFF6FF", time: null,       count: FACEBOOK_GROUPS.sourcing.length },
+            { key: "technical",label: "Technical", sub: "Knowledge groups", color: "#64748B", bg: "#F8FAFC", time: null,       count: FACEBOOK_GROUPS.technical.length },
+          ];
+          const [activeBatch, setActiveBatch] = React.useState("a");
+          const [searchQ, setSearchQ] = React.useState("");
+          const current = FACEBOOK_GROUPS[activeBatch] || [];
+          const filtered = searchQ ? current.filter(g => g.name.toLowerCase().includes(searchQ.toLowerCase()) || g.country.toLowerCase().includes(searchQ.toLowerCase())) : current;
+          const activeCfg = BATCH_CONFIG.find(b => b.key === activeBatch);
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-            {/* Strategy card */}
-            <div style={{ background: "linear-gradient(135deg, #128C7E, #25D366)", borderRadius: 16, padding: 16, color: "#fff" }}>
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>💬 200 Groups Strategy</div>
-              <div style={{ fontSize: 11, lineHeight: 1.7, opacity: 0.9 }}>
-                <b>Batch A (20 groups)</b> — Post daily, Version 1{"\n"}
-                <b>Batch B (80 groups)</b> — Split into 4×20, rotate Mon-Thu, Version 2{"\n"}
-                <b>Batch C (100 groups)</b> — Split into 7×14, rotate daily, Version 3{"\n\n"}
-                ⚠️ Never post identical messages to 5+ groups in a row.{"\n"}
-                ⏰ Space batches 90 minutes apart.
+              {/* Strategy banner */}
+              <div style={{ background: "linear-gradient(135deg, #128C7E, #25D366)", borderRadius: 16, padding: 14, color: "#fff" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>💬 205 Groups — Posting Strategy</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
+                  {BATCH_CONFIG.filter(b => b.time).map(b => (
+                    <div key={b.key} style={{ background: "rgba(255,255,255,0.15)", borderRadius: 8, padding: "6px 8px" }}>
+                      <div style={{ fontSize: 13, fontWeight: 800 }}>{b.count}</div>
+                      <div style={{ fontSize: 9, opacity: 0.85 }}>{b.label} · {b.time}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, opacity: 0.8, lineHeight: 1.6 }}>
+                  ⚠️ Never send identical messages to 5+ groups in a row · ⏰ Space batches 90 mins apart
+                </div>
+              </div>
+
+              {/* Batch tabs */}
+              <div style={{ display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none" }}>
+                {BATCH_CONFIG.map(b => (
+                  <button key={b.key} onClick={() => { setActiveBatch(b.key); setSearchQ(""); }}
+                    style={{ padding: "6px 12px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      background: activeBatch === b.key ? b.color : "#F1F5F9",
+                      color:      activeBatch === b.key ? "#fff"   : "#64748B" }}>
+                    {b.label} ({b.count})
+                  </button>
+                ))}
+              </div>
+
+              {/* Batch header */}
+              <div style={{ background: "#fff", borderRadius: 14, padding: "12px 14px", border: `1.5px solid ${activeCfg.bg}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: activeCfg.color }}>{activeCfg.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: activeCfg.color, background: activeCfg.bg, padding: "2px 8px", borderRadius: 20 }}>
+                    {activeCfg.count} groups
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: "#94A3B8" }}>{activeCfg.sub}{activeCfg.time ? ` · Post at ${activeCfg.time}` : ""}</div>
+              </div>
+
+              {/* Search */}
+              <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                placeholder={`🔍 Search ${activeCfg.label} groups...`}
+                style={{ padding: "9px 12px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#fff", fontSize: 13, outline: "none" }} />
+
+              {/* Group list */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {filtered.map((g, i) => (
+                  <div key={i} style={{ background: "#fff", borderRadius: 12, padding: "10px 12px", border: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</div>
+                      <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2, display: "flex", gap: 6 }}>
+                        <span style={{ background: "#F1F5F9", padding: "1px 6px", borderRadius: 6 }}>{g.country}</span>
+                        <span style={{ background: "#F1F5F9", padding: "1px 6px", borderRadius: 6 }}>{g.niche}</span>
+                      </div>
+                    </div>
+                    <a href={g.url} target="_blank" rel="noreferrer"
+                      style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, background: "#1877F2", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                      Open →
+                    </a>
+                  </div>
+                ))}
+                {filtered.length === 0 && (
+                  <div style={{ textAlign: "center", padding: 24, color: "#94A3B8", fontSize: 12 }}>No groups match your search</div>
+                )}
               </div>
             </div>
-
-            {/* Daily schedule */}
-            <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #F1F5F9" }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>📋 Daily Posting Schedule</div>
-              {[
-                { time: "9:00 AM",  batch: "Batch A", count: groupBatches.a.length || 20, version: "Version 1", color: "#6366F1" },
-                { time: "11:00 AM", batch: "Batch B (rotation)", count: Math.round((groupBatches.b.length || 80) / 4), version: "Version 2", color: "#D97706" },
-                { time: "2:00 PM",  batch: "Batch C (rotation)", count: Math.round((groupBatches.c.length || 100) / 7), version: "Version 3", color: "#10B981" },
-              ].map((s, i) => (
-                <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? "1px solid #F8FAFC" : "none" }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: s.color, minWidth: 70, flexShrink: 0 }}>{s.time}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{s.batch}</div>
-                    <div style={{ fontSize: 10, color: "#94A3B8" }}>~{s.count} groups · {s.version}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Batch managers */}
-            {[
-              { key: "a", label: "Batch A", sub: "Post daily — your best 20 groups", color: "#6366F1", bg: "#EEF2FF" },
-              { key: "b", label: "Batch B", sub: "Post every 4 days — 80 groups", color: "#D97706", bg: "#FFFBEB" },
-              { key: "c", label: "Batch C", sub: "Post weekly — remaining 100 groups", color: "#10B981", bg: "#ECFDF5" },
-            ].map(batch => {
-              const groups = groupBatches[batch.key] || [];
-              return (
-                <div key={batch.key} style={{ background: "#fff", borderRadius: 16, padding: 16, border: "1px solid #F1F5F9" }}>
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: batch.color }}>{batch.label}</div>
-                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>{batch.sub} · {groups.length} saved</div>
-                  </div>
-                  {groups.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
-                      {groups.map((name, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                          padding: "7px 10px", background: batch.bg, borderRadius: 8 }}>
-                          <span style={{ fontSize: 12, color: "#0F172A", fontWeight: 600 }}>{name}</span>
-                          <button onClick={() => {
-                            const updated = { ...groupBatches, [batch.key]: groups.filter((_, idx) => idx !== i) };
-                            setGroupBatches(updated);
-                            localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
-                          }} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#FEF2F2", color: "#EF4444", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {addingToBatch === batch.key ? (
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === "Enter" && newGroupName.trim()) {
-                            const updated = { ...groupBatches, [batch.key]: [...groups, newGroupName.trim()] };
-                            setGroupBatches(updated);
-                            localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
-                            setNewGroupName(""); setAddingToBatch(null);
-                          }
-                        }}
-                        placeholder="Group name..." autoFocus
-                        style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${batch.color}`, fontSize: 12, outline: "none" }} />
-                      <button onClick={() => {
-                        if (!newGroupName.trim()) return;
-                        const updated = { ...groupBatches, [batch.key]: [...groups, newGroupName.trim()] };
-                        setGroupBatches(updated);
-                        localStorage.setItem("jnp_group_batches", JSON.stringify(updated));
-                        setNewGroupName(""); setAddingToBatch(null);
-                      }} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: batch.color, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Add</button>
-                      <button onClick={() => { setAddingToBatch(null); setNewGroupName(""); }}
-                        style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>✕</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setAddingToBatch(batch.key)}
-                      style={{ width: "100%", padding: 9, borderRadius: 10, border: `1.5px dashed ${batch.color}`,
-                        background: batch.bg, color: batch.color, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                      + Add Group to {batch.label}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── PERFORMANCE TAB ── */}
         {activeMarketingTab === "performance" && (
