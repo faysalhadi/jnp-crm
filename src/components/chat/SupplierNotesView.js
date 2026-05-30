@@ -60,29 +60,49 @@ export default function SupplierNotesView({ filterDealId = null }) {
       .order("created_at", { ascending: false });
     setOpenDeals(deals || []);
 
-    // Fetch activity log — filtered by deal if filterDealId provided
-    let query = supabase
-      .from("activity_log")
-      .select("*")
-      .eq("customer_id", cid)
-      .order("logged_at", { ascending: false })
-      .limit(50);
-    if (filterDealId) query = query.eq("sourcing_deal_id", filterDealId);
-    const { data: logs } = await query;
-    setActivityLog(logs || []);
+    // Fetch activity log
+    try {
+      let query = supabase
+        .from("activity_log")
+        .select("*")
+        .eq("customer_id", cid)
+        .order("logged_at", { ascending: false })
+        .limit(50);
+      if (filterDealId) query = query.eq("sourcing_deal_id", filterDealId);
+      const { data: logs, error } = await query;
+      // If filter fails (column missing), fetch all and filter client-side
+      if (error && filterDealId) {
+        const { data: allLogs } = await supabase.from("activity_log").select("*").eq("customer_id", cid).order("logged_at", { ascending: false }).limit(50);
+        setActivityLog(allLogs || []);
+      } else {
+        setActivityLog(logs || []);
+      }
+    } catch { setActivityLog([]); }
   }
 
   async function saveNote() {
     if (!noteText.trim() || !activeCustomerId || saving) return;
     setSaving(true);
-    await supabase.from("activity_log").insert({
-      customer_id:       activeCustomerId,
-      activity_type:     "note",
-      note:              noteText.trim(),
-      channel:           channel,
-      sourcing_deal_id:  selectedDealId || null,
-      logged_at:         new Date().toISOString(),
-    });
+
+    // Try with new columns first, fall back to basic insert if columns missing
+    const payload = {
+      customer_id:   activeCustomerId,
+      activity_type: "note",
+      note:          noteText.trim(),
+      logged_at:     new Date().toISOString(),
+    };
+
+    // Add new columns only if they might exist
+    const extPayload = { ...payload, channel, sourcing_deal_id: selectedDealId || null };
+    let { error } = await supabase.from("activity_log").insert(extPayload);
+
+    // If error (columns missing), retry without new columns
+    if (error) {
+      console.warn("Extended insert failed, trying basic:", error.message);
+      ({ error } = await supabase.from("activity_log").insert(payload));
+      if (error) { console.error("saveNote failed:", error.message); setSaving(false); return; }
+    }
+
     await supabase.from("customers")
       .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
       .eq("id", activeCustomerId);
@@ -94,13 +114,10 @@ export default function SupplierNotesView({ filterDealId = null }) {
 
   async function logActivity(type) {
     if (!activeCustomerId) return;
-    await supabase.from("activity_log").insert({
-      customer_id:      activeCustomerId,
-      activity_type:    type,
-      channel:          channel,
-      sourcing_deal_id: selectedDealId || null,
-      logged_at:        new Date().toISOString(),
-    });
+    const payload = { customer_id: activeCustomerId, activity_type: type, logged_at: new Date().toISOString() };
+    const extPayload = { ...payload, channel, sourcing_deal_id: selectedDealId || null };
+    let { error } = await supabase.from("activity_log").insert(extPayload);
+    if (error) await supabase.from("activity_log").insert(payload);
     await supabase.from("customers")
       .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
       .eq("id", activeCustomerId);
