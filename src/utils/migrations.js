@@ -46,4 +46,9 @@ ALTER TABLE stock
 
 -- Disable RLS on lots
 ALTER TABLE lots DISABLE ROW LEVEL SECURITY;
+
+-- Add supplier notes columns to activity_log
+ALTER TABLE activity_log
+  ADD COLUMN IF NOT EXISTS sourcing_deal_id uuid,
+  ADD COLUMN IF NOT EXISTS channel text;
 `;

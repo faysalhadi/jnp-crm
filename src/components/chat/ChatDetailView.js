@@ -8,6 +8,7 @@ import { useStock } from "../../context/StockContext";
 import { useSales } from "../../context/SalesContext";
 import ChatHeader from "./ChatHeader";
 import NotesActivityView from "./NotesActivityView";
+import SupplierNotesView from "./SupplierNotesView";
 
 const NAV_TABS = [
   { key: "home",      icon: "🏠", label: "Home" },
@@ -79,7 +80,7 @@ export default function ChatDetailView() {
       {/* detail content */}
       <div style={isMobile ? { flex: 1, display: "flex", flexDirection: "column" } : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", maxWidth: "calc(100vw - 280px)" }}>
         <ChatHeader />
-        <NotesActivityView />
+        {activeCustomer?.contact_type === "supplier" ? <SupplierNotesView /> : <NotesActivityView />}
       </div>
 
       {/* ── LINK STOCK MODAL (inside detail view so it renders when chat is open) ── */}

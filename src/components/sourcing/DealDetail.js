@@ -9,6 +9,7 @@ import {
 } from "./SourcingHelpers";
 import SourcingCalculator from "./SourcingCalculator";
 import SourcingMessages from "./SourcingMessages";
+import SupplierNotesView from "../chat/SupplierNotesView";
 
 // ── Cost allocation helper ────────────────────────────────────────────────────
 function allocateLotCost(rows, lotCost) {
@@ -469,19 +470,13 @@ Write TWO reply versions. Return JSON only:
           </div>
         )}
 
-        <SourcingMessages
-          deal={d}
-          messages={messages}
-          msgsLoaded={msgsLoaded}
-          timelineRef={timelineRef}
-          gmailMsgs={gmailMsgs}
-          waMsgs={waMsgs}
-          setPasteText={setPasteText}
-          setPasteStep={setPasteStep}
-          setDetected={setDetected}
-          setShowPaste={setShowPaste}
-          addGmailNote={addGmailNote}
-        />
+        {/* Deal-specific notes — filtered to this deal */}
+        <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", minHeight: 300, display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid #F1F5F9", background: "#F8FAFC" }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: "#0F172A" }}>📝 Notes — {d.lot_name || "This Deal"}</span>
+          </div>
+          <SupplierNotesView filterDealId={d.id} />
+        </div>
 
         {/* ══════════════════════════════════════════════════════════════════
             DEAL INFO (collapsible edit)
