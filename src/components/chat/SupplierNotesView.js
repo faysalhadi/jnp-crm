@@ -16,8 +16,9 @@ const CHANNELS = [
   { id: "gmail",    label: "📧 Gmail",    color: "#EA4335", bg: "#FEF2F2" },
 ];
 
-export default function SupplierNotesView({ filterDealId = null }) {
-  const { activeCustomerId, activeCustomer, loadCustomers } = useCustomers();
+export default function SupplierNotesView({ filterDealId = null, customerId: propCustomerId = null }) {
+  const { activeCustomerId: ctxCustomerId, activeCustomer, loadCustomers } = useCustomers();
+  const activeCustomerId = propCustomerId || ctxCustomerId;
   const {
     showSupplierReply, setShowSupplierReply,
     supplierReplyCtx, setSupplierReplyCtx,

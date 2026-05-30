@@ -475,7 +475,7 @@ Write TWO reply versions. Return JSON only:
           <div style={{ padding: "10px 14px", borderBottom: "1px solid #F1F5F9", background: "#F8FAFC" }}>
             <span style={{ fontSize: 12, fontWeight: 800, color: "#0F172A" }}>📝 Notes — {d.lot_name || "This Deal"}</span>
           </div>
-          <SupplierNotesView filterDealId={d.id} />
+          <SupplierNotesView filterDealId={d.id} customerId={d.supplier_id || null} />
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════
