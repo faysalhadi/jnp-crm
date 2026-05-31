@@ -23,6 +23,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [waitingMatchCount, setWaitingMatchCount] = useState(0);
+  const [overdueReminders, setOverdueReminders] = useState(0);
 
   useEffect(() => {
     loadFollowUps();
