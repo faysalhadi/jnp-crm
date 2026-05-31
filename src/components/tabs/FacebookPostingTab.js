@@ -106,7 +106,7 @@ function buildStockSummary(stock) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function FacebookPostingTab() {
+export default function FacebookPostingTab({ manualInput = null, strategyNotes = "" }) {
   const { anthropicKey } = useAuth();
   const { stock }        = useStock();
 
@@ -143,7 +143,7 @@ export default function FacebookPostingTab() {
   const generateAll = useCallback(async () => {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
     setGenerating(true);
-    const stockSummary = buildStockSummary(stock);
+    const stockSummary = getStockContext();
     const today        = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     const newCaptions  = {};
     const linkNote     = includeLink
@@ -157,6 +157,7 @@ export default function FacebookPostingTab() {
 Date: ${today}
 Stock available:\n${stockSummary}
 Tone: ${BATCH_AUDIENCE.a.tone}
+${strategyNotes ? "Market strategy notes (apply these): " + strategyNotes.slice(0,300) : ""}
 Format: 6-8 lines, emojis, include WhatsApp number ${WHATSAPP}, location Sharjah.
 ${linkNote}`
       );
