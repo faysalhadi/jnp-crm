@@ -7,7 +7,9 @@ import { useStock } from "../../context/StockContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useSales } from "../../context/SalesContext";
 
-const WHATSAPP_NUMBER = "+971409423162";
+const WHATSAPP_NUMBER = "+971509423162";
+const CHANNEL_LINK    = "https://whatsapp.com/channel/0029Vb818z5GufIwfVtYoB0z";
+const CHANNEL_NAME    = "Vertex Tech Trading | Wholesale Deals";
 const BUSINESS_NAME   = "Laptop for Less";
 const LOCATION        = "Sharjah, UAE";
 

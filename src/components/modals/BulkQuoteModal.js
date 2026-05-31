@@ -104,7 +104,7 @@ Per device:  ${fmtAED(perDevice)}
 Total (${useDevices.length} units):  *${fmtAED(clientTotal)}*
 
 📍 Sharjah, UAE
-📱 +971409423162`;
+📱 +971509423162`;
   }
 
   function copyQuote() {

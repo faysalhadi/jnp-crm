@@ -3,7 +3,9 @@ import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { FACEBOOK_GROUPS } from "../../constants/facebookGroups";
 
-const WHATSAPP = "+971409423162";
+const WHATSAPP  = "+971509423162";
+const CHANNEL   = "https://whatsapp.com/channel/0029Vb818z5GufIwfVtYoB0z";
+const CHAN_NAME  = "Vertex Tech Trading | Wholesale Deals";
 const BIZ      = "Laptop for Less";
 const LOCATION = "Sharjah, UAE";
 
@@ -130,6 +132,13 @@ export default function FacebookPostingTab() {
     } catch {}
   }, []); // eslint-disable-line
 
+  // Mix strategy: alternate link/no-link by day
+  // Even days = no link (better reach), Odd days = with channel link (grows followers)
+  const includeLink = getDayIndex() % 2 === 1;
+  const ctaNoLink   = `📱 WhatsApp: ${WHATSAPP}\n🔔 Search "${CHAN_NAME}" on WhatsApp Channels`;
+  const ctaWithLink = `📱 WhatsApp: ${WHATSAPP}\n🔔 Follow our channel: ${CHANNEL}`;
+  const cta         = includeLink ? ctaWithLink : ctaNoLink;
+
   // Generate all captions
   const generateAll = useCallback(async () => {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
@@ -137,6 +146,9 @@ export default function FacebookPostingTab() {
     const stockSummary = buildStockSummary(stock);
     const today        = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     const newCaptions  = {};
+    const linkNote     = includeLink
+      ? "End with the WhatsApp number and this exact line: 🔔 Follow our channel: " + CHANNEL
+      : "End with the WhatsApp number and: 🔔 Search \"" + CHAN_NAME + "\" on WhatsApp Channels";
 
     // Batch A caption (UAE retail)
     try {
@@ -145,9 +157,10 @@ export default function FacebookPostingTab() {
 Date: ${today}
 Stock available:\n${stockSummary}
 Tone: ${BATCH_AUDIENCE.a.tone}
-Format: 6-8 lines, emojis, include WhatsApp number ${WHATSAPP}, location Sharjah.`
+Format: 6-8 lines, emojis, include WhatsApp number ${WHATSAPP}, location Sharjah.
+${linkNote}`
       );
-    } catch { newCaptions.a = `Fresh stock available! 🔥\n\nContact us on WhatsApp: ${WHATSAPP}\n${LOCATION}`; }
+    } catch { newCaptions.a = `Fresh stock available! 🔥\n\nContact us on WhatsApp: ${WHATSAPP}\n${cta}`; }
 
     // Batch B caption (international)
     try {
@@ -156,9 +169,10 @@ Format: 6-8 lines, emojis, include WhatsApp number ${WHATSAPP}, location Sharjah
 Date: ${today}
 Stock available:\n${stockSummary}
 Tone: ${BATCH_AUDIENCE.b.tone}
-Format: 6-8 lines, emojis, mention export/shipping available, include WhatsApp ${WHATSAPP}.`
+Format: 6-8 lines, emojis, mention export/shipping available, include WhatsApp ${WHATSAPP}.
+${linkNote}`
       );
-    } catch { newCaptions.b = `Stock available for export! 📦\n\nWhatsApp: ${WHATSAPP}`; }
+    } catch { newCaptions.b = `Stock available for export! 📦\n\nWhatsApp: ${WHATSAPP}\n${cta}`; }
 
     // Batch C captions per region
     for (const region of REGIONS) {
@@ -171,15 +185,16 @@ Date: ${today}
 Stock available:\n${stockSummary}
 Tone: ${region.tone}
 Audience: ${regionGroups.length} groups in this region today
-Format: 6-8 lines, emojis, include WhatsApp ${WHATSAPP}. Adapt language/angle for this audience.`
+Format: 6-8 lines, emojis, include WhatsApp ${WHATSAPP}. Adapt language/angle for this audience.
+${linkNote}`
         );
-      } catch { newCaptions[region.id] = `Stock available 🔥\n\nWhatsApp: ${WHATSAPP}`; }
+      } catch { newCaptions[region.id] = `Stock available 🔥\n\nWhatsApp: ${WHATSAPP}\n${cta}`; }
     }
 
     setCaptions(newCaptions);
     localStorage.setItem(`fb_captions_${todayKey}`, JSON.stringify(newCaptions));
     setGenerating(false);
-  }, [anthropicKey, stock, byRegion, todayKey]); // eslint-disable-line
+  }, [anthropicKey, stock, byRegion, todayKey, includeLink, cta]); // eslint-disable-line
 
   function copyCaption(key) {
     const text = captions[key];
@@ -211,8 +226,12 @@ Format: 6-8 lines, emojis, include WhatsApp ${WHATSAPP}. Adapt language/angle fo
       {/* ── Header ── */}
       <div style={{ background: "linear-gradient(135deg, #1877F2, #0a4fb5)", borderRadius: 16, padding: 16, color: "#fff" }}>
         <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>📘 Facebook Daily Posting</div>
-        <div style={{ fontSize: 11, opacity: 0.85, marginBottom: 10 }}>
+        <div style={{ fontSize: 11, opacity: 0.85, marginBottom: 6 }}>
           {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })} · Cycle day {cycleDay}/7
+        </div>
+        <div style={{ fontSize: 10, padding: "4px 10px", borderRadius: 20, display: "inline-block", marginBottom: 10,
+          background: includeLink ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.15)" }}>
+          {includeLink ? "🔗 Today: posts include channel link" : "📢 Today: posts without link (wider reach)"}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
           {[
