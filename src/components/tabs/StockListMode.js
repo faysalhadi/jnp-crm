@@ -1,10 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useStock } from "../../context/StockContext";
+import { useCustomers } from "../../context/CustomerContext";
+import { supabase } from "../../supabase";
 import { useAuth } from "../../context/AuthContext";
 
 export default function StockListMode() {
   const { stock } = useStock();
+  const { customers } = useCustomers();
   const { anthropicKey } = useAuth();
+  const [consignmentStock, setConsignmentStock] = useState([]);
+
+  useEffect(() => {
+    supabase.from("consignment_items").select("*, customers(name)").eq("status", "available")
+      .then(({ data }) => setConsignmentStock(data || []));
+  }, []); // eslint-disable-line
 
   const [query, setQuery]           = useState("");
   const [generating, setGenerating] = useState(false);
@@ -14,6 +23,19 @@ export default function StockListMode() {
   const [error, setError]           = useState(null);
 
   const availableStock = stock.filter(s => s.status === "available");
+  const allAvailable   = [
+    ...availableStock,
+    ...consignmentStock.map(c => ({
+      ...c,
+      brand:      c.brand,
+      model:      c.model,
+      cost_price: c.trader_price,
+      max_price:  c.your_price,
+      status:     "available",
+      _consignment: true,
+      _traderName:  c.customers?.name || "Trader",
+    })),
+  ];
 
   async function generateList() {
     if (!query.trim()) return;
@@ -23,7 +45,7 @@ export default function StockListMode() {
     setError(null);
     setClientPrice("");
 
-    const stockLines = availableStock.map((s, i) =>
+    const stockLines = allAvailable.map((s, i) =>
       `${i + 1}. [ID:${s.id}] ${s.brand || ""} ${s.model || ""} | ${s.processor || "—"} | ${s.ram || "—"} RAM | ${s.ssd || "—"} SSD | Grade ${s.condition || "—"} | AED ${s.max_price || 0}`
     ).join("\n");
 
@@ -73,9 +95,9 @@ For whatsapp_text format:
       const clean = raw.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
 
-      // Enrich items with cost_price from local stock
+      // Enrich items with cost_price from local or consignment stock
       const enriched = (parsed.items || []).map(item => {
-        const local = availableStock.find(s => s.id === item.id);
+        const local = allAvailable.find(s => s.id === item.id);
         return { ...item, cost_price: local?.cost_price || 0 };
       });
 

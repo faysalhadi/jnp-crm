@@ -9,6 +9,7 @@ import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import FollowUpPanel from "./FollowUpPanel";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
+import ConsignmentPanel from "./ConsignmentPanel";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
 
@@ -356,6 +357,9 @@ export default function ChatHeader() {
 
       {/* Follow-up, Notes & Activity Panel */}
       <FollowUpPanel />
+
+      {/* Consignment Panel — traders only */}
+      {activeCustomer?.contact_type === "trader" && <ConsignmentPanel />}
 
       {/* ADD DEAL FORM */}
       {showAddDeal && (
