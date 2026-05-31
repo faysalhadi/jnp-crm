@@ -67,6 +67,10 @@ export default function MarketingTab({ stock }) {
   const [generating, setGenerating]         = useState({});
   const [copied, setCopied]                 = useState({});
   const [postedDates, setPostedDates]       = useState({});
+  const [postMode, setPostMode]             = useState("auto"); // "auto" | "manual"
+  const [manualInput, setManualInput]       = useState("");
+  const [strategyNotes, setStrategyNotes]   = useState("");
+  const [postFeedback, setPostFeedback]     = useState({}); // { platformId: "none"|"few"|"many" }
 
   // Weekly plan
   const [weeklyPlan, setWeeklyPlan]           = useState(null);
@@ -92,6 +96,8 @@ export default function MarketingTab({ stock }) {
       const p = JSON.parse(s);
       if (p.weekKey === todayKey.slice(0, 7)) setWeeklyPlan(p);
     }} catch {}
+    try { const s = localStorage.getItem("jnp_strategy_notes"); if (s) setStrategyNotes(s); } catch {}
+    try { const s = localStorage.getItem(`jnp_post_feedback_${new Date().toISOString().slice(0,10)}`); if (s) setPostFeedback(JSON.parse(s)); } catch {}
   }, []); // eslint-disable-line
 
   const availableStock = (stock || []).filter(s => s.status === "available");
@@ -105,13 +111,45 @@ export default function MarketingTab({ stock }) {
   // ── Generate a single platform post ──────────────────────────────────────
   async function generatePost(platformId) {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
-    if (!availableStock.length) { alert("No available stock to feature."); return; }
+    if (postMode === "auto" && !availableStock.length) { alert("No available stock to feature."); return; }
+    if (postMode === "manual" && !manualInput.trim()) { alert("Please describe the devices you want to feature."); return; }
     setGenerating(p => ({ ...p, [platformId]: true }));
 
-    const platform = PLATFORMS.find(p => p.id === platformId);
+    const platform    = PLATFORMS.find(p => p.id === platformId);
     const recentSales = (salesHistory || []).slice(0, 3).map(s =>
       `${s.brand || ""} ${s.model || ""} AED ${s.sold_price || s.value || 0}`
     ).join(", ");
+
+    // Stock context — manual or auto
+    const stockContext = postMode === "manual"
+      ? `Devices to feature today (specified by owner):
+${manualInput.trim()}`
+      : `Available Stock:
+${stockSummary()}`;
+
+    // Strategy notes context
+    const strategyContext = strategyNotes.trim()
+      ? `
+Your market strategy notes (always apply these):
+${strategyNotes.trim()}`
+      : "";
+
+    // Performance hints from feedback
+    const feedbackKey = `jnp_post_feedback_history`;
+    let perfContext = "";
+    try {
+      const hist = JSON.parse(localStorage.getItem(feedbackKey) || "{}");
+      const platHist = Object.entries(hist)
+        .filter(([k]) => k.startsWith(platformId))
+        .slice(-10)
+        .map(([, v]) => v);
+      if (platHist.length >= 3) {
+        const avgScore = platHist.reduce((s, v) => s + (v === "many" ? 3 : v === "few" ? 1 : 0), 0) / platHist.length;
+        if (avgScore > 2)      perfContext = "\nNote: Posts on this platform have been getting strong replies lately. Keep the same energy.";
+        else if (avgScore < 1) perfContext = "\nNote: Posts on this platform have been getting low replies lately. Try a fresher hook or angle.";
+      }
+    } catch {}
+
 
     const formatGuide = {
       whatsapp_status: "Short 3-5 lines. One device. Emoji. No hashtags. End with phone number.",
@@ -130,8 +168,7 @@ Business: ${BUSINESS_NAME}, ${LOCATION}
 WhatsApp: ${WHATSAPP_NUMBER}
 Date: ${today.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
 
-Available Stock:
-${stockSummary()}
+${stockContext}
 
 Recent Sales (for social proof): ${recentSales || "none"}
 
@@ -270,6 +307,7 @@ Include 3-4 posts per day across platforms. Mix live stock posts (need same-day 
     { key: "weekly",      label: "Weekly Plan" },
     { key: "library",     label: "Library" },
     { key: "groups",      label: "Groups" },
+    { key: "strategy",    label: "🎯 Strategy" },
     { key: "performance", label: "Performance" },
   ];
 
@@ -323,6 +361,48 @@ Include 3-4 posts per day across platforms. Mix live stock posts (need same-day 
               </button>
             </div>
 
+            {/* Mode toggle */}
+            <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: "1px solid #F1F5F9", marginBottom: 4 }}>
+              <button onClick={() => setPostMode("auto")}
+                style={{ flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                  background: postMode === "auto" ? "#6366F1" : "#F8FAFC",
+                  color:      postMode === "auto" ? "#fff"    : "#64748B" }}>
+                🤖 Auto — from stock
+              </button>
+              <button onClick={() => setPostMode("manual")}
+                style={{ flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                  background: postMode === "manual" ? "#6366F1" : "#F8FAFC",
+                  color:      postMode === "manual" ? "#fff"    : "#64748B" }}>
+                ✍️ Manual — I'll specify
+              </button>
+            </div>
+
+            {/* Manual input */}
+            {postMode === "manual" && (
+              <div style={{ marginBottom: 8 }}>
+                <textarea
+                  value={manualInput}
+                  onChange={e => setManualInput(e.target.value)}
+                  placeholder={"Describe what you want to feature today...\n\nExamples:\n• 5x HP EliteBook 840 G8 Grade A AED 1,750\n• MacBook Air M2, 8GB, 256GB, with Mohammed Trading AED 3,600\n• Clearing ThinkPad T470 Grade B — was 1,100 now 950\n• HP and Dell lot just arrived, mixed specs"}
+                  rows={5}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #6366F1",
+                    fontSize: 12, outline: "none", resize: "none", fontFamily: "inherit",
+                    lineHeight: 1.6, boxSizing: "border-box", color: "#334155", background: "#F8FAFC" }}
+                />
+                {strategyNotes && (
+                  <div style={{ fontSize: 10, color: "#6366F1", marginTop: 4, fontStyle: "italic" }}>
+                    🎯 Strategy notes active — Claude will apply your market knowledge
+                  </div>
+                )}
+              </div>
+            )}
+
+            {postMode === "auto" && strategyNotes && (
+              <div style={{ fontSize: 10, color: "#6366F1", marginBottom: 8, fontStyle: "italic", padding: "4px 8px", background: "#EEF2FF", borderRadius: 8 }}>
+                🎯 Strategy notes active — Claude will apply your market knowledge
+              </div>
+            )}
+
             {/* Platform cards */}
             {PLATFORMS.map(platform => {
               const post = generatedPosts[platform.id];
@@ -351,6 +431,42 @@ Include 3-4 posts per day across platforms. Mix live stock posts (need same-day 
                           background: copied[copyKey] ? "#ECFDF5" : "#F1F5F9", color: copied[copyKey] ? "#059669" : "#334155" }}>
                         {copied[copyKey] ? "✓ Copied!" : "📋 Copy"}
                       </button>
+                      {/* Feedback */}
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 10, color: "#94A3B8", marginBottom: 4 }}>How did this post do? (helps Claude improve)</div>
+                        <div style={{ display: "flex", gap: 5 }}>
+                          {[
+                            { key: "none", label: "😐 No replies" },
+                            { key: "few",  label: "👍 1-3 replies" },
+                            { key: "many", label: "🔥 4+ replies" },
+                          ].map(fb => {
+                            const isSelected = postFeedback[platform.id] === fb.key;
+                            return (
+                              <button key={fb.key} onClick={() => {
+                                const updated = { ...postFeedback, [platform.id]: fb.key };
+                                setPostFeedback(updated);
+                                localStorage.setItem(`jnp_post_feedback_${todayKey}`, JSON.stringify(updated));
+                                // Store in history for Claude to learn from
+                                try {
+                                  const hist = JSON.parse(localStorage.getItem("jnp_post_feedback_history") || "{}");
+                                  const key = `${platform.id}_${todayKey}`;
+                                  hist[key] = fb.key;
+                                  // Keep last 60 entries
+                                  const keys = Object.keys(hist);
+                                  if (keys.length > 60) delete hist[keys[0]];
+                                  localStorage.setItem("jnp_post_feedback_history", JSON.stringify(hist));
+                                } catch {}
+                              }}
+                                style={{ flex: 1, padding: "5px 4px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                                  background: isSelected ? "#EEF2FF" : "#F8FAFC",
+                                  color:      isSelected ? "#6366F1" : "#94A3B8",
+                                  outline: isSelected ? "1.5px solid #6366F1" : "none" }}>
+                                {fb.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
                   {!post && !isGenerating && (
@@ -502,6 +618,51 @@ Include 3-4 posts per day across platforms. Mix live stock posts (need same-day 
         {/* ── FACEBOOK TAB ── */}
         {activeMarketingTab === "facebook" && (
           <FacebookPostingTab />
+        )}
+
+        {/* ── STRATEGY TAB ── */}
+        {activeMarketingTab === "strategy" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #F1F5F9" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>🎯 Your Market Strategy</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 14, lineHeight: 1.6 }}>
+                Tell Claude what you know about your market. These notes are applied to every post you generate — auto or manual. Write anything that helps Claude understand your buyers and what works.
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", marginBottom: 6, letterSpacing: 0.5 }}>YOUR STRATEGY NOTES</div>
+              <textarea
+                value={strategyNotes}
+                onChange={e => {
+                  setStrategyNotes(e.target.value);
+                  localStorage.setItem("jnp_strategy_notes", e.target.value);
+                }}
+                placeholder={"Write what you know about your market...\n\nExamples:\n• HP EliteBook is my fastest-selling model\n• UAE buyers respond to Grade A and Sharjah pickup\n• Pakistani traders care about price — mention bulk discount\n• Always mention JNP Market area\n• Thursday evenings get most WhatsApp replies\n• MacBook Air M2 is in highest demand\n• Export shipping available for international groups"}
+                rows rows={12}
+                style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0",
+                  fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit",
+                  lineHeight: 1.7, boxSizing: "border-box", color: "#334155" }}
+              />
+              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8, lineHeight: 1.5 }}>
+                💡 These notes are saved automatically. Update them anytime as you learn what works.
+              </div>
+            </div>
+
+            {/* Tips */}
+            <div style={{ background: "#EEF2FF", borderRadius: 16, padding: 16, border: "1px solid #C7D2FE" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#4338CA", marginBottom: 8 }}>What to write here</div>
+              {[
+                "Which devices sell fastest in your market",
+                "What your buyers care about most (price, condition, specs, location)",
+                "Which groups or regions respond best to which angle",
+                "Days or times that get the most replies",
+                "Any local context (JNP Market, Sharjah pickup, delivery area)",
+                "Your competitive advantage (Grade A stock, fast delivery, bulk available)",
+              ].map((tip, i) => (
+                <div key={i} style={{ fontSize: 11, color: "#4338CA", padding: "4px 0", borderBottom: i < 5 ? "1px solid #C7D2FE" : "none" }}>
+                  → {tip}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* ── PERFORMANCE TAB ── */}
