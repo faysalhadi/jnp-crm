@@ -174,6 +174,9 @@ Recent Sales (for social proof): ${recentSales || "none"}
 
 Format guide: ${formatGuide[platformId] || "Professional, engaging post"}
 
+${strategyContext}
+${perfContext}
+
 Write the post now. Make it feel authentic, not corporate. Use emojis naturally.`;
 
     try {
