@@ -128,6 +128,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
           { label: "Revenue MTD", value: (() => { const total = revenue + partsRevMTD; return `AED ${total >= 1000 ? (total/1000).toFixed(1)+"k" : total}`; })(), color: "#10B981", bg: "#ECFDF5", icon: "💰" },
           { label: "In Stock", value: stock.filter(s => s.status === "available").length, color: "#F59E0B", bg: "#FFFBEB", icon: "📦" },
           { label: "Follow Ups", value: followUpsDue, color: "#EF4444", bg: "#FEF2F2", icon: "⏰", onClick: () => { setActiveTab("customers"); setFilter("overdue"); } },
+          { label: "Reminders", value: overdueReminders, color: "#6366F1", bg: "#EEF2FF", icon: "🔔", onClick: () => setActiveTab("reminders") },
         ].map(s => (
           <div key={s.label} onClick={s.onClick} style={{ background: s.bg, borderRadius: 16, padding: "14px 16px", cursor: s.onClick ? "pointer" : "default" }}>
             <div style={{ fontSize: 22, marginBottom: 4 }}>{s.icon}</div>
