@@ -10,6 +10,8 @@ import { useSales } from "../../context/SalesContext";
 const WHATSAPP_NUMBER = "+971509423162";
 const CHANNEL_LINK    = "https://whatsapp.com/channel/0029Vb818z5GufIwfVtYoB0z";
 const CHANNEL_NAME    = "Vertex Tech Trading | Wholesale Deals";
+const FB_PAGE_LINK    = "https://www.facebook.com/share/1C3UKfNAfs/";
+const FB_PAGE_NAME    = "Vertex Tech Trading";
 const BUSINESS_NAME   = "Laptop for Less";
 const LOCATION        = "Sharjah, UAE";
 
@@ -18,6 +20,8 @@ const PLATFORMS = [
   { id: "whatsapp_groups", label: "WA Groups",   emoji: "💬", color: "#128C7E", bg: "#ECFDF5" },
   { id: "instagram",       label: "Instagram",   emoji: "📸", color: "#E1306C", bg: "#FFF0F5" },
   { id: "facebook",        label: "Facebook",    emoji: "👍", color: "#1877F2", bg: "#EFF6FF" },
+  { id: "fb_personal",    label: "FB Personal",  emoji: "👤", color: "#1877F2", bg: "#EFF6FF" },
+  { id: "fb_business",    label: "FB Business",  emoji: "🏢", color: "#0a4fb5", bg: "#EEF2FF" },
   { id: "linkedin",        label: "LinkedIn",    emoji: "💼", color: "#0A66C2", bg: "#EFF6FF" },
   { id: "dubizzle",        label: "Dubizzle",    emoji: "🛒", color: "#FF6B35", bg: "#FFF5F0" },
 ];
@@ -116,6 +120,8 @@ export default function MarketingTab({ stock }) {
       facebook: "2-3 paragraph post. Friendly tone. List devices with specs. End with WhatsApp number and location.",
       linkedin: "Professional tone. 2-3 short paragraphs. Focus on bulk/B2B angle. No prices — 'contact for quote'. End with: Faisal Hadi | Laptop for Less | Sharjah UAE",
       dubizzle: "Title + description format. Specific specs. Condition grade. Price. Location. Contact.",
+      fb_personal: "First-person conversational tone. 5-7 lines. Personal storytelling angle (just got this in, loving this unit, popular model). 1 device featured. 3-4 casual emojis. End with personal message to WhatsApp number. No hashtags. Feels like a friend posting not a business.",
+      fb_business: "Professional brand tone. 8-12 lines. Business name Vertex Tech Trading. Feature 2-3 devices with clean spec bullets. Include WhatsApp number, page link, and channel link. End with 10-15 hashtags including #laptopsharjah #refurbishedlaptop #uaelaptop #vertextechtrading #wholesalelaptop #gradeAlaptop #sharjah #dubaideals #businesslaptop #hplaptop #delllaptop #lenovolaptop #thinkpad #elitebook #latitude",
     };
 
     const prompt = `Write a ${platform?.label} post for my laptop reselling business.
