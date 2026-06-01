@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { supabase } from "../../supabase";
 import { useUI } from "../../context/UIContext";
 import { useAuth } from "../../context/AuthContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -178,6 +179,7 @@ export default function MarketingTab({ stock }) {
 
   // Shared state
   const [mode, setMode]             = useState("auto");
+  const [consignmentStock, setConsignmentStock] = useState([]);
   const [manualInput, setManualInput] = useState("");
   const [strategyNotes, setStrategyNotes] = useState("");
   const [posts, setPosts]           = useState({});
@@ -192,6 +194,14 @@ export default function MarketingTab({ stock }) {
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [library, setLibrary]       = useState([]);
   const [libGenerating, setLibGenerating] = useState(false);
+
+  // Load consignment stock
+  useEffect(() => {
+    supabase.from("consignment_items")
+      .select("*, customers(name)")
+      .eq("status", "available")
+      .then(({ data }) => setConsignmentStock(data || []));
+  }, []);
 
   // Load persisted state
   useEffect(() => {
@@ -208,9 +218,13 @@ export default function MarketingTab({ stock }) {
   const availableStock = (stock || []).filter(s => s.status === "available");
 
   function stockSummary() {
-    return availableStock.slice(0, 8).map(s =>
+    const ownedLines = availableStock.slice(0, 6).map(s =>
       `${s.brand || ""} ${s.model || ""} | ${s.processor || ""} | ${s.ram || ""} | ${s.ssd || ""} | Grade ${s.condition || ""} | AED ${s.max_price || 0}`
-    ).join("\n") || "Various laptops available";
+    );
+    const consignLines = consignmentStock.slice(0, 4).map(c =>
+      `${c.brand || ""} ${c.model || ""} | ${c.processor || ""} | ${c.ram || ""} | ${c.ssd || ""} | Grade ${c.condition || ""} | AED ${c.your_price || 0} [Consignment — with ${c.customers?.name || "Trader"}]`
+    );
+    return [...ownedLines, ...consignLines].join("\n") || "Various laptops available";
   }
 
   function getStockContext() {
@@ -347,7 +361,7 @@ export default function MarketingTab({ stock }) {
             </div>
 
             {/* Auto/Manual */}
-            <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length} />
+            <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length + consignmentStock.length} />
 
             {strategyNotes && (
               <div style={{ padding: "7px 12px", borderRadius: 10, background: "#EEF2FF", border: "1px solid #C7D2FE", fontSize: 11, color: "#4338CA", fontWeight: 600 }}>
@@ -415,7 +429,7 @@ export default function MarketingTab({ stock }) {
             {/* Auto/Manual — for personal and business only */}
             {fbMode !== "groups" && (
               <>
-                <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length} />
+                <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length + consignmentStock.length} />
                 {strategyNotes && (
                   <div style={{ padding: "7px 12px", borderRadius: 10, background: "#EEF2FF", border: "1px solid #C7D2FE", fontSize: 11, color: "#4338CA", fontWeight: 600 }}>
                     🎯 Strategy notes active
@@ -428,7 +442,7 @@ export default function MarketingTab({ stock }) {
             {fbMode === "groups" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* Manual input for groups too */}
-                <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length} />
+                <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length + consignmentStock.length} />
                 {mode === "manual" && manualInput && (
                   <div style={{ padding: "8px 12px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A", fontSize: 11, color: "#D97706", fontWeight: 600 }}>
                     ✍️ Manual mode active — group posts will feature your specified devices across all batches and regions
@@ -467,7 +481,7 @@ export default function MarketingTab({ stock }) {
         {activeMarketingTab === "others" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-            <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length} />
+            <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length + consignmentStock.length} />
 
             {strategyNotes && (
               <div style={{ padding: "7px 12px", borderRadius: 10, background: "#EEF2FF", border: "1px solid #C7D2FE", fontSize: 11, color: "#4338CA", fontWeight: 600 }}>

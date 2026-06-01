@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { FACEBOOK_GROUPS } from "../../constants/facebookGroups";
@@ -114,6 +114,11 @@ export default function FacebookPostingTab({ manualInput = null, strategyNotes =
   const { slice: todayCGroups, byRegion, dayIdx } = getTodayBatchC();
   const cycleDay = (dayIdx % 7) + 1;
 
+  const manualInputRef    = useRef(manualInput);
+  const strategyNotesRef  = useRef(strategyNotes);
+  useEffect(() => { manualInputRef.current = manualInput; }, [manualInput]);
+  useEffect(() => { strategyNotesRef.current = strategyNotes; }, [strategyNotes]);
+
   const [captions, setCaptions]       = useState({});
   const [generating, setGenerating]   = useState(false);
   const [copied, setCopied]           = useState({});
@@ -143,7 +148,10 @@ export default function FacebookPostingTab({ manualInput = null, strategyNotes =
   const generateAll = useCallback(async () => {
     if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
     setGenerating(true);
-    const stockSummary = getStockContext();
+    const currentManual = manualInputRef.current;
+    const stockSummary = (currentManual && currentManual.trim())
+      ? `Devices to feature (specified by owner):\n${currentManual.trim()}`
+      : buildStockSummary(stock);
     const today        = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     const newCaptions  = {};
     const linkNote     = includeLink
@@ -157,7 +165,7 @@ export default function FacebookPostingTab({ manualInput = null, strategyNotes =
 Date: ${today}
 Stock available:\n${stockSummary}
 Tone: ${BATCH_AUDIENCE.a.tone}
-${strategyNotes ? "Market strategy notes (apply these): " + strategyNotes.slice(0,300) : ""}
+${strategyNotesRef.current ? "Market strategy notes (apply these): " + strategyNotesRef.current.slice(0,300) : ""}
 Format: 6-8 lines, emojis, include WhatsApp number ${WHATSAPP}, location Sharjah.
 ${linkNote}`
       );

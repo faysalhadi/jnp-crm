@@ -9,7 +9,7 @@ export function UIProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
-  const [activeMarketingTab, setActiveMarketingTab] = useState("today");
+  const [activeMarketingTab, setActiveMarketingTab] = useState("whatsapp");
   const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
