@@ -633,14 +633,49 @@ export default function MarketingTab({ stock }) {
                 setWeeklyLoading(true);
                 const openDeals = customers.filter(c => !c.contact_type || c.contact_type === "client").flatMap(c => (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost")).length;
                 const topWanted = customers.flatMap(c => (c.deals || []).filter(d => d.stage !== "closed").map(d => [d.brand, d.model].filter(Boolean).join(" "))).filter(Boolean).slice(0, 5).join(", ");
+                const weekKey   = todayKey.slice(0, 7);
+                const brands    = [...new Set(availableStock.map(s => s.brand))].filter(Boolean).slice(0, 5).join(", ");
+                const prompt    = [
+                  "Create a 7-day social media content plan for a UAE laptop reseller.",
+                  "Business: " + BUSINESS_NAME + ", " + LOCATION,
+                  "WhatsApp: " + WHATSAPP_NUMBER,
+                  "Available stock: " + availableStock.length + " items. Top brands: " + (brands || "HP, Dell, Lenovo"),
+                  "Open client deals: " + openDeals + ". Most wanted: " + (topWanted || "various"),
+                  strategyNotes ? "Strategy notes: " + strategyNotes.slice(0, 300) : "",
+                  "",
+                  "Return ONLY valid JSON, no markdown, no extra text:",
+                  JSON.stringify({
+                    weekKey,
+                    strategy: "FILL: 2-3 sentence weekly strategy",
+                    days: ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map(day => ({
+                      day,
+                      theme: "FILL: day theme",
+                      posts: [
+                        { platform: "whatsapp_status", time: "9:00 AM", content_type: "live", caption: "FILL or [GENERATE ON DAY]", note: "FILL: brief instruction" },
+                        { platform: "instagram", time: "11:00 AM", content_type: "evergreen", caption: "FILL: pre-written caption", note: "FILL" },
+                        { platform: "fb_personal", time: "2:00 PM", content_type: "live", caption: "[GENERATE ON DAY]", note: "FILL" },
+                      ]
+                    }))
+                  }, null, 2),
+                  "",
+                  "Replace all FILL values with real content. Keep [GENERATE ON DAY] for stock posts that need live data. Write actual captions for evergreen posts."
+                ].filter(Boolean).join("\n");
                 try {
-                  const raw = await callClaude(anthropicKey, `Create a 7-day social media content plan for ${BUSINESS_NAME}, ${LOCATION}. WhatsApp: ${WHATSAPP_NUMBER}. Available stock: ${availableStock.length} items. Top brands: ${[...new Set(availableStock.map(s => s.brand))].slice(0,5).join(", ")}. Open client deals: ${openDeals}. Most wanted: ${topWanted || "various"}. ${strategyNotes ? "Strategy notes: " + strategyNotes.slice(0, 200) : ""}
-
-Return JSON only: { "weekKey": "${todayKey.slice(0,7)}", "strategy": "2-3 sentence strategy", "days": [{ "day": "Monday", "theme": "theme", "posts": [{ "platform": "whatsapp_groups", "time": "9:00 AM", "content_type": "live|evergreen", "caption": "pre-written or [GENERATE ON DAY]", "note": "brief instruction" }] }] }. 3-4 posts per day across platforms.`);
-                  const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+                  const res = await fetch("https://api.anthropic.com/v1/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+                    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4000, messages: [{ role: "user", content: prompt }] }),
+                  });
+                  const data  = await res.json();
+                  const raw   = data?.content?.[0]?.text || "";
+                  const clean = raw.replace(/```json|```/g, "").trim();
+                  const parsed = JSON.parse(clean);
                   setWeeklyPlan(parsed);
                   localStorage.setItem("jnp_weekly_plan", JSON.stringify(parsed));
-                } catch { alert("Failed. Try again."); }
+                } catch (e) {
+                  console.error("Weekly plan error:", e);
+                  alert("Failed to generate weekly plan. Make sure you have API credits and try again.");
+                }
                 setWeeklyLoading(false);
               }} disabled={weeklyLoading}
                 style={{ width: "100%", padding: 12, borderRadius: 12, border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer",
