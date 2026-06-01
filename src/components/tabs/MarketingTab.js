@@ -338,6 +338,43 @@ export default function MarketingTab({ stock }) {
     return "";
   }
 
+  const TODAY_PLATFORMS = [
+    { id: "whatsapp_status",  label: "WA Status",      emoji: "📲", color: "#25D366", bg: "#F0FDF4",  time: "9:00 AM" },
+    { id: "whatsapp_channel", label: "WA Channel",     emoji: "📡", color: "#128C7E", bg: "#ECFDF5",  time: "9:00 AM" },
+    { id: "instagram",        label: "Instagram",       emoji: "📸", color: "#E1306C", bg: "#FFF0F5",  time: "11:00 AM" },
+    { id: "fb_personal",      label: "FB Personal",     emoji: "👤", color: "#1877F2", bg: "#EFF6FF",  time: "11:00 AM" },
+    { id: "fb_business",      label: "FB Business",     emoji: "🏢", color: "#0a4fb5", bg: "#EEF2FF",  time: "2:00 PM" },
+    { id: "linkedin",         label: "LinkedIn",        emoji: "💼", color: "#0A66C2", bg: "#EFF6FF",  time: "2:00 PM" },
+    { id: "dubizzle",         label: "Dubizzle",        emoji: "🛒", color: "#FF6B35", bg: "#FFF5F0",  time: "Any time" },
+  ];
+
+  const [generatingAll, setGeneratingAll] = useState(false);
+  const [allProgress, setAllProgress]     = useState(0);
+
+  async function generateAllPlatforms() {
+    if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
+    if (mode === "manual" && !manualInput.trim()) { alert("Please describe what you want to feature."); return; }
+    setGeneratingAll(true);
+    setAllProgress(0);
+    const platforms = TODAY_PLATFORMS;
+    for (let i = 0; i < platforms.length; i++) {
+      const p = platforms[i];
+      setAllProgress(Math.round(((i) / platforms.length) * 100));
+      try {
+        const postType = selectedTypes[p.id] || getDefaultType(p.id);
+        const text = await generatePlatformPost({
+          key: anthropicKey, platformId: p.id, postType,
+          stockContext: getStockContext(),
+          strategyNotes: strategyNotes + getPerfHint(p.id),
+          recentSales: getRecentSales(), today: todayStr,
+        });
+        setPosts(prev => ({ ...prev, [p.id]: text }));
+      } catch {}
+    }
+    setAllProgress(100);
+    setGeneratingAll(false);
+  }
+
   async function generate(platformId, overrideType = null) {
     if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
     if (mode === "manual" && !manualInput.trim()) { alert("Please describe what you want to feature."); return; }
@@ -401,6 +438,7 @@ export default function MarketingTab({ stock }) {
   }).filter(s => s.leads > 0).sort((a, b) => b.leads - a.leads);
 
   const TABS = [
+    { key: "today",     label: "📋 Today" },
     { key: "whatsapp",  label: "💬 WhatsApp" },
     { key: "facebook",  label: "📘 Facebook" },
     { key: "others",    label: "📱 Others" },
@@ -428,6 +466,100 @@ export default function MarketingTab({ stock }) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "12px 12px 100px" : "16px 24px 40px" }}>
+
+        {/* ── TODAY TAB ── */}
+        {activeMarketingTab === "today" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+            {/* Date + streak */}
+            <div style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
+              <div style={{ flex: 2, background: "linear-gradient(135deg, #6366F1, #7C3AED)", borderRadius: 16, padding: "14px 16px", color: "#fff" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 2 }}>
+                  {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.8 }}>
+                  {TODAY_PLATFORMS.length} platforms · {Object.values(posts).filter(Boolean).length} generated
+                </div>
+              </div>
+              <div style={{ flex: 1, background: "#fff", borderRadius: 16, padding: "10px 12px", border: "1px solid #F1F5F9", textAlign: "center" }}>
+                <div style={{ fontSize: 22 }}>🔥</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>{streak}</div>
+                <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700 }}>STREAK</div>
+              </div>
+              <button onClick={markPosted} disabled={!!postedDates[todayKey]}
+                style={{ flex: 1, borderRadius: 16, border: "none", fontSize: 10, fontWeight: 800, cursor: postedDates[todayKey] ? "default" : "pointer",
+                  background: postedDates[todayKey] ? "#ECFDF5" : "#10B981", color: postedDates[todayKey] ? "#059669" : "#fff" }}>
+                {postedDates[todayKey] ? "✅ Done" : "Mark Posted"}
+              </button>
+            </div>
+
+            {/* Auto/Manual */}
+            <StockInput mode={mode} setMode={setMode} manualInput={manualInput} setManualInput={setManualInput} stockCount={availableStock.length + consignmentStock.length} />
+
+            {strategyNotes && (
+              <div style={{ padding: "7px 12px", borderRadius: 10, background: "#EEF2FF", border: "1px solid #C7D2FE", fontSize: 11, color: "#4338CA", fontWeight: 600 }}>
+                🎯 Strategy notes active — applied to all posts
+              </div>
+            )}
+
+            {/* Generate all button */}
+            <button onClick={generateAllPlatforms} disabled={generatingAll}
+              style={{ width: "100%", padding: 14, borderRadius: 14, border: "none", fontWeight: 800, fontSize: 14, cursor: generatingAll ? "not-allowed" : "pointer",
+                background: generatingAll ? "#E2E8F0" : "linear-gradient(135deg, #6366F1, #7C3AED)",
+                color: generatingAll ? "#94A3B8" : "#fff" }}>
+              {generatingAll
+                ? `⏳ Generating... ${allProgress}%`
+                : `⚡ Generate All ${TODAY_PLATFORMS.length} Platforms`}
+            </button>
+
+            {generatingAll && (
+              <div style={{ height: 4, background: "#E2E8F0", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${allProgress}%`, background: "#6366F1", borderRadius: 2, transition: "width 0.3s" }} />
+              </div>
+            )}
+
+            {/* Time groups */}
+            {["9:00 AM", "11:00 AM", "2:00 PM", "Any time"].map(timeSlot => {
+              const slotPlatforms = TODAY_PLATFORMS.filter(p => p.time === timeSlot);
+              return (
+                <div key={timeSlot}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: "#94A3B8", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                      ⏰ {timeSlot}
+                    </div>
+                    <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {slotPlatforms.map(p => (
+                      <PlatformCard key={p.id}
+                        platformId={p.id} label={p.label} emoji={p.emoji} color={p.color} bg={p.bg}
+                        post={posts[p.id]} generating={!!generating[p.id]} copied={!!copied[p.id]}
+                        onGenerate={() => generate(p.id)}
+                        onRegenerate={() => generate(p.id)}
+                        onCopy={() => copy(posts[p.id], p.id)}
+                        selectedType={selectedTypes[p.id] || null}
+                        onTypeChange={t => setSelectedTypes(prev => ({ ...prev, [p.id]: t }))} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Facebook groups reminder */}
+            <div style={{ padding: "12px 14px", borderRadius: 14, background: "#EFF6FF", border: "1px solid #BFDBFE", display: "flex", gap: 10, alignItems: "center" }}>
+              <span style={{ fontSize: 20 }}>📘</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#1877F2" }}>Facebook Groups (205 groups)</div>
+                <div style={{ fontSize: 11, color: "#3B82F6" }}>Go to Facebook tab → Groups for Batch A/B/C posting with rotation</div>
+              </div>
+              <button onClick={() => setActiveMarketingTab("facebook")}
+                style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "#1877F2", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                Open →
+              </button>
+            </div>
+
+          </div>
+        )}
 
         {/* ── WHATSAPP TAB ── */}
         {activeMarketingTab === "whatsapp" && (
