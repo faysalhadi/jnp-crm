@@ -46,6 +46,36 @@ async function callClaude(key, prompt, system = "") {
   return data?.content?.[0]?.text || "";
 }
 
+// ── Content types ────────────────────────────────────────────────────────────
+const CONTENT_TYPES = {
+  stock:        { id: "stock",        label: "📦 Stock Post",      desc: "What's available for sale today" },
+  sold:         { id: "sold",         label: "✅ Sold Post",        desc: "Social proof — devices delivered" },
+  educational:  { id: "educational",  label: "📖 Educational",      desc: "Teach something valuable" },
+  social_proof: { id: "social_proof", label: "🌟 Social Proof",     desc: "Testimonial or delivery story" },
+  behind:       { id: "behind",       label: "🎬 Behind Scenes",    desc: "Show your process, builds trust" },
+  question:     { id: "question",     label: "❓ Engagement",       desc: "Ask audience something" },
+  b2b:          { id: "b2b",          label: "💼 B2B / Bulk",       desc: "Target businesses and bulk buyers" },
+  clearance:    { id: "clearance",    label: "🔥 Clearance",        desc: "Price drop or clearing stock" },
+  announcement: { id: "announcement", label: "📣 Announcement",    desc: "New arrival or upcoming stock" },
+};
+
+// Day defaults: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+const DAY_DEFAULTS = {
+  whatsapp_status:  ["announcement","sold","clearance","stock","stock","sold","announcement"],
+  whatsapp_channel: ["announcement","stock","sold","educational","stock","sold","announcement"],
+  instagram:        ["stock","stock","behind","educational","stock","social_proof","question"],
+  fb_personal:      ["stock","stock","behind","question","stock","social_proof","announcement"],
+  fb_business:      ["stock","announcement","sold","educational","stock","social_proof","b2b"],
+  linkedin:         ["b2b","b2b","educational","b2b","b2b","announcement","b2b"],
+};
+
+function getDefaultType(platformId) {
+  const day  = new Date().getDay(); // 0=Sun
+  const arr  = DAY_DEFAULTS[platformId];
+  if (!arr) return "stock";
+  return arr[day] || "stock";
+}
+
 // ── Format guides per platform ────────────────────────────────────────────────
 const FORMAT_GUIDES = {
   whatsapp_status:  "Short 3-5 lines. One device. Emoji. No hashtags. End with WhatsApp number.",
@@ -57,9 +87,24 @@ const FORMAT_GUIDES = {
   fb_business:      `Professional brand tone. 8-12 lines. Brand: ${FB_PAGE_NAME}. 2-3 devices with spec bullets. WhatsApp + page link + channel link. End with 12-15 hashtags: #laptopsharjah #refurbishedlaptop #uaelaptop #vertextechtrading #wholesalelaptop #gradeAlaptop #sharjah #dubaideals #businesslaptop #hplaptop #delllaptop #lenovolaptop #thinkpad #elitebook #latitude`,
 };
 
+// ── Content type instructions ────────────────────────────────────────────────
+const CONTENT_TYPE_INSTRUCTIONS = {
+  stock:        "Feature the available devices. Show specs, condition, price. Create desire to buy now.",
+  sold:         "Write a sold/delivered post. Mention device and location (city). No specific price needed. Social proof angle — happy customer, quick delivery. Do NOT list current stock.",
+  educational:  "Write an educational post. Topics: what Grade A means, how to check refurb quality, why refurbished saves money, what specs matter for business use. NO stock listing. Value-first.",
+  social_proof: "Write a trust/testimonial post. A customer received their laptop and is happy. Mention something specific (fast delivery, great condition, good price). Builds confidence in buying.",
+  behind:       "Write a behind-the-scenes post. Show the process — checking stock, preparing a lot, sourcing from UK, testing devices. Makes the business feel real and trustworthy. Personal tone.",
+  question:     "Write an engagement question post. Ask the audience something about laptops/tech. Examples: HP vs Dell, which processor do you prefer, home vs office use. Gets comments and shares.",
+  b2b:          "Write a post targeting businesses needing laptops for their team. Focus on bulk availability, Grade A quality, quick delivery, cost savings vs new. Professional tone. No prices — 'contact for quote'.",
+  clearance:    "Write a clearance/price drop post. Urgency angle. Limited units available at reduced price. Good deal, don't miss out. Include price.",
+  announcement: "Write a new arrival announcement. Something just came in or is coming soon. Creates anticipation. Can mention what's expected without full specs.",
+};
+
 // ── Core generate function ────────────────────────────────────────────────────
-async function generatePlatformPost({ key, platformId, stockContext, strategyNotes, recentSales, today }) {
-  const guide = FORMAT_GUIDES[platformId] || "Professional engaging post.";
+async function generatePlatformPost({ key, platformId, postType, stockContext, strategyNotes, recentSales, today }) {
+  const guide       = FORMAT_GUIDES[platformId] || "Professional engaging post.";
+  const typeInstr   = CONTENT_TYPE_INSTRUCTIONS[postType] || CONTENT_TYPE_INSTRUCTIONS.stock;
+  const typeName    = CONTENT_TYPES[postType]?.label || "Stock Post";
   const strategyCtx = strategyNotes?.trim()
     ? `\nYour market strategy (always apply):\n${strategyNotes.trim()}`
     : "";
@@ -73,11 +118,13 @@ async function generatePlatformPost({ key, platformId, stockContext, strategyNot
     extras = `\nEnd with WhatsApp: ${WHATSAPP_NUMBER}`;
   }
 
-  const prompt = `Write a ${platformId.replace(/_/g, " ")} post for my laptop reselling business.
+  const prompt = `Write a ${typeName} for ${platformId.replace(/_/g, " ")}.
 
 Business: ${BUSINESS_NAME}, ${LOCATION}
 WhatsApp: ${WHATSAPP_NUMBER}
 Date: ${today}
+
+Content type instruction: ${typeInstr}
 
 ${stockContext}
 
@@ -126,9 +173,19 @@ function StockInput({ mode, setMode, manualInput, setManualInput, stockCount }) 
 }
 
 // ── Platform card component ───────────────────────────────────────────────────
-function PlatformCard({ platformId, label, emoji, color, bg, post, generating, copied, onGenerate, onCopy, onRegenerate }) {
+function PlatformCard({ platformId, label, emoji, color, bg, post, generating, copied, onGenerate, onCopy, onRegenerate, selectedType, onTypeChange }) {
+  const defaultType = getDefaultType(platformId);
+  const activeType  = selectedType || defaultType;
+  const activeTypeDef = CONTENT_TYPES[activeType];
+  const isDefault   = !selectedType || selectedType === defaultType;
+  const dayName     = new Date().toLocaleDateString("en-GB", { weekday: "long" });
+
+  // Only show type selector for strategy platforms (not groups/dubizzle)
+  const showTypeSelector = !["whatsapp_groups","dubizzle"].includes(platformId);
+
   return (
     <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #F1F5F9" }}>
+      {/* Header */}
       <div style={{ padding: "10px 14px", background: bg, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 18 }}>{emoji}</span>
@@ -142,6 +199,34 @@ function PlatformCard({ platformId, label, emoji, color, bg, post, generating, c
           {generating ? "⏳..." : post ? "↺ Regen" : "✨ Generate"}
         </button>
       </div>
+
+      {/* Content type selector */}
+      {showTypeSelector && (
+        <div style={{ padding: "8px 14px", borderBottom: "1px solid #F8FAFC", background: "#FAFAFA" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>POST TYPE</span>
+            <span style={{ fontSize: 9, color: isDefault ? "#10B981" : "#6366F1", fontWeight: 700 }}>
+              {isDefault ? `📅 ${dayName} default` : "✏️ Manual override"}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {Object.values(CONTENT_TYPES).map(ct => (
+              <button key={ct.id}
+                onClick={() => onTypeChange(ct.id === defaultType ? null : ct.id)}
+                style={{ padding: "4px 8px", borderRadius: 16, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                  background: activeType === ct.id ? color : "#F1F5F9",
+                  color:      activeType === ct.id ? "#fff"  : "#64748B",
+                  opacity:    1 }}>
+                {ct.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 5, fontStyle: "italic" }}>
+            {activeTypeDef?.desc}
+          </div>
+        </div>
+      )}
+
       {post && (
         <div style={{ padding: "12px 14px" }}>
           <div style={{ fontSize: 12, color: "#334155", lineHeight: 1.7, whiteSpace: "pre-line",
@@ -159,7 +244,7 @@ function PlatformCard({ platformId, label, emoji, color, bg, post, generating, c
       )}
       {!post && !generating && (
         <div style={{ padding: "10px 14px", fontSize: 11, color: "#CBD5E1", textAlign: "center" }}>
-          Tap Generate to create a {label} post
+          Tap Generate to create a {activeTypeDef?.label || label} post
         </div>
       )}
     </div>
@@ -186,6 +271,7 @@ export default function MarketingTab({ stock }) {
   const [generating, setGenerating] = useState({});
   const [copied, setCopied]         = useState({});
   const [postedDates, setPostedDates] = useState({});
+  const [selectedTypes, setSelectedTypes] = useState({});
   const [postFeedback, setPostFeedback] = useState({});
 
   // WhatsApp Groups state (same as before)
@@ -252,15 +338,18 @@ export default function MarketingTab({ stock }) {
     return "";
   }
 
-  async function generate(platformId) {
+  async function generate(platformId, overrideType = null) {
     if (!anthropicKey) { alert("Add Anthropic API key in Settings first."); return; }
     if (mode === "manual" && !manualInput.trim()) { alert("Please describe what you want to feature."); return; }
-    if (mode === "auto" && !availableStock.length) { alert("No available stock found."); return; }
+    const needsStock = ["stock","clearance","announcement"].includes(overrideType || selectedTypes[platformId] || getDefaultType(platformId));
+    if (mode === "auto" && needsStock && !availableStock.length && !consignmentStock.length) { alert("No available stock found."); return; }
     setGenerating(p => ({ ...p, [platformId]: true }));
     try {
+      const postType = overrideType || selectedTypes[platformId] || getDefaultType(platformId);
       const text = await generatePlatformPost({
         key: anthropicKey,
         platformId,
+        postType,
         stockContext: getStockContext(),
         strategyNotes: strategyNotes + getPerfHint(platformId),
         recentSales: getRecentSales(),
@@ -374,14 +463,18 @@ export default function MarketingTab({ stock }) {
               post={posts.whatsapp_status} generating={!!generating.whatsapp_status} copied={!!copied.whatsapp_status}
               onGenerate={() => generate("whatsapp_status")}
               onRegenerate={() => generate("whatsapp_status")}
-              onCopy={() => copy(posts.whatsapp_status, "whatsapp_status")} />
+              onCopy={() => copy(posts.whatsapp_status, "whatsapp_status")}
+              selectedType={selectedTypes["whatsapp_status"] || null}
+              onTypeChange={t => setSelectedTypes(p => ({ ...p, "whatsapp_status": t }))} />
 
             {/* WhatsApp Channel */}
             <PlatformCard platformId="whatsapp_channel" label="WA Channel" emoji="📡" color="#128C7E" bg="#ECFDF5"
               post={posts.whatsapp_channel} generating={!!generating.whatsapp_channel} copied={!!copied.whatsapp_channel}
               onGenerate={() => generate("whatsapp_channel")}
               onRegenerate={() => generate("whatsapp_channel")}
-              onCopy={() => copy(posts.whatsapp_channel, "whatsapp_channel")} />
+              onCopy={() => copy(posts.whatsapp_channel, "whatsapp_channel")}
+              selectedType={selectedTypes["whatsapp_channel"] || null}
+              onTypeChange={t => setSelectedTypes(p => ({ ...p, "whatsapp_channel": t }))} />
 
             {/* Groups section */}
             <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #F1F5F9" }}>
@@ -399,7 +492,9 @@ export default function MarketingTab({ stock }) {
                   post={posts.whatsapp_groups} generating={!!generating.whatsapp_groups} copied={!!copied.whatsapp_groups}
                   onGenerate={() => generate("whatsapp_groups")}
                   onRegenerate={() => generate("whatsapp_groups")}
-                  onCopy={() => copy(posts.whatsapp_groups, "whatsapp_groups")} />
+                  onCopy={() => copy(posts.whatsapp_groups, "whatsapp_groups")}
+              selectedType={selectedTypes["whatsapp_groups"] || null}
+              onTypeChange={t => setSelectedTypes(p => ({ ...p, "whatsapp_groups": t }))} />
               </div>
             </div>
 
@@ -458,7 +553,9 @@ export default function MarketingTab({ stock }) {
                 post={posts.fb_personal} generating={!!generating.fb_personal} copied={!!copied.fb_personal}
                 onGenerate={() => generate("fb_personal")}
                 onRegenerate={() => generate("fb_personal")}
-                onCopy={() => copy(posts.fb_personal, "fb_personal")} />
+                onCopy={() => copy(posts.fb_personal, "fb_personal")}
+              selectedType={selectedTypes["fb_personal"] || null}
+              onTypeChange={t => setSelectedTypes(p => ({ ...p, "fb_personal": t }))} />
             )}
 
             {/* Business Page */}
@@ -471,7 +568,9 @@ export default function MarketingTab({ stock }) {
                   post={posts.fb_business} generating={!!generating.fb_business} copied={!!copied.fb_business}
                   onGenerate={() => generate("fb_business")}
                   onRegenerate={() => generate("fb_business")}
-                  onCopy={() => copy(posts.fb_business, "fb_business")} />
+                  onCopy={() => copy(posts.fb_business, "fb_business")}
+              selectedType={selectedTypes["fb_business"] || null}
+              onTypeChange={t => setSelectedTypes(p => ({ ...p, "fb_business": t }))} />
               </div>
             )}
           </div>
