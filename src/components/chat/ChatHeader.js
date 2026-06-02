@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import Badge from "../ui/Badge";
-import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory } from "../../constants";
-import { daysSince } from "../../utils/helpers";
+import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory, TRADER_CATEGORIES } from "../../constants";
+import { daysSince, formatWhatsAppNumber } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
