@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "./supabase";
+import { TRADER_CATEGORIES } from "./constants";
 
 // ── type definitions ──────────────────────────────────────────────────────────
 const TYPES = [
