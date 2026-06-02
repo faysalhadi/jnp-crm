@@ -68,6 +68,10 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap }) {
   const preview = notePreview || dealPreview || c.notes?.slice(0, 55) || c.number || "No details yet";
 
   const isOverdue = attention?.type === "followup_overdue" || attention?.type === "urgent";
+  const isIncomplete = (!c.contact_type || c.contact_type === "client" || c.contact_type === "walkin")
+    && !(c.deals || []).length
+    && !c.notes
+    && !c.number;
 
   return (
     <div onClick={onOpen} style={{
@@ -81,14 +85,23 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap }) {
 
       {/* Row 1 — avatar + name + timestamp */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
-          background: c.urgent ? "#FEF2F2" : c.contact_type === "walkin" ? "#EEF2FF" : "#EEF2FF",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 17, fontWeight: 800, textTransform: "uppercase",
-          color: c.urgent ? "#EF4444" : "#6366F1",
-        }}>
-          {(c.name || "?")[0]}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: "50%",
+            background: c.urgent ? "#FEF2F2" : c.contact_type === "walkin" ? "#EEF2FF" : "#EEF2FF",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 17, fontWeight: 800, textTransform: "uppercase",
+            color: c.urgent ? "#EF4444" : "#6366F1",
+          }}>
+            {(c.name || "?")[0]}
+          </div>
+          {isIncomplete && (
+            <div style={{
+              position: "absolute", bottom: 0, right: 0,
+              width: 12, height: 12, borderRadius: "50%",
+              background: "#F97316", border: "2px solid #fff",
+            }} title="Incomplete profile" />
+          )}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>

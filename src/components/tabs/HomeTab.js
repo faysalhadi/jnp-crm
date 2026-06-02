@@ -23,7 +23,6 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [waitingMatchCount, setWaitingMatchCount] = useState(0);
-  const [overdueReminders, setOverdueReminders] = useState(0);
 
   useEffect(() => {
     loadFollowUps();
@@ -128,8 +127,8 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
           { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF", icon: "📋" },
           { label: "Revenue MTD", value: (() => { const total = revenue + partsRevMTD; return `AED ${total >= 1000 ? (total/1000).toFixed(1)+"k" : total}`; })(), color: "#10B981", bg: "#ECFDF5", icon: "💰" },
           { label: "In Stock", value: stock.filter(s => s.status === "available").length, color: "#F59E0B", bg: "#FFFBEB", icon: "📦" },
+          { label: "Incomplete", value: customers.filter(c => (!c.contact_type || c.contact_type === "client" || c.contact_type === "walkin") && !(c.deals || []).length && !c.notes).length, color: "#F97316", bg: "#FFF7ED", icon: "🟠", onClick: () => { setActiveTab("customers"); } },
           { label: "Follow Ups", value: followUpsDue, color: "#EF4444", bg: "#FEF2F2", icon: "⏰", onClick: () => { setActiveTab("customers"); setFilter("overdue"); } },
-          { label: "Reminders", value: overdueReminders, color: "#6366F1", bg: "#EEF2FF", icon: "🔔", onClick: () => setActiveTab("reminders") },
         ].map(s => (
           <div key={s.label} onClick={s.onClick} style={{ background: s.bg, borderRadius: 16, padding: "14px 16px", cursor: s.onClick ? "pointer" : "default" }}>
             <div style={{ fontSize: 22, marginBottom: 4 }}>{s.icon}</div>
@@ -340,27 +339,10 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
         </div>
       )}
 
-      {/* Recent activity */}
-      {recentActivity.length > 0 && (
-        <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 10, letterSpacing: 0.5 }}>🕐 RECENT ACTIVITY</div>
-          {recentActivity.map((a, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: i < recentActivity.length - 1 ? 8 : 0, marginBottom: i < recentActivity.length - 1 ? 8 : 0, borderBottom: i < recentActivity.length - 1 ? "1px solid #F8FAFC" : "none" }}>
-              <span style={{ fontSize: 13, color: "#475569" }}>{a.icon} {a.text}</span>
-              <span style={{ fontSize: 11, color: "#CBD5E1", flexShrink: 0, marginLeft: 8 }}>{timeAgo(a.date)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Quick actions */}
+            {/* Quick actions */}
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => { setActiveTab("customers"); setView("add"); }}
-          style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ New Client</button>
         <button onClick={() => { setActiveTab("stock"); setShowAddStock(true); setEditingStock(null); setStockForm(EMPTY_STOCK); }}
           style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Stock</button>
-        <button onClick={() => { setActiveTab("customers"); setSearch(""); }}
-          style={{ flex: 1, padding: 12, borderRadius: 14, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🔍 Search</button>
       </div>
     </div>
     </PullToRefresh>
