@@ -9,7 +9,6 @@ import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import FollowUpPanel from "./FollowUpPanel";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
-import ConsignmentPanel from "./ConsignmentPanel";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
 
@@ -51,6 +50,10 @@ export default function ChatHeader() {
   const [dealExpanded, setDealExpanded] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
   const [showBulkQuote, setShowBulkQuote] = useState(false);
+  const [showDeleteDeal, setShowDeleteDeal] = useState(false);
+  const [showFindStock, setShowFindStock] = useState(false);
+  const [stockMatches, setStockMatches] = useState({ own: [], trader: [] });
+  const [findingStock, setFindingStock] = useState(false);
   const [showEditTrader, setShowEditTrader] = useState(false);
   const [editTraderForm, setEditTraderForm] = useState({ stall_number: "", categories: [] });
 
@@ -372,18 +375,26 @@ export default function ChatHeader() {
 
           {/* RESERVE / CONFIRM — flush bottom, always visible, smaller */}
           {activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
-            <div style={{ display: "flex", borderTop: "1px solid #F1F5F9" }}>
+            <div style={{ display: "flex", borderTop: "1px solid #F1F5F9", flexWrap: "wrap" }}>
               <button onClick={handleReserveDevice}
-                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#FFFBEB", color: "#D97706", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#FFFBEB", color: "#D97706", fontSize: 12, fontWeight: 700, cursor: "pointer", minWidth: 70 }}>
                 🔒 Reserve
               </button>
               <button onClick={handleConfirmSale}
-                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                ⚡ Confirm Sale
+                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, cursor: "pointer", minWidth: 70 }}>
+                ⚡ Confirm
               </button>
               <button onClick={() => setShowBulkQuote(true)}
-                style={{ flex: 1, padding: "9px 8px", border: "none", background: "#F0FDF4", color: "#059669", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#F0FDF4", color: "#059669", fontSize: 12, fontWeight: 700, cursor: "pointer", minWidth: 60 }}>
                 💼 Bulk
+              </button>
+              <button onClick={handleFindStock}
+                style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#EFF6FF", color: "#2563EB", fontSize: 12, fontWeight: 700, cursor: "pointer", minWidth: 60 }}>
+                🔍 Find
+              </button>
+              <button onClick={() => setShowDeleteDeal(true)}
+                style={{ padding: "9px 10px", border: "none", background: "#FFF5F5", color: "#EF4444", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                🗑
               </button>
             </div>
           )}
@@ -449,11 +460,120 @@ export default function ChatHeader() {
         </div>
       )}
 
+      {/* ── Find Stock Modal ── */}
+      {showFindStock && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 400, overflowY: "auto" }}>
+          <div style={{ minHeight: "100%", padding: "16px 12px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: 20, width: "100%", maxWidth: 480 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>🔍 Find Stock</div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
+                    {[activeDeal?.brand, activeDeal?.model].filter(Boolean).join(" ") || "All devices"}
+                    {activeDeal?.budget ? ` · Budget AED ${Number(activeDeal.budget).toLocaleString()}` : ""}
+                  </div>
+                </div>
+                <button onClick={() => setShowFindStock(false)}
+                  style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer" }}>✕</button>
+              </div>
+
+              {findingStock && <div style={{ textAlign: "center", padding: 20, color: "#94A3B8", fontSize: 13 }}>Searching...</div>}
+
+              {!findingStock && (
+                <>
+                  {/* Own stock */}
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#6366F1", letterSpacing: 0.5, marginBottom: 6 }}>
+                    📦 YOUR STOCK ({stockMatches.own.length})
+                  </div>
+                  {stockMatches.own.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#CBD5E1", marginBottom: 14, padding: "8px 0" }}>Nothing matching in your stock</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                      {stockMatches.own.map((s, i) => (
+                        <div key={i} style={{ padding: "9px 12px", borderRadius: 10, background: "#EEF2FF", border: "1px solid #C7D2FE" }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{s.brand} {s.model}</div>
+                          <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>
+                            {[s.processor, s.ram, s.ssd, s.condition].filter(Boolean).join(" · ")}
+                            {s.max_price ? ` · AED ${Number(s.max_price).toLocaleString()}` : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Trader stock */}
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#D97706", letterSpacing: 0.5, marginBottom: 6 }}>
+                    🤝 TRADER INVENTORY ({stockMatches.trader.length})
+                  </div>
+                  {stockMatches.trader.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#CBD5E1", padding: "8px 0" }}>Nothing matching in trader listings</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {stockMatches.trader.map((s, i) => {
+                        const priceAED = s.currency === "USD" ? Math.round(s.price * 3.67) : s.currency === "GBP" ? Math.round(s.price * 4.65) : s.price;
+                        return (
+                          <div key={i} style={{ padding: "9px 12px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{s.brand} {s.model}</div>
+                            <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>
+                              {[s.processor, s.ram, s.storage, s.condition].filter(Boolean).join(" · ")}
+                              {priceAED ? ` · AED ${priceAED.toLocaleString()}` : ""}
+                            </div>
+                            <div style={{ fontSize: 10, color: "#D97706", marginTop: 2, fontWeight: 600 }}>
+                              📦 {s.trader_name || "Trader"}
+                              {s.quantity > 1 ? ` · ×${s.quantity}` : ""}
+                            </div>
+                            {s.trader_number && (
+                              <a href={`https://wa.me/${s.trader_number.replace(/\D/g,"")}`}
+                                target="_blank" rel="noreferrer"
+                                style={{ display: "inline-block", marginTop: 6, padding: "4px 10px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none" }}>
+                                💬 WhatsApp Trader
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {stockMatches.own.length === 0 && stockMatches.trader.length === 0 && (
+                    <div style={{ textAlign: "center", padding: "20px 0", color: "#94A3B8", fontSize: 13 }}>
+                      No matching stock found anywhere.<br />
+                      <span style={{ fontSize: 11 }}>Check trader imports or source a new lot.</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Deal Confirm ── */}
+      {showDeleteDeal && activeDeal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: 24, maxWidth: 340, width: "100%" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>Delete this deal?</div>
+            <div style={{ fontSize: 13, color: "#64748B", marginBottom: 20, lineHeight: 1.6 }}>
+              "{[activeDeal.brand, activeDeal.model].filter(Boolean).join(" ") || "This deal"}" will be permanently deleted.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => deleteDeal(activeDeal.id)}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#EF4444", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                Yes, Delete
+              </button>
+              <button onClick={() => setShowDeleteDeal(false)}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 14, cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Follow-up, Notes & Activity Panel */}
       <FollowUpPanel />
 
-      {/* Consignment Panel — traders only */}
-      {activeCustomer?.contact_type === "trader" && <ConsignmentPanel />}
+
 
       {/* ADD DEAL FORM */}
       {showAddDeal && (

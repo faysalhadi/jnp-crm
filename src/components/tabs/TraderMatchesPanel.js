@@ -22,12 +22,15 @@ export default function TraderMatchesPanel() {
   async function loadAll() {
     setLoading(true);
 
-    // Load waiting client deals
-    const { data: deals } = await supabase
+    // Load waiting client deals — must have brand or model set to match
+    const { data: allDeals } = await supabase
       .from("deals")
       .select("*, customers(id, name, number)")
       .eq("stage", "waiting")
       .neq("match_category", "none");
+
+    // Filter out deals with no brand AND no model — they would match everything
+    const deals = (allDeals || []).filter(d => d.brand || d.model);
 
     // Load trader selling listings
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
