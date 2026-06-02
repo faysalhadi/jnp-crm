@@ -68,6 +68,55 @@ export default function ChatHeader() {
   const initials = (activeCustomer.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
   const currentStageLabel = STAGES.find(s => s.id === activeDeal?.stage)?.label || activeDeal?.stage || "";
 
+  async function handleFindStock() {
+    if (!activeDeal) return;
+    setFindingStock(true);
+    setShowFindStock(true);
+    setStockMatches({ own: [], trader: [] });
+    const brand = (activeDeal.brand || "").toLowerCase();
+    const model = (activeDeal.model || "").toLowerCase();
+    const budget = activeDeal.budget;
+    // Search own stock
+    let ownQuery = supabase.from("stock").select("*").eq("status", "available");
+    if (brand) ownQuery = ownQuery.ilike("brand", "%" + brand + "%");
+    const { data: ownStock } = await ownQuery;
+    const filteredOwn = (ownStock || []).filter(s => {
+      if (model) {
+        const sm = (s.model || "").toLowerCase();
+        const words = model.split(" ").filter(w => w.length > 2);
+        if (words.length > 0 && !words.some(w => sm.includes(w))) return false;
+      }
+      if (budget && s.max_price && Number(s.max_price) > Number(budget) * 1.15) return false;
+      return true;
+    });
+    // Search trader inventory
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+    let traderQuery = supabase.from("trader_inventory").select("*")
+      .eq("type", "selling").eq("status", "active").gte("created_at", thirtyDaysAgo);
+    if (brand) traderQuery = traderQuery.ilike("brand", "%" + brand + "%");
+    const { data: traderStock } = await traderQuery;
+    const filteredTrader = (traderStock || []).filter(s => {
+      if (model) {
+        const sm = (s.model || "").toLowerCase();
+        const words = model.split(" ").filter(w => w.length > 2);
+        if (words.length > 0 && !words.some(w => sm.includes(w))) return false;
+      }
+      if (budget && s.price) {
+        const priceAED = s.currency === "USD" ? s.price * 3.67 : s.currency === "GBP" ? s.price * 4.65 : s.price;
+        if (priceAED > Number(budget) * 1.15) return false;
+      }
+      return true;
+    });
+    setStockMatches({ own: filteredOwn, trader: filteredTrader });
+    setFindingStock(false);
+  }
+
+  async function deleteDeal(dealId) {
+    await supabase.from("deals").delete().eq("id", dealId);
+    setShowDeleteDeal(false);
+    await loadCustomers();
+  }
+
   return (
     <>
     <div style={{ background: "#fff", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 20 }}>
