@@ -17,18 +17,6 @@ export default function TradersTab({
   const { customers, setActiveCustomerId, setActiveDealId, setView } = useCustomers();
   const traderContacts = customers.filter(c => c.contact_type === "trader");
 
-  // Filtered trader contacts
-  const filteredTraders = traderContacts.filter(c => {
-    const q = traderSearch.toLowerCase();
-    const matchesSearch = !q ||
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.number || "").includes(q) ||
-      (c.stall_number || "").toLowerCase().includes(q);
-    const matchesCategory = traderCategoryFilter === "all" ||
-      (c.categories || []).includes(traderCategoryFilter);
-    return matchesSearch && matchesCategory;
-  });
-
   const {
     traderListings, traderListingsLoading,
     loadTraderListings,
@@ -49,6 +37,18 @@ export default function TradersTab({
     traderCategoryFilter, setTraderCategoryFilter,
     updateTraderProfile,
   } = useTraders();
+
+  // Filtered trader contacts — must be after useTraders() call
+  const filteredTraders = traderContacts.filter(c => {
+    const q = (traderSearch || "").toLowerCase();
+    const matchesSearch = !q ||
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.number || "").includes(q) ||
+      (c.stall_number || "").toLowerCase().includes(q);
+    const matchesCategory = traderCategoryFilter === "all" ||
+      (c.categories || []).includes(traderCategoryFilter);
+    return matchesSearch && matchesCategory;
+  });
 
   const [batchFiles, setBatchFiles] = useState([]);
 
