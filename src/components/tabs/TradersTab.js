@@ -46,6 +46,8 @@ export default function TradersTab({
     extractTraderListings,
     saveTraderListings,
     extractBatchFiles,
+    traderCategoryFilter, setTraderCategoryFilter,
+    updateTraderProfile,
   } = useTraders();
 
   const [batchFiles, setBatchFiles] = useState([]);
