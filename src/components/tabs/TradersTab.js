@@ -4,6 +4,7 @@ import Badge from "../ui/Badge";
 import { timeAgo, daysSince } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
+import TraderMatchesPanel from "./TraderMatchesPanel";
 import { TRADER_CATEGORIES } from "../../constants";
 import { formatWhatsAppNumber } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
@@ -114,7 +115,7 @@ export default function TradersTab({
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Section toggle */}
         <div style={{ display: "flex", padding: "10px 12px 0", gap: 8, background: "#fff", borderBottom: "1px solid #F1F5F9" }}>
-          {[{ key: "contacts", label: "👤 Contacts" }, { key: "inventory", label: "📋 Inventory" }, { key: "traders", label: "📊 By Trader" }].map(s => (
+          {[{ key: "contacts", label: "👤 Contacts" }, { key: "inventory", label: "📋 Inventory" }, { key: "traders", label: "📊 By Trader" }, { key: "matches", label: "🎯 Matches" }].map(s => (
             <button key={s.key} onClick={() => setTraderSection(s.key)}
               style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: traderSection === s.key ? "#6366F1" : "#F1F5F9", color: traderSection === s.key ? "#fff" : "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
               {s.label}
@@ -290,6 +291,12 @@ export default function TradersTab({
                 });
               })()}
             </div>
+          </div>
+        )}
+
+        {traderSection === "matches" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TraderMatchesPanel />
           </div>
         )}
 
