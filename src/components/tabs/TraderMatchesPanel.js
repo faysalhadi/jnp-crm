@@ -51,7 +51,27 @@ export default function TraderMatchesPanel() {
 
       const matchingDeals = deals.filter(deal => {
         if (!deal.match_category || deal.match_category === "none") return false;
-        if (deal.match_category !== listingCat) return false;
+
+        // Brand must match if client specified one
+        if (deal.brand) {
+          const db = deal.brand.toLowerCase();
+          const lb = (listing.brand || "").toLowerCase();
+          if (lb && db && !lb.includes(db) && !db.includes(lb)) return false;
+        }
+
+        // Model must match if client specified one (loose — keywords)
+        if (deal.model) {
+          const dm = deal.model.toLowerCase();
+          const lm = (listing.model || "").toLowerCase();
+          if (lm && dm) {
+            // Split model into words and check at least half match
+            const dmWords = dm.split(/\s+/).filter(w => w.length > 2);
+            if (dmWords.length > 0) {
+              const matched = dmWords.filter(w => lm.includes(w));
+              if (matched.length < Math.ceil(dmWords.length * 0.5)) return false;
+            }
+          }
+        }
 
         // Budget check with 15% tolerance
         if (deal.budget && listing.price) {
