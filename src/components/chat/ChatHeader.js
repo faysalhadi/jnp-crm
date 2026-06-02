@@ -51,6 +51,8 @@ export default function ChatHeader() {
   const [dealExpanded, setDealExpanded] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
   const [showBulkQuote, setShowBulkQuote] = useState(false);
+  const [showEditTrader, setShowEditTrader] = useState(false);
+  const [editTraderForm, setEditTraderForm] = useState({ stall_number: "", categories: [] });
 
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
@@ -137,10 +139,12 @@ export default function ChatHeader() {
         <div style={{ display: "flex", gap: 5 }}>
           <button onClick={() => setShowAddDeal(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#6366F1" }}>+</button>
-          <button onClick={() => openBroadcast(null)} title="Broadcast"
-            style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>📣</button>
           <button onClick={() => setShowSideDrawer(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>📊</button>
+          {activeCustomer.contact_type === "trader" && (
+            <button onClick={() => setShowEditTrader(true)}
+              style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#EEF2FF", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", color: "#6366F1" }}>✏️</button>
+          )}
           <button onClick={() => setShowDeleteConfirm(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #FEE2E2", background: "#FFF5F5", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>🗑</button>
         </div>
@@ -388,6 +392,62 @@ export default function ChatHeader() {
 
       {/* Bulk Quote Modal */}
       {showBulkQuote && <BulkQuoteModal onClose={() => setShowBulkQuote(false)} />}
+
+      {/* Edit Trader Modal */}
+      {showEditTrader && activeCustomer?.contact_type === "trader" && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 400, display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: "#fff", width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "20px 20px 0 0", padding: 20 }}>
+            <div style={{ width: 36, height: 3, background: "#E2E8F0", borderRadius: 2, margin: "0 auto 16px" }} />
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A", marginBottom: 14 }}>Edit Trader Profile</div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 4 }}>SHOP / STALL NUMBER</div>
+              <input value={editTraderForm.stall_number}
+                onChange={e => setEditTraderForm(f => ({ ...f, stall_number: e.target.value }))}
+                placeholder="e.g. Shop 14, Block B"
+                defaultValue={activeCustomer.stall_number || ""}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 8 }}>STOCK CATEGORIES</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {TRADER_CATEGORIES.map(cat => {
+                  const selected = (editTraderForm.categories.length ? editTraderForm.categories : (activeCustomer.categories || [])).includes(cat.id);
+                  return (
+                    <button key={cat.id}
+                      onClick={() => {
+                        const curr = editTraderForm.categories.length ? editTraderForm.categories : (activeCustomer.categories || []);
+                        setEditTraderForm(f => ({ ...f, categories: selected ? curr.filter(c => c !== cat.id) : [...curr, cat.id] }));
+                      }}
+                      style={{ padding: "6px 12px", borderRadius: 20, border: selected ? "2px solid #111" : "1.5px solid #E2E8F0",
+                        background: selected ? "#111" : "#F9FAFB", color: selected ? "#fff" : "#374151",
+                        fontSize: 12, cursor: "pointer", fontWeight: selected ? 700 : 400 }}>
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={async () => {
+                const updates = {
+                  stall_number: editTraderForm.stall_number || activeCustomer.stall_number || null,
+                  categories: editTraderForm.categories.length ? editTraderForm.categories : (activeCustomer.categories || null),
+                };
+                await supabase.from("customers").update(updates).eq("id", activeCustomer.id);
+                setShowEditTrader(false);
+                setEditTraderForm({ stall_number: "", categories: [] });
+                loadCustomers();
+              }} style={{ flex: 2, padding: 12, borderRadius: 12, border: "none", background: "#6366F1", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                Save
+              </button>
+              <button onClick={() => { setShowEditTrader(false); setEditTraderForm({ stall_number: "", categories: [] }); }}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 14, cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Follow-up, Notes & Activity Panel */}
       <FollowUpPanel />
