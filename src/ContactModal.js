@@ -90,6 +90,8 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
       last_active:  new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       lead_source:  (type === "client" || type === "walkin") ? (form.lead_source || null) : null,
+      stall_number: type === "trader" ? (form.stall_number || null) : null,
+      categories:   type === "trader" ? (form.categories?.length ? form.categories : null) : null,
     };
 
     if (type === "trader") {
@@ -316,6 +318,36 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
                     <Field label="GROUP / LOCATION" value={form.group} onChange={v => set("group", v)} placeholder="e.g. JNP Market, Computer Mall" />
                     <Field label="USUALLY SELLS" value={form.usually_sells} onChange={v => set("usually_sells", v)} placeholder="e.g. HP laptops, Dell laptops" />
                     <Field label="USUALLY BUYS" value={form.usually_buys} onChange={v => set("usually_buys", v)} placeholder="e.g. MacBooks, gaming laptops" />
+                    {/* Stall number */}
+                    <div>
+                      <div style={labelStyle}>SHOP / STALL NUMBER</div>
+                      <input value={form.stall_number || ""} onChange={e => set("stall_number", e.target.value)}
+                        placeholder="e.g. Shop 14, Block B"
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    {/* Categories */}
+                    <div>
+                      <div style={labelStyle}>STOCK CATEGORIES</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {TRADER_CATEGORIES.map(cat => {
+                          const selected = (form.categories || []).includes(cat.id);
+                          return (
+                            <button key={cat.id}
+                              onClick={() => {
+                                const curr = form.categories || [];
+                                set("categories", selected ? curr.filter(c => c !== cat.id) : [...curr, cat.id]);
+                              }}
+                              style={{ padding: "6px 12px", borderRadius: 20,
+                                border: selected ? "2px solid #111" : "1.5px solid #E2E8F0",
+                                background: selected ? "#111" : "#F9FAFB",
+                                color: selected ? "#fff" : "#374151",
+                                fontSize: 12, cursor: "pointer", fontWeight: selected ? 700 : 400 }}>
+                              {cat.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </>
                 )}
 

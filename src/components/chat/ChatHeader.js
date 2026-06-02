@@ -162,6 +162,40 @@ export default function ChatHeader() {
 
 
 
+      {/* TRADER PROFILE INFO */}
+      {activeCustomer.contact_type === "trader" && (activeCustomer.stall_number || (activeCustomer.categories || []).length > 0 || activeCustomer.number) && (
+        <div style={{ padding: "8px 14px 4px", display: "flex", flexDirection: "column", gap: 6 }}>
+          {activeCustomer.stall_number && (
+            <div style={{ fontSize: 12, color: "#64748B" }}>📍 {activeCustomer.stall_number}</div>
+          )}
+          {(activeCustomer.categories || []).length > 0 && (
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {(activeCustomer.categories || []).map(catId => {
+                const cat = TRADER_CATEGORIES.find(x => x.id === catId);
+                return cat ? (
+                  <span key={catId} style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "#F1F5F9", color: "#374151" }}>
+                    {cat.label}
+                  </span>
+                ) : null;
+              })}
+            </div>
+          )}
+          {activeCustomer.number && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <a href={`tel:${activeCustomer.number}`}
+                style={{ flex: 1, padding: "7px 0", borderRadius: 10, border: "1px solid #E2E8F0", background: "#F8FAFC", color: "#64748B", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+                📞 Call
+              </a>
+              <a href={`https://wa.me/${formatWhatsAppNumber(activeCustomer.number)}`}
+                target="_blank" rel="noreferrer"
+                style={{ flex: 1, padding: "7px 0", borderRadius: 10, border: "none", background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+                💬 WhatsApp
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* SUPPLIER ACTIONS */}
       {activeCustomer.contact_type === "supplier" && (
         <div style={{ display: "flex", gap: 8, padding: "0 14px 10px" }}>

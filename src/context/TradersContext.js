@@ -20,6 +20,7 @@ export function TradersProvider({ children, anthropicKey }) {
   const [traderListingsLoading, setTraderListingsLoading] = useState(false);
   const [traderSection, setTraderSection] = useState("inventory");
   const [traderSearch, setTraderSearch] = useState("");
+  const [traderCategoryFilter, setTraderCategoryFilter] = useState("all");
   const [traderFilter, setTraderFilter] = useState("all");
   const [showImportTrader, setShowImportTrader] = useState(false);
   const [traderGroup, setTraderGroup] = useState("");
@@ -429,12 +430,21 @@ ${chunkText}`;
     setSavingTraderListings(false);
   }
 
+  const updateTraderProfile = async (traderId, updates) => {
+    const { error } = await supabase.from("customers").update(updates).eq("id", traderId);
+    if (error) console.error("updateTraderProfile error:", error);
+    // Refresh customers list
+    try { window.dispatchEvent(new Event("jnp_refresh_customers")); } catch {}
+  };
+
   return (
     <TradersContext.Provider value={{
       traderListings, setTraderListings,
       traderListingsLoading,
       traderSection, setTraderSection,
       traderSearch, setTraderSearch,
+      traderCategoryFilter, setTraderCategoryFilter,
+      updateTraderProfile,
       traderFilter, setTraderFilter,
       showImportTrader, setShowImportTrader,
       traderGroup, setTraderGroup,

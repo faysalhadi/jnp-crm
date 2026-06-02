@@ -83,3 +83,11 @@ export function cleanWhatsAppText(text) {
   }
   return out;
 }
+
+export function formatWhatsAppNumber(number) {
+  if (!number) return "";
+  let n = number.replace(/[\s\-()]/g, "");
+  if (n.startsWith("+")) n = n.slice(1);
+  if (n.startsWith("0")) n = "971" + n.slice(1);
+  return n;
+}

@@ -212,3 +212,14 @@ export const PART_ICONS = {
   Battery: "🔋", Charger: "🔌", Keyboard: "⌨️",
   Trackpad: "🖱️", Other: "🔧"
 };
+
+export const TRADER_CATEGORIES = [
+  { id: 'macbook',  label: 'MacBook' },
+  { id: 'high_gen', label: 'High Gen Windows' },
+  { id: 'low_gen',  label: 'Low Gen Windows' },
+  { id: 'gaming',   label: 'Gaming' },
+  { id: 'screens',  label: 'Screens' },
+  { id: 'ram_ssd',  label: 'RAM / SSD' },
+  { id: 'parts',    label: 'Parts' },
+  { id: 'mixed',    label: 'Mixed' },
+];

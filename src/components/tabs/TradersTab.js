@@ -4,6 +4,8 @@ import Badge from "../ui/Badge";
 import { timeAgo, daysSince } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
+import { TRADER_CATEGORIES } from "../../constants";
+import { formatWhatsAppNumber } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
 
 export default function TradersTab({
@@ -14,6 +16,18 @@ export default function TradersTab({
   const { isMobile } = useUI();
   const { customers, setActiveCustomerId, setActiveDealId, setView } = useCustomers();
   const traderContacts = customers.filter(c => c.contact_type === "trader");
+
+  // Filtered trader contacts
+  const filteredTraders = traderContacts.filter(c => {
+    const q = traderSearch.toLowerCase();
+    const matchesSearch = !q ||
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.number || "").includes(q) ||
+      (c.stall_number || "").toLowerCase().includes(q);
+    const matchesCategory = traderCategoryFilter === "all" ||
+      (c.categories || []).includes(traderCategoryFilter);
+    return matchesSearch && matchesCategory;
+  });
 
   const {
     traderListings, traderListingsLoading,
@@ -107,8 +121,28 @@ export default function TradersTab({
         </div>
 
         {traderSection === "contacts" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 100px" }}>
-            {traderContacts.length === 0 ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* Search */}
+            <div style={{ padding: "10px 12px 0" }}>
+              <input type="text" placeholder="🔍 Search traders by name, number, stall..."
+                value={traderSearch} onChange={e => setTraderSearch(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #E2E8F0",
+                  fontSize: 13, boxSizing: "border-box", background: "#F9FAFB", outline: "none" }} />
+            </div>
+            {/* Category filter pills */}
+            <div style={{ display: "flex", gap: 6, padding: "8px 12px", overflowX: "auto", scrollbarWidth: "none", flexShrink: 0 }}>
+              {[{ id: "all", label: "All" }, ...TRADER_CATEGORIES].map(cat => (
+                <button key={cat.id} onClick={() => setTraderCategoryFilter(cat.id)}
+                  style={{ padding: "5px 12px", borderRadius: 20, border: "none", whiteSpace: "nowrap",
+                    fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                    background: traderCategoryFilter === cat.id ? "#111" : "#F1F5F9",
+                    color:      traderCategoryFilter === cat.id ? "#fff"  : "#374151" }}>
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 100px" }}>
+            {filteredTraders.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 20px" }}>
                 <div style={{ fontSize: 40, marginBottom: 10 }}>🏪</div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No trader contacts yet</div>
@@ -116,7 +150,7 @@ export default function TradersTab({
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {traderContacts.map(c => {
+                {filteredTraders.map(c => {
                   const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
                   return (
                     <div key={c.id}
@@ -127,18 +161,38 @@ export default function TradersTab({
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{c.name}</div>
-                        <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {c.location || c.number || c.notes || "Trader"}
-                        </div>
+                        {c.stall_number && (
+                          <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>📍 {c.stall_number}</div>
+                        )}
+                        {(c.categories || []).length > 0 && (
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+                            {(c.categories || []).slice(0, 3).map(catId => {
+                              const cat = TRADER_CATEGORIES.find(x => x.id === catId);
+                              return cat ? (
+                                <span key={catId} style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "#F1F5F9", color: "#374151" }}>
+                                  {cat.label}
+                                </span>
+                              ) : null;
+                            })}
+                            {(c.categories || []).length > 3 && (
+                              <span style={{ fontSize: 9, color: "#94A3B8" }}>+{c.categories.length - 3} more</span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
                         {c.number && (
-                          <a href={`https://wa.me/${c.number.replace(/\D/g,"")}`}
-                            target="_blank" rel="noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            style={{ padding: "4px 10px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
-                            WA
-                          </a>
+                          <div style={{ display: "flex", gap: 5 }}>
+                            <a href={`tel:${c.number}`} onClick={e => e.stopPropagation()}
+                              style={{ width: 30, height: 30, borderRadius: 8, background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", fontSize: 14 }}>
+                              📞
+                            </a>
+                            <a href={`https://wa.me/${formatWhatsAppNumber(c.number)}`}
+                              target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                              style={{ width: 30, height: 30, borderRadius: 8, background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", fontSize: 14 }}>
+                              💬
+                            </a>
+                          </div>
                         )}
                         <span style={{ fontSize: 10, color: "#CBD5E1" }}>→</span>
                       </div>
@@ -147,6 +201,7 @@ export default function TradersTab({
                 })}
               </div>
             )}
+            </div>
           </div>
         )}
 
