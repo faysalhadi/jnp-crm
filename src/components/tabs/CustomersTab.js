@@ -68,10 +68,11 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap }) {
   const preview = notePreview || dealPreview || c.notes?.slice(0, 55) || c.number || "No details yet";
 
   const isOverdue = attention?.type === "followup_overdue" || attention?.type === "urgent";
+  const hasFollowUp = !!pendingFollowUpMap?.[c.id];
   const isIncomplete = (!c.contact_type || c.contact_type === "client" || c.contact_type === "walkin")
     && !(c.deals || []).length
     && !c.notes
-    && !c.number;
+    && !hasFollowUp;
 
   return (
     <div onClick={onOpen} style={{
