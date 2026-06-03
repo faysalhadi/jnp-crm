@@ -57,6 +57,9 @@ export default function ChatHeader() {
   const [findingStock, setFindingStock] = useState(false);
   const [showEditTrader, setShowEditTrader] = useState(false);
   const [editTraderForm, setEditTraderForm] = useState({ stall_number: "", categories: [] });
+  const [showQuotePrompt, setShowQuotePrompt] = useState(false);
+  const [quoteText, setQuoteText] = useState("");
+  const [quoteSaving, setQuoteSaving] = useState(false);
 
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
@@ -68,6 +71,34 @@ export default function ChatHeader() {
   const closedDealValue = (activeCustomer.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
   const initials = (activeCustomer.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
   const currentStageLabel = STAGES.find(s => s.id === activeDeal?.stage)?.label || activeDeal?.stage || "";
+
+  async function saveQuoteAndFollowUp(withFollowUp) {
+    setQuoteSaving(true);
+    if (quoteText.trim()) {
+      await supabase.from("activity_log").insert({
+        customer_id:   activeCustomerId,
+        activity_type: "note",
+        note:          "Quoted: " + quoteText.trim(),
+        logged_at:     new Date().toISOString(),
+      });
+    }
+    if (withFollowUp) {
+      const due = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await supabase.from("follow_ups").insert({
+        customer_id: activeCustomerId,
+        due_at:      due.toISOString(),
+        note:        quoteText.trim() ? "Follow up on quote: " + quoteText.trim() : "Follow up on price quote",
+        status:      "pending",
+      });
+    }
+    await supabase.from("customers")
+      .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
+      .eq("id", activeCustomerId);
+    await loadCustomers();
+    setQuoteSaving(false);
+    setShowQuotePrompt(false);
+    setQuoteText("");
+  }
 
   async function handleFindStock() {
     if (!activeDeal) return;
@@ -305,7 +336,13 @@ export default function ChatHeader() {
               <div style={{ marginTop: 8, marginBottom: 8 }}>
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                   {STAGES.map(s => (
-                    <button key={s.id} onClick={() => moveStage(s.id)}
+                    <button key={s.id} onClick={() => {
+                          moveStage(s.id);
+                          if (s.id === "negotiation" || s.id === "device_found") {
+                            setQuoteText("");
+                            setShowQuotePrompt(true);
+                          }
+                        }}
                       style={{
                         padding: "3px 10px", borderRadius: 20, border: "none",
                         fontSize: 10, fontWeight: 700, cursor: "pointer",
@@ -504,6 +541,46 @@ export default function ChatHeader() {
               <button onClick={() => { setShowEditTrader(false); setEditTraderForm({ stall_number: "", categories: [] }); }}
                 style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 14, cursor: "pointer" }}>
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Quote Prompt Modal ── */}
+      {showQuotePrompt && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 500, display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: "#fff", width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "20px 20px 0 0", padding: 20, paddingBottom: 36 }}>
+            <div style={{ width: 36, height: 3, background: "#E2E8F0", borderRadius: 2, margin: "0 auto 16px" }} />
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>💬 What did you quote?</div>
+            <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 14 }}>
+              Log your quote and optionally set a 24h follow-up
+            </div>
+            <input
+              value={quoteText}
+              onChange={e => setQuoteText(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") saveQuoteAndFollowUp(true); }}
+              placeholder='e.g. "HP EliteBook 840 G8 Grade A — AED 1,750"'
+              autoFocus
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0",
+                fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 12 }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button onClick={() => saveQuoteAndFollowUp(true)} disabled={quoteSaving}
+                style={{ width: "100%", padding: 13, borderRadius: 12, border: "none",
+                  background: quoteSaving ? "#E2E8F0" : "#6366F1",
+                  color: quoteSaving ? "#94A3B8" : "#fff",
+                  fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                {quoteSaving ? "Saving..." : "✅ Log Quote + Set 24h Follow-up"}
+              </button>
+              <button onClick={() => saveQuoteAndFollowUp(false)} disabled={quoteSaving}
+                style={{ width: "100%", padding: 13, borderRadius: 12, border: "1px solid #E2E8F0",
+                  background: "#fff", color: "#64748B", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                Log Quote Only
+              </button>
+              <button onClick={() => { setShowQuotePrompt(false); setQuoteText(""); }}
+                style={{ width: "100%", padding: 10, borderRadius: 12, border: "none",
+                  background: "none", color: "#CBD5E1", fontSize: 12, cursor: "pointer" }}>
+                Skip
               </button>
             </div>
           </div>
