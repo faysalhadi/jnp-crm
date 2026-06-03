@@ -76,7 +76,7 @@ export default function ChatHeader() {
   ];
 
   // Watch for showLossReason from context (triggered by moveStage)
-  React.useEffect(() => {
+  useEffect(() => {
     if (showLossReason) {
       setSelectedLossReason(null);
       setLossReasonOther("");

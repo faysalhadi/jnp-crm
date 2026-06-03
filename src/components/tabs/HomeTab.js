@@ -34,8 +34,8 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (stock.length > 0) loadLostDealMatches();
-  }, [stock]); // eslint-disable-line
+    loadLostDealMatches();
+  }, []); // eslint-disable-line
 
   const loadLostDealMatches = async () => {
     const cutoff = new Date();
@@ -47,11 +47,15 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .gte("updated_at", cutoff.toISOString())
       .not("brand", "is", null);
     if (!lostDeals?.length) return;
-    const availableStock = stock.filter(s => s.status === "available");
+    const { data: availableStockData } = await supabase
+      .from("stock")
+      .select("brand,model,processor,ram,ssd,max_price")
+      .eq("status", "available");
+    if (!availableStockData?.length) return;
     const matches = [];
     for (const deal of lostDeals) {
       if (!deal.brand) continue;
-      const matchingStock = availableStock.filter(s => {
+      const matchingStock = availableStockData.filter(s => {
         const brandMatch = s.brand?.toLowerCase() === deal.brand?.toLowerCase();
         if (!brandMatch) return false;
         if (deal.budget && s.max_price && Number(s.max_price) > Number(deal.budget) * 1.15) return false;
