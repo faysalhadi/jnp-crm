@@ -4,6 +4,7 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
+import { formatWhatsAppNumber } from "../../utils/helpers";
 
 const ACTIVITY_TYPES = [
   { id: "called",    label: "📞 Called",    color: "#6366F1", bg: "#EEF2FF" },
@@ -35,15 +36,93 @@ export default function NotesActivityView() {
   const [editingId, setEditingId]     = useState(null);
   const [editText, setEditText]       = useState("");
   const [deletingId, setDeletingId]   = useState(null);
+  const [lostDeals, setLostDeals]     = useState([]);
+  const [showReengage, setShowReengage] = useState(false);
+  const [reengageMsg, setReengageMsg]   = useState("");
+  const [reengageLoading, setReengageLoading] = useState(false);
+  const [reengageCopied, setReengageCopied]   = useState(false);
   const recognitionRef = useRef(null);
 
   useEffect(() => {
     if (activeCustomerId) {
       setNoteText("");
       setEditingId(null);
+      setShowReengage(false);
+      setReengageMsg("");
       fetchActivityLog(activeCustomerId);
+      fetchLostDeals(activeCustomerId);
     }
   }, [activeCustomerId]); // eslint-disable-line
+
+  async function fetchLostDeals(cid) {
+    const { data } = await supabase
+      .from("deals")
+      .select("*")
+      .eq("customer_id", cid)
+      .eq("stage", "lost")
+      .order("updated_at", { ascending: false })
+      .limit(3);
+    setLostDeals(data || []);
+  }
+
+  async function generateReengage() {
+    if (!anthropicKey) { alert("Add your Anthropic API key in Settings first."); return; }
+    setReengageLoading(true);
+    setReengageMsg("");
+    setShowReengage(true);
+    const deal = lostDeals[0];
+    // Fetch current matching stock
+    let stockQuery = supabase.from("stock").select("brand,model,processor,ram,ssd,max_price").eq("status", "available");
+    if (deal?.brand) stockQuery = stockQuery.ilike("brand", "%" + deal.brand + "%");
+    const { data: matchStock } = await stockQuery;
+    const stockList = (matchStock || []).slice(0, 5)
+      .map(s => `- ${s.brand} ${s.model} ${s.processor || ""} ${s.ram || ""} ${s.ssd || ""} — ${s.max_price || "??"} AED`.trim())
+      .join("\n");
+    const daysAgo = deal?.updated_at
+      ? Math.floor((Date.now() - new Date(deal.updated_at)) / 86400000)
+      : null;
+    const prompt = `You are helping a UAE laptop reseller (Vertex Tech Trading, Sharjah) write a WhatsApp re-engagement message to a B2B client.
+
+Client name: ${activeCustomer?.name}
+Contact type: ${activeCustomer?.contact_type || "client"}
+They previously wanted: ${[deal?.brand, deal?.model].filter(Boolean).join(" ") || "a laptop"}${deal?.budget ? `, budget ~${deal.budget} AED` : ""}
+Loss reason: ${deal?.loss_reason || "unknown"}
+${daysAgo ? `Days since last contact: ${daysAgo}` : ""}
+
+Current stock that may match (pick the best 1-2 to mention):
+${stockList || "- No exact match but general fresh stock available"}
+
+Write a short, casual WhatsApp message in Roman Urdu/English mix (as a Sharjah trader would speak).
+- Max 3-4 lines
+- Mention what they were looking for naturally
+- Mention fresh/new stock casually
+- End with a question to invite reply
+- Friendly trader-to-trader tone, not salesy
+- Max 2 emojis
+- Do NOT use Arabic script`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      const data = await res.json();
+      setReengageMsg(data?.content?.[0]?.text || "Could not generate — try again.");
+    } catch {
+      setReengageMsg("Error generating message. Check your API key.");
+    }
+    setReengageLoading(false);
+  }
 
   async function fetchActivityLog(cid) {
     const { data } = await supabase
@@ -232,6 +311,56 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
             </button>
           ))}
         </div>
+
+        {/* Re-engage button — only shown when client has lost deals */}
+        {lostDeals.length > 0 && (
+          <button onClick={generateReengage}
+            style={{
+              width: "100%", padding: "8px 14px", borderRadius: 10,
+              border: "1px solid #C7D2FE", background: "#EEF2FF",
+              color: "#6366F1", fontSize: 12, fontWeight: 700,
+              cursor: "pointer", marginBottom: 10, textAlign: "left",
+            }}>
+            🔄 Re-engage {activeCustomer?.name} — {[lostDeals[0]?.brand, lostDeals[0]?.model].filter(Boolean).join(" ") || "lost deal"}
+          </button>
+        )}
+
+        {/* Re-engage message panel */}
+        {showReengage && (
+          <div style={{ background: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
+            {reengageLoading ? (
+              <div style={{ fontSize: 12, color: "#6366F1", fontWeight: 600 }}>🤖 Generating message...</div>
+            ) : reengageMsg ? (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#534AB7", marginBottom: 8 }}>🤖 Re-engagement Message</div>
+                <div style={{ fontSize: 13, color: "#1E293B", lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: 10, background: "#fff", borderRadius: 8, padding: "10px 12px" }}>
+                  {reengageMsg}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => { navigator.clipboard.writeText(reengageMsg); setReengageCopied(true); setTimeout(() => setReengageCopied(false), 2000); }}
+                    style={{ padding: "6px 14px", borderRadius: 20, border: "none", background: reengageCopied ? "#ECFDF5" : "#F1F5F9", color: reengageCopied ? "#059669" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    {reengageCopied ? "✓ Copied!" : "📋 Copy"}
+                  </button>
+                  {activeCustomer?.number && (
+                    <a href={`https://wa.me/${formatWhatsAppNumber(activeCustomer.number)}?text=${encodeURIComponent(reengageMsg)}`}
+                      target="_blank" rel="noreferrer"
+                      style={{ padding: "6px 14px", borderRadius: 20, border: "none", background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                      💬 WhatsApp
+                    </a>
+                  )}
+                  <button onClick={generateReengage}
+                    style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid #C7D2FE", background: "transparent", color: "#6366F1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    🔄 Try again
+                  </button>
+                  <button onClick={() => setShowReengage(false)}
+                    style={{ padding: "6px 14px", borderRadius: 20, border: "none", background: "transparent", color: "#94A3B8", fontSize: 11, cursor: "pointer" }}>
+                    ✕
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
 
         {/* Note input */}
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>

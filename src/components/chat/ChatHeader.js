@@ -30,6 +30,7 @@ export default function ChatHeader() {
     updateDeal: _updateDeal,
     deleteCustomer: _deleteCustomer,
     addDeal: _addDeal,
+    showLossReason, setShowLossReason,
   } = useCustomers();
   const {
     editingName, setEditingName,
@@ -60,7 +61,54 @@ export default function ChatHeader() {
   const [showQuotePrompt, setShowQuotePrompt] = useState(false);
   const [quoteText, setQuoteText] = useState("");
   const [quoteSaving, setQuoteSaving] = useState(false);
+  const [showLossReasonPrompt, setShowLossReasonPrompt] = useState(false);
+  const [selectedLossReason, setSelectedLossReason] = useState(null);
+  const [lossReasonOther, setLossReasonOther] = useState("");
+  const [lossReasonSaving, setLossReasonSaving] = useState(false);
 
+  const LOSS_REASON_OPTIONS = [
+    { key: "price_too_high", label: "💸 Price too high" },
+    { key: "went_elsewhere", label: "🏃 Went elsewhere" },
+    { key: "no_stock", label: "📦 No matching stock" },
+    { key: "no_response", label: "🔇 No response" },
+    { key: "bad_timing", label: "⏰ Bad timing" },
+    { key: "other", label: "✏️ Other" },
+  ];
+
+  // Watch for showLossReason from context (triggered by moveStage)
+  React.useEffect(() => {
+    if (showLossReason) {
+      setSelectedLossReason(null);
+      setLossReasonOther("");
+      setShowLossReasonPrompt(true);
+      setShowLossReason(false);
+    }
+  }, [showLossReason]); // eslint-disable-line
+
+  async function saveLossReasonAndReminder(reason) {
+    setLossReasonSaving(true);
+    const finalReason = reason === "other" ? lossReasonOther.trim() : reason;
+    if (finalReason && activeDealId) {
+      await supabase.from("deals").update({ loss_reason: finalReason }).eq("id", activeDealId);
+    }
+    // Auto-create 14-day re-engagement reminder
+    const reengageDate = new Date();
+    reengageDate.setDate(reengageDate.getDate() + 14);
+    reengageDate.setHours(10, 0, 0, 0);
+    const dealDesc = [activeDeal?.brand, activeDeal?.model].filter(Boolean).join(" ") || "device";
+    await supabase.from("reminders").insert({
+      title: `Re-engage ${activeCustomer?.name} — ${dealDesc}`,
+      note: `Lost deal${finalReason ? `. Reason: ${finalReason}` : ""}. Originally wanted: ${dealDesc}${activeDeal?.budget ? `, budget ~${activeDeal.budget} AED` : ""}.`,
+      due_at: reengageDate.toISOString(),
+      category: "reengagement",
+      status: "pending",
+    });
+    await loadCustomers();
+    setLossReasonSaving(false);
+    setShowLossReasonPrompt(false);
+    setSelectedLossReason(null);
+    setLossReasonOther("");
+  }
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);
@@ -580,6 +628,67 @@ export default function ChatHeader() {
               <button onClick={() => { setShowQuotePrompt(false); setQuoteText(""); }}
                 style={{ width: "100%", padding: 10, borderRadius: 12, border: "none",
                   background: "none", color: "#CBD5E1", fontSize: 12, cursor: "pointer" }}>
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Loss Reason Bottom Sheet ── */}
+      {showLossReasonPrompt && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 500, display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: "#fff", width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "20px 20px 0 0", padding: 20, paddingBottom: 40 }}>
+            <div style={{ width: 36, height: 3, background: "#E2E8F0", borderRadius: 2, margin: "0 auto 16px" }} />
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>😔 Why was this lost?</div>
+            <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 16 }}>
+              {[activeDeal?.brand, activeDeal?.model].filter(Boolean).join(" ") || "This deal"} · Helps improve future follow-ups
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+              {LOSS_REASON_OPTIONS.map(r => (
+                <button key={r.key} onClick={() => setSelectedLossReason(r.key)}
+                  style={{
+                    padding: "12px 16px", borderRadius: 12, border: "none", textAlign: "left",
+                    fontSize: 14, fontWeight: 600, cursor: "pointer",
+                    background: selectedLossReason === r.key ? "#EEF2FF" : "#F8FAFC",
+                    color: selectedLossReason === r.key ? "#6366F1" : "#374151",
+                    outline: selectedLossReason === r.key ? "2px solid #6366F1" : "2px solid transparent",
+                    transition: "all 0.15s",
+                  }}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {selectedLossReason === "other" && (
+              <textarea
+                autoFocus
+                value={lossReasonOther}
+                onChange={e => setLossReasonOther(e.target.value)}
+                placeholder="Describe what happened..."
+                rows={2}
+                style={{
+                  width: "100%", padding: "10px 12px", borderRadius: 10,
+                  border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none",
+                  resize: "none", fontFamily: "inherit", lineHeight: 1.5,
+                  boxSizing: "border-box", marginBottom: 14,
+                }}
+              />
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                onClick={() => selectedLossReason && saveLossReasonAndReminder(selectedLossReason)}
+                disabled={!selectedLossReason || lossReasonSaving || (selectedLossReason === "other" && !lossReasonOther.trim())}
+                style={{
+                  width: "100%", padding: 13, borderRadius: 12, border: "none",
+                  background: selectedLossReason ? "#6366F1" : "#E2E8F0",
+                  color: selectedLossReason ? "#fff" : "#94A3B8",
+                  fontWeight: 800, fontSize: 14, cursor: selectedLossReason ? "pointer" : "default",
+                  opacity: lossReasonSaving ? 0.7 : 1,
+                }}>
+                {lossReasonSaving ? "Saving..." : "✅ Save + Set Re-engage Reminder"}
+              </button>
+              <button onClick={() => { setShowLossReasonPrompt(false); setSelectedLossReason(null); setLossReasonOther(""); }}
+                style={{ width: "100%", padding: 10, borderRadius: 12, border: "none", background: "none", color: "#CBD5E1", fontSize: 12, cursor: "pointer" }}>
                 Skip
               </button>
             </div>

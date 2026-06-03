@@ -23,6 +23,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [waitingMatchCount, setWaitingMatchCount] = useState(0);
+  const [lostDealMatches, setLostDealMatches] = useState([]);
 
   useEffect(() => {
     loadFollowUps();
@@ -31,6 +32,49 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   useEffect(() => {
     loadWaitingMatches();
   }, []); // eslint-disable-line
+
+  useEffect(() => {
+    if (stock.length > 0) loadLostDealMatches();
+  }, [stock]); // eslint-disable-line
+
+  const loadLostDealMatches = async () => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 60);
+    const { data: lostDeals } = await supabase
+      .from("deals")
+      .select("*, customers(id, name, number, contact_type)")
+      .eq("stage", "lost")
+      .gte("updated_at", cutoff.toISOString())
+      .not("brand", "is", null);
+    if (!lostDeals?.length) return;
+    const availableStock = stock.filter(s => s.status === "available");
+    const matches = [];
+    for (const deal of lostDeals) {
+      if (!deal.brand) continue;
+      const matchingStock = availableStock.filter(s => {
+        const brandMatch = s.brand?.toLowerCase() === deal.brand?.toLowerCase();
+        if (!brandMatch) return false;
+        if (deal.budget && s.max_price && Number(s.max_price) > Number(deal.budget) * 1.15) return false;
+        return true;
+      });
+      if (matchingStock.length > 0) {
+        matches.push({
+          deal,
+          customer: deal.customers,
+          stock: matchingStock[0],
+          daysAgo: Math.floor((Date.now() - new Date(deal.updated_at)) / 86400000),
+        });
+      }
+    }
+    // Deduplicate by customer
+    const seen = new Set();
+    const deduped = matches.filter(m => {
+      if (!m.customer?.id || seen.has(m.customer.id)) return false;
+      seen.add(m.customer.id);
+      return true;
+    }).slice(0, 5);
+    setLostDealMatches(deduped);
+  };
 
   const loadWaitingMatches = async () => {
     const { data: availableStock } = await supabase
@@ -310,6 +354,37 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
             {sourcingAlerts.paymentDue > 0 && <button onClick={() => setActiveTab("sourcing")} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#DBEAFE", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#3B82F6", fontWeight: 700 }}>💳 {sourcingAlerts.paymentDue} payment{sourcingAlerts.paymentDue !== 1 ? "s" : ""} pending</span><span style={{ color: "#3B82F6", fontSize: 13 }}>→</span></button>}
             {sourcingAlerts.inTransit > 0 && <button onClick={() => setActiveTab("sourcing")} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#EDE9FE", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#8B5CF6", fontWeight: 700 }}>🚚 {sourcingAlerts.inTransit} shipment{sourcingAlerts.inTransit !== 1 ? "s" : ""} in transit</span><span style={{ color: "#8B5CF6", fontSize: 13 }}>→</span></button>}
             {sourcingAlerts.arrived > 0 && <button onClick={() => setActiveTab("sourcing")} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#CFFAFE", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#06B6D4", fontWeight: 700 }}>📦 {sourcingAlerts.arrived} lot{sourcingAlerts.arrived !== 1 ? "s" : ""} arrived — add to stock</span><span style={{ color: "#06B6D4", fontSize: 13 }}>→</span></button>}
+          </div>
+        </div>
+      )}
+
+      {/* Re-engage Opportunities */}
+      {lostDealMatches.length > 0 && (
+        <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1", marginBottom: 10, letterSpacing: 0.5 }}>⚡ RE-ENGAGE OPPORTUNITIES</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {lostDealMatches.map((m, i) => (
+              <div key={i}
+                onClick={() => { setActiveCustomerId(m.customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                style={{
+                  background: "#F8F7FF", border: "1px solid #C7D2FE", borderLeft: "3px solid #6366F1",
+                  borderRadius: 12, padding: "11px 14px", cursor: "pointer",
+                  display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10,
+                }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{m.customer?.name}</div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
+                    Wanted {[m.deal.brand, m.deal.model].filter(Boolean).join(" ")} · {m.daysAgo}d ago
+                  </div>
+                  <div style={{ fontSize: 11, color: "#6366F1", marginTop: 2, fontWeight: 600 }}>
+                    📦 You have: {m.stock.brand} {m.stock.model}{m.stock.max_price ? ` · AED ${Number(m.stock.max_price).toLocaleString()}` : ""}
+                  </div>
+                </div>
+                <div style={{ background: "#EEF2FF", color: "#6366F1", fontSize: 10, padding: "4px 8px", borderRadius: 6, fontWeight: 700, flexShrink: 0 }}>
+                  Re-engage →
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
