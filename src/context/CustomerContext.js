@@ -2,6 +2,64 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "../supabase";
 import { daysSince, monthRevenue } from "../utils/helpers";
 
+
+// ── Client health calculation ─────────────────────────────────────────────────
+export function getClientHealth(customer) {
+  const deals = customer.deals || [];
+  const closedDeals = deals.filter(d => d.stage === "closed");
+  const openDeals   = deals.filter(d => d.stage !== "closed" && d.stage !== "lost");
+  const prefs       = customer.preferences || {};
+  const freqDays    = prefs.order_frequency_days || 14;
+
+  if (closedDeals.length === 0 && openDeals.length === 0) return { status: "new",      color: "#6366F1", bg: "#EEF2FF", label: "New",      days: null };
+  if (closedDeals.length === 0) return { status: "prospect", color: "#3B82F6", bg: "#EFF6FF", label: "Prospect", days: null };
+
+  const lastClosed = closedDeals.reduce((latest, d) => {
+    if (!d.closed_at) return latest;
+    return !latest || new Date(d.closed_at) > new Date(latest) ? d.closed_at : latest;
+  }, null);
+
+  if (!lastClosed) return { status: "prospect", color: "#3B82F6", bg: "#EFF6FF", label: "Prospect", days: null };
+
+  const daysSinceOrder = Math.floor((Date.now() - new Date(lastClosed)) / 86400000);
+
+  if (daysSinceOrder <= freqDays)           return { status: "active",   color: "#10B981", bg: "#ECFDF5", label: "Active",   days: daysSinceOrder };
+  if (daysSinceOrder <= freqDays * 2)       return { status: "warm",     color: "#F59E0B", bg: "#FFFBEB", label: "Warm",     days: daysSinceOrder };
+  if (daysSinceOrder <= freqDays * 4)       return { status: "cooling",  color: "#EF4444", bg: "#FEF2F2", label: "Cooling",  days: daysSinceOrder };
+  return                                           { status: "inactive",  color: "#94A3B8", bg: "#F1F5F9", label: "Inactive", days: daysSinceOrder };
+}
+
+// ── Queue priority calculation ────────────────────────────────────────────────
+export function getQueuePriority(customer, pendingFollowUpMap, stockMatchSet) {
+  const fu       = pendingFollowUpMap?.[customer.id];
+  const openDeal = (customer.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+  const now      = new Date();
+
+  if (customer.urgent) return { priority: 1, label: "🔴 Urgent",       color: "#EF4444" };
+
+  if (fu) {
+    const due = new Date(fu.due_at);
+    if (due <= now) return { priority: 2, label: "📅 Overdue",         color: "#EF4444" };
+    const diffH = Math.round((due - now) / 3600000);
+    if (diffH <= 24) return { priority: 3, label: "📅 Due today",      color: "#D97706" };
+  }
+
+  if (openDeal?.stage === "confirmed_pending_pickup") return { priority: 4, label: "⚡ Pickup today", color: "#6366F1" };
+
+  if (stockMatchSet?.has(customer.id)) return { priority: 5, label: "📦 Stock match", color: "#10B981" };
+
+  if (openDeal && Math.floor((Date.now() - new Date(customer.last_activity_at || customer.last_active)) / 86400000) >= 3) {
+    return { priority: 6, label: "⚠️ Silent 3d+", color: "#D97706" };
+  }
+
+  const health = getClientHealth(customer);
+  if (health.status === "cooling") return { priority: 7, label: "🔄 Re-engage",   color: "#EF4444" };
+
+  if (openDeal) return { priority: 8, label: "📋 Open request", color: "#6366F1" };
+
+  return null;
+}
+
 const CustomerContext = createContext(null);
 
 export function CustomerProvider({ children }) {

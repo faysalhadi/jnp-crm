@@ -8,6 +8,7 @@ import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import FollowUpPanel from "./FollowUpPanel";
+import ClientPreferencesPanel from "./ClientPreferencesPanel";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
@@ -618,6 +619,9 @@ export default function ChatHeader() {
           </div>
         </div>
       )}
+
+      {/* Preferences Panel — clients only */}
+      {(activeCustomer?.contact_type === "client" || !activeCustomer?.contact_type || activeCustomer?.contact_type === "walkin") && <ClientPreferencesPanel />}
 
       {/* Follow-up, Notes & Activity Panel */}
       <FollowUpPanel />

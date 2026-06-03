@@ -2,8 +2,9 @@ import React, { useState, useMemo } from "react";
 import StageBar from "../ui/StageBar";
 import Spinner from "../ui/Spinner";
 import { daysSince } from "../../utils/helpers";
-import { useCustomers } from "../../context/CustomerContext";
+import { useCustomers, getClientHealth, getQueuePriority } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
+import { useStock } from "../../context/StockContext";
 import PipelineView from "./PipelineView";
 
 function timeAgo(dateStr) {
@@ -25,104 +26,80 @@ function fmtFollowUp(due_at) {
   const diffH = Math.round((due - now) / 3600000);
   if (diffH < 0) {
     const overH = Math.abs(diffH);
-    return overH < 24 ? `${overH}h overdue` : `${Math.floor(overH/24)}d overdue`;
+    return overH < 24 ? `${overH}h overdue` : `${Math.floor(overH / 24)}d overdue`;
   }
   if (diffH === 0) return "Due now";
   if (diffH < 24)  return `In ${diffH}h`;
   const diffD = Math.floor(diffH / 24);
-  if (diffD === 1) return "Tomorrow";
-  return `In ${diffD} days`;
+  return diffD === 1 ? "Tomorrow" : `In ${diffD} days`;
 }
 
-function getAttention(c, pendingFollowUpMap) {
-  if (c.urgent) return { type: "urgent", label: "🔴 Urgent" };
-  const fu = pendingFollowUpMap?.[c.id];
-  if (fu) {
-    const now = new Date(), due = new Date(fu.due_at);
-    if (due <= now) return { type: "followup_overdue", label: "📅 " + fmtFollowUp(fu.due_at) };
-    const diffH = Math.round((due - now) / 3600000);
-    if (diffH <= 3) return { type: "followup_soon", label: "📅 " + fmtFollowUp(fu.due_at) };
-  }
-  const openDeal = (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
-  if (openDeal && daysSince(c.last_active) >= 3) {
-    return { type: "silent", label: `⚠️ ${daysSince(c.last_active)}d silent` };
-  }
-  return null;
-}
-
-function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap }) {
-  const openD      = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
-  const latestDeal = openD[0] || (c.deals || [])[0];
+function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePriority, showActions }) {
+  const openDeals  = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+  const latestDeal = openDeals[0] || (c.deals || [])[0];
   const totalValue = (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
   const activityTs = c.last_activity_at || c.last_active;
-  const attention  = getAttention(c, pendingFollowUpMap);
   const fu         = pendingFollowUpMap?.[c.id];
+  const health     = getClientHealth(c);
+  const lastAct    = lastActivityMap?.[c.id];
 
-  // Preview: last note → deal info → contact notes → number
-  const lastAct = lastActivityMap?.[c.id];
   const notePreview = lastAct?.activity_type === "note" ? lastAct.note?.slice(0, 55) : null;
   const dealPreview = latestDeal
-    ? ([latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Open deal") +
+    ? ([latestDeal.brand, latestDeal.model].filter(Boolean).join(" ") || "Open request") +
       (latestDeal.budget ? ` · AED ${Number(latestDeal.budget).toLocaleString()}` : "")
     : null;
   const preview = notePreview || dealPreview || c.notes?.slice(0, 55) || c.number || "No details yet";
 
-  const isOverdue = attention?.type === "followup_overdue" || attention?.type === "urgent";
-  const hasFollowUp = !!pendingFollowUpMap?.[c.id];
-  const isIncomplete = (!c.contact_type || c.contact_type === "client" || c.contact_type === "walkin")
-    && !(c.deals || []).length
-    && !c.notes
-    && !hasFollowUp;
+  const hasFollowUp  = !!fu;
+  const isOverdue    = queuePriority?.priority <= 2;
+  const isIncomplete = !(c.deals || []).length && !c.notes && !hasFollowUp;
+  const prefs        = c.preferences || {};
+  const hasPrefs     = prefs.brands?.length || prefs.budget_max;
 
   return (
     <div onClick={onOpen} style={{
-      background: "#fff", borderRadius: 18, padding: "12px 14px",
+      background: "#fff", borderRadius: 16, padding: "12px 14px",
       border: `1.5px solid ${c.urgent ? "#FECACA" : isOverdue ? "#FEF3C7" : "#F1F5F9"}`,
       cursor: "pointer",
-      boxShadow: c.urgent ? "0 2px 16px rgba(239,68,68,0.08)" : "0 1px 4px rgba(0,0,0,0.05)",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
       position: "relative", overflow: "hidden",
     }}>
-      {c.urgent && <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: "#EF4444" }} />}
+      {queuePriority && <div style={{ position: "absolute", top: 0, left: 0, width: 3, height: "100%", background: queuePriority.color }} />}
 
-      {/* Row 1 — avatar + name + timestamp */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ position: "relative", flexShrink: 0 }}>
           <div style={{
-            width: 44, height: 44, borderRadius: "50%",
-            background: c.urgent ? "#FEF2F2" : c.contact_type === "walkin" ? "#EEF2FF" : "#EEF2FF",
+            width: 42, height: 42, borderRadius: "50%",
+            background: health.bg,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 17, fontWeight: 800, textTransform: "uppercase",
-            color: c.urgent ? "#EF4444" : "#6366F1",
+            fontSize: 16, fontWeight: 800, color: health.color,
+            border: `2px solid ${health.color}40`,
           }}>
-            {(c.name || "?")[0]}
+            {(c.name || "?")[0].toUpperCase()}
           </div>
           {isIncomplete && (
-            <div style={{
-              position: "absolute", bottom: 0, right: 0,
-              width: 12, height: 12, borderRadius: "50%",
-              background: "#F97316", border: "2px solid #fff",
-            }} title="Incomplete profile" />
+            <div style={{ position: "absolute", bottom: 0, right: 0, width: 11, height: 11, borderRadius: "50%", background: "#F97316", border: "2px solid #fff" }} />
           )}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
               <span style={{ fontWeight: 800, fontSize: 14, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {c.name}
               </span>
-              {c.contact_type === "walkin" && (
-                <span style={{ fontSize: 9, fontWeight: 700, color: "#6366F1", background: "#EEF2FF", padding: "1px 6px", borderRadius: 8, flexShrink: 0 }}>
-                  Walk-in
-                </span>
-              )}
-              {c.urgent && (
-                <span style={{ fontSize: 9, fontWeight: 700, color: "#EF4444", background: "#FEF2F2", padding: "1px 6px", borderRadius: 8, flexShrink: 0 }}>
-                  URGENT
+              {queuePriority && (
+                <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: queuePriority.color + "20", color: queuePriority.color, flexShrink: 0 }}>
+                  {queuePriority.label}
                 </span>
               )}
             </div>
-            <span style={{ fontSize: 11, color: "#94A3B8", flexShrink: 0 }}>{timeAgo(activityTs)}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: health.bg, color: health.color }}>
+                {health.label}
+              </span>
+              <span style={{ fontSize: 10, color: "#94A3B8" }}>{timeAgo(activityTs)}</span>
+            </div>
           </div>
           <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {preview}
@@ -130,96 +107,150 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap }) {
         </div>
       </div>
 
-      {/* Stage bar */}
       {latestDeal && (
-        <div style={{ marginTop: 8, marginLeft: 54 }}>
+        <div style={{ marginTop: 8, marginLeft: 52 }}>
           <StageBar stageId={latestDeal.stage} />
         </div>
       )}
 
-      {/* Bottom row */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, marginLeft: 54 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, marginLeft: 52 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10, color: "#CBD5E1" }}>
-            {(c.deals || []).length} deal{(c.deals || []).length !== 1 ? "s" : ""}
-          </span>
+          {openDeals.length > 0 && (
+            <span style={{ fontSize: 10, color: "#6366F1", fontWeight: 700 }}>{openDeals.length} open</span>
+          )}
+          {hasPrefs && (
+            <span style={{ fontSize: 9, color: "#10B981", fontWeight: 700, background: "#ECFDF5", padding: "1px 6px", borderRadius: 8 }}>🎯</span>
+          )}
           {fu && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20,
-              background: attention?.type === "followup_overdue" ? "#FEF2F2" : "#FFFBEB",
-              color: attention?.type === "followup_overdue" ? "#EF4444" : "#D97706",
-            }}>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20,
+              background: isOverdue ? "#FEF2F2" : "#FFFBEB",
+              color:      isOverdue ? "#EF4444" : "#D97706" }}>
               📅 {fmtFollowUp(fu.due_at)}
             </span>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {totalValue > 0 && (
-            <span style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>
-              AED {totalValue.toLocaleString()}
-            </span>
-          )}
-          {attention?.type === "silent" && (
-            <span style={{ fontSize: 9, color: "#D97706", fontWeight: 700 }}>⚠️ Follow up</span>
-          )}
-        </div>
+        {totalValue > 0 && (
+          <span style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>
+            AED {totalValue >= 1000 ? (totalValue / 1000).toFixed(0) + "k" : totalValue.toLocaleString()}
+          </span>
+        )}
       </div>
+
+      {showActions && queuePriority && c.number && (
+        <div style={{ display: "flex", gap: 6, marginTop: 8, marginLeft: 52 }} onClick={e => e.stopPropagation()}>
+          <a href={`https://wa.me/${c.number.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
+            style={{ flex: 1, padding: "6px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+            💬 Message
+          </a>
+          <a href={`tel:${c.number}`}
+            style={{ flex: 1, padding: "6px 0", borderRadius: 8, background: "#F1F5F9", color: "#64748B", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+            📞 Call
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionLabel({ label, count, color = "#94A3B8" }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "14px 0 8px" }}>
+      <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
+      <span style={{ fontSize: 10, fontWeight: 800, color, letterSpacing: 1, whiteSpace: "nowrap" }}>
+        {label}{count !== undefined ? ` (${count})` : ""}
+      </span>
+      <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
     </div>
   );
 }
 
 export default function CustomersTab() {
-  const [viewMode, setViewMode] = useState("clients");
-  const { isMobile, setShowSideDrawer, setShowSearch } = useUI();
+  const [viewMode, setViewMode] = useState("queue");
+  const { isMobile } = useUI();
+  const { stock } = useStock();
   const {
     customers, loading,
     lastActivityMap, pendingFollowUpMap,
     setActiveCustomerId, setActiveDealId, setView, setPendingSuggestion,
     filter, setFilter,
     search, setSearch,
-    setShowContactModal, setContactModalPreType,
-    openDeals, closedDeals, revenue,
+    openDeals: openDealsCount, revenue,
   } = useCustomers();
 
-  // Only clients + walk-ins
   const allClients = useMemo(() =>
     customers.filter(c => !c.contact_type || c.contact_type === "client" || c.contact_type === "walkin"),
     [customers]
   );
 
-  // Apply search + behaviour filter
-  const filtered = useMemo(() => {
-    return allClients
-      .filter(c => {
-        if (search) return c.name.toLowerCase().includes(search.toLowerCase()) || (c.number || "").includes(search);
-        if (filter === "urgent")  return c.urgent;
-        if (filter === "overdue") return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
-        if (filter === "vip")     return c.tier === "vip";
-        if (filter === "cold")    return c.tier === "cold";
+  const stockMatchSet = useMemo(() => {
+    const available = (stock || []).filter(s => s.status === "available");
+    const matched = new Set();
+    allClients.forEach(c => {
+      const prefs = c.preferences || {};
+      if (!prefs.brands?.length && !prefs.budget_max) return;
+      const has = available.some(s => {
+        if (prefs.brands?.length && !prefs.brands.some(b => (s.brand || "").toLowerCase().includes(b.toLowerCase()))) return false;
+        if (prefs.budget_max && s.max_price > Number(prefs.budget_max)) return false;
         return true;
-      })
-      .sort((a, b) => {
-        if (a.urgent && !b.urgent) return -1;
-        if (!a.urgent && b.urgent) return 1;
-        const aTime = a.last_activity_at || a.last_active || "";
-        const bTime = b.last_activity_at || b.last_active || "";
-        return new Date(bTime) - new Date(aTime);
       });
-  }, [allClients, search, filter]);
+      if (has) matched.add(c.id);
+    });
+    return matched;
+  }, [allClients, stock]);
 
-  // Needs Attention: urgent + overdue follow-up (within 3h or past) + silent 3+ days
-  const needsAttention = useMemo(() =>
-    filtered.filter(c => getAttention(c, pendingFollowUpMap) !== null),
-    [filtered, pendingFollowUpMap]
+  const queueClients = useMemo(() =>
+    allClients
+      .map(c => ({ c, priority: getQueuePriority(c, pendingFollowUpMap, stockMatchSet) }))
+      .filter(({ priority }) => priority !== null)
+      .sort((a, b) => a.priority.priority - b.priority.priority),
+    [allClients, pendingFollowUpMap, stockMatchSet]
   );
-  const rest = useMemo(() =>
-    filtered.filter(c => getAttention(c, pendingFollowUpMap) === null),
-    [filtered, pendingFollowUpMap]
-  );
+
+  const sections = useMemo(() => {
+    const s = { critical: [], confirm: [], stockMatch: [], silent: [], reengage: [], open: [] };
+    queueClients.forEach(({ c, priority }) => {
+      if      (priority.priority <= 3) s.critical.push({ c, priority });
+      else if (priority.priority === 4) s.confirm.push({ c, priority });
+      else if (priority.priority === 5) s.stockMatch.push({ c, priority });
+      else if (priority.priority === 6) s.silent.push({ c, priority });
+      else if (priority.priority === 7) s.reengage.push({ c, priority });
+      else                              s.open.push({ c, priority });
+    });
+    return s;
+  }, [queueClients]);
+
+  const filteredAll = useMemo(() => {
+    return allClients.filter(c => {
+      if (search) {
+        const q = search.toLowerCase();
+        const dealMatch = (c.deals || []).some(d =>
+          (d.brand || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q)
+        );
+        return c.name.toLowerCase().includes(q) || (c.number || "").includes(search) || dealMatch;
+      }
+      if (filter === "urgent")     return c.urgent;
+      if (filter === "overdue")    return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+      if (filter === "waiting")    return (c.deals || []).some(d => d.stage === "waiting");
+      if (filter === "incomplete") return !(c.deals || []).length && !c.notes && !pendingFollowUpMap?.[c.id];
+      if (filter === "cooling")    return getClientHealth(c).status === "cooling";
+      if (filter === "inactive")   return getClientHealth(c).status === "inactive";
+      return true;
+    }).sort((a, b) => {
+      if (a.urgent && !b.urgent) return -1;
+      if (!a.urgent && b.urgent) return 1;
+      return new Date(b.last_activity_at || b.last_active || "") - new Date(a.last_activity_at || a.last_active || "");
+    });
+  }, [allClients, search, filter, pendingFollowUpMap]);
+
+  const healthCounts = useMemo(() => {
+    const c = { active: 0, warm: 0, cooling: 0, inactive: 0, prospect: 0, new: 0 };
+    allClients.forEach(cl => { c[getClientHealth(cl).status] = (c[getClientHealth(cl).status] || 0) + 1; });
+    return c;
+  }, [allClients]);
 
   function openClient(c) {
-    const openD = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
-    const deal  = openD[0] || (c.deals || [])[0];
+    const open = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+    const deal = open[0] || (c.deals || [])[0];
     setActiveCustomerId(c.id);
     setActiveDealId(deal?.id || null);
     setView("detail");
@@ -229,140 +260,143 @@ export default function CustomersTab() {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
 
-      {/* ── Sticky header ── */}
+      {/* Header */}
       <div style={{ background: "#fff", padding: "16px 14px 0", borderBottom: "1px solid #F1F5F9", position: "sticky", top: 0, zIndex: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, letterSpacing: 1.5 }}>LAPTOP FOR LESS</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>Clients</div>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={() => setShowSearch(true)}
-              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              🔍
-            </button>
-            <button onClick={() => setShowSideDrawer(true)}
-              style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>
-              📊
-            </button>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#0F172A" }}>Clients</div>
           </div>
         </div>
-
-        {/* View toggle */}
-        <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: "1px solid #F1F5F9", marginBottom: 14 }}>
-          {[{ key: "clients", label: "Clients" }, { key: "pipeline", label: "Pipeline" }].map(m => (
+        <div style={{ display: "flex", borderBottom: "1px solid #F1F5F9", marginLeft: -14, marginRight: -14, paddingLeft: 14 }}>
+          {[
+            { key: "queue",    label: `Queue (${queueClients.length})` },
+            { key: "clients",  label: `All (${allClients.length})` },
+            { key: "pipeline", label: "Pipeline" },
+          ].map(m => (
             <button key={m.key} onClick={() => setViewMode(m.key)}
-              style={{ flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
-                background: viewMode === m.key ? "#534AB7" : "#F8FAFC",
-                color:      viewMode === m.key ? "#fff"    : "#64748B" }}>
+              style={{ padding: "8px 14px", border: "none", background: "none", cursor: "pointer",
+                fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                color:        viewMode === m.key ? "#6366F1" : "#94A3B8",
+                borderBottom: viewMode === m.key ? "2px solid #6366F1" : "2px solid transparent" }}>
               {m.label}
             </button>
           ))}
         </div>
       </div>
 
-      {viewMode === "clients" ? (
+      {/* QUEUE */}
+      {viewMode === "queue" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "12px 12px 100px" : "16px 24px 40px" }}>
+
+          {/* Health summary */}
+          <div style={{ display: "flex", gap: 5, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
+            {[
+              { key: "active",   label: "🟢 Active",   color: "#10B981" },
+              { key: "warm",     label: "🟡 Warm",     color: "#F59E0B" },
+              { key: "cooling",  label: "🔴 Cooling",  color: "#EF4444" },
+              { key: "inactive", label: "⚫ Inactive", color: "#94A3B8" },
+              { key: "prospect", label: "🔵 Prospect", color: "#3B82F6" },
+            ].filter(h => healthCounts[h.key] > 0).map(h => (
+              <div key={h.key} style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 20, background: "#F8FAFC", fontSize: 10, fontWeight: 700, color: h.color }}>
+                {h.label} {healthCounts[h.key]}
+              </div>
+            ))}
+          </div>
+
+          {loading && <Spinner />}
+
+          {!loading && queueClients.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#0F172A" }}>Queue is clear</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4, lineHeight: 1.6 }}>
+                No urgent actions right now.
+              </div>
+            </div>
+          )}
+
+          {[
+            { items: sections.critical,  label: "ACT NOW",       color: "#EF4444",  actions: true  },
+            { items: sections.confirm,   label: "CONFIRM TODAY", color: "#6366F1",  actions: true  },
+            { items: sections.stockMatch,label: "STOCK MATCH",   color: "#10B981",  actions: true  },
+            { items: sections.silent,    label: "FOLLOW UP",     color: "#D97706",  actions: true  },
+            { items: sections.reengage,  label: "RE-ENGAGE",     color: "#EF4444",  actions: true  },
+            { items: sections.open,      label: "OPEN REQUESTS", color: "#6366F1",  actions: false },
+          ].filter(s => s.items.length > 0).map(s => (
+            <div key={s.label}>
+              <SectionLabel label={s.label} count={s.items.length} color={s.color} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {s.items.map(({ c, priority }) => (
+                  <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
+                    lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
+                    queuePriority={priority} showActions={s.actions} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ALL CLIENTS */}
+      {viewMode === "clients" && (
         <>
-          {/* ── Filters ── */}
-          <div style={{ background: "#fff", padding: "14px 14px 0", borderBottom: "1px solid #F1F5F9" }}>
-            {/* Stats */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <div style={{ background: "#fff", padding: "12px 14px 0", borderBottom: "1px solid #F1F5F9" }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               {[
-                { label: "Open Deals",  value: openDeals,   color: "#6366F1", bg: "#EEF2FF" },
-                { label: "Closed",      value: closedDeals,  color: "#10B981", bg: "#ECFDF5" },
-                { label: "This Month",  value: `AED ${revenue >= 1000 ? (revenue/1000).toFixed(1)+"k" : revenue}`, color: "#F59E0B", bg: "#FFFBEB" },
+                { label: "Total",  value: allClients.length, color: "#6366F1", bg: "#EEF2FF" },
+                { label: "Open",   value: openDealsCount,    color: "#F59E0B", bg: "#FFFBEB" },
+                { label: "MTD",    value: `AED ${revenue >= 1000 ? (revenue / 1000).toFixed(0) + "k" : revenue}`, color: "#10B981", bg: "#ECFDF5" },
               ].map(s => (
-                <div key={s.label} style={{ flex: 1, background: s.bg, borderRadius: 14, padding: "10px 8px", textAlign: "center" }}>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: s.color }}>{s.value}</div>
-                  <div style={{ fontSize: 9, color: s.color, fontWeight: 700, opacity: 0.75, marginTop: 1 }}>{s.label}</div>
+                <div key={s.label} style={{ flex: 1, background: s.bg, borderRadius: 12, padding: "8px 6px", textAlign: "center" }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.value}</div>
+                  <div style={{ fontSize: 9, color: s.color, fontWeight: 700, opacity: 0.75 }}>{s.label}</div>
                 </div>
               ))}
             </div>
-
-            {/* Search */}
             <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="🔍  Search name or number..."
+              placeholder="🔍 Search name, number or device..."
               style={{ width: "100%", padding: "9px 13px", borderRadius: 12, border: "1.5px solid #F1F5F9", background: "#F8FAFC", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
-
-            {/* Behaviour pills */}
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 10 }}>
+            <div style={{ display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 10 }}>
               {[
-                { key: "all", label: "All" },
-                { key: "urgent",  label: "🔴 Urgent" },
-                { key: "overdue", label: "⏰ Overdue" },
-                { key: "vip",     label: "⭐ VIP" },
-                { key: "cold",    label: "❄️ Cold" },
+                { key: "all",        label: `All (${allClients.length})` },
+                { key: "urgent",     label: "🔴 Urgent" },
+                { key: "waiting",    label: "⏳ Waiting" },
+                { key: "overdue",    label: "⏰ Overdue" },
+                { key: "cooling",    label: "🔄 Cooling" },
+                { key: "incomplete", label: "🟠 Incomplete" },
+                { key: "inactive",   label: "⚫ Inactive" },
               ].map(f => (
-                <button key={f.key} onClick={() => setFilter(f.key)}
-                  style={{ padding: "5px 14px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                <button key={f.key} onClick={() => { setFilter(f.key); setSearch(""); }}
+                  style={{ padding: "5px 12px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 11, fontWeight: 700, cursor: "pointer",
                     background: filter === f.key ? "#6366F1" : "#F1F5F9",
                     color:      filter === f.key ? "#fff"    : "#64748B" }}>
-                  {f.key === "all" ? `All (${allClients.length})` : f.label}
+                  {f.label}
                 </button>
               ))}
             </div>
           </div>
-
-          {/* ── List ── */}
           <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 24px 40px", overflowY: "auto" }}>
             {loading && <Spinner />}
-
-            {!loading && filtered.length === 0 && (
+            {!loading && filteredAll.length === 0 && (
               <div style={{ textAlign: "center", padding: "60px 20px", color: "#CBD5E1" }}>
                 <div style={{ fontSize: 40, marginBottom: 10 }}>👤</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>
-                  {search || filter !== "all" ? "No clients match" : "No clients yet"}
-                </div>
-                <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>
-                  {!search && filter === "all" && "Tap + Client to get started"}
-                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No clients match</div>
               </div>
             )}
-
-            {/* Needs Attention section */}
-            {!loading && !search && filter === "all" && needsAttention.length > 0 && (
-              <div style={{ marginBottom: 18 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
-                  <span style={{ fontSize: 10, fontWeight: 800, color: "#EF4444", letterSpacing: 1, whiteSpace: "nowrap" }}>
-                    NEEDS ATTENTION ({needsAttention.length})
-                  </span>
-                  <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {needsAttention.map(c => (
-                    <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
-                      lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* All clients */}
-            {!loading && rest.length > 0 && (
-              <div>
-                {!search && filter === "all" && needsAttention.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                    <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 1, whiteSpace: "nowrap" }}>
-                      ALL CLIENTS ({rest.length})
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: "#F1F5F9" }} />
-                  </div>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {rest.map(c => (
-                    <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
-                      lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap} />
-                  ))}
-                </div>
-              </div>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {filteredAll.map(c => (
+                <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
+                  lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
+                  queuePriority={getQueuePriority(c, pendingFollowUpMap, stockMatchSet)}
+                  showActions={false} />
+              ))}
+            </div>
           </div>
         </>
-      ) : (
-        <PipelineView />
       )}
+
+      {viewMode === "pipeline" && <PipelineView />}
     </div>
   );
 }
