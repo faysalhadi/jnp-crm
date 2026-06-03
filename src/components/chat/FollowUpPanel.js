@@ -206,12 +206,7 @@ export default function FollowUpPanel({ customerId: propCustomerId = null }) {
           <span style={{ fontSize: 11, color: "#94A3B8", marginLeft: "auto" }}>{expanded ? "▲" : "▼"}</span>
         </div>
       )}
-      {ACTIVITY_TYPES.map(a => (
-        <button key={a.id} onClick={e => { e.stopPropagation(); logActivity(a.id); }} title={a.label}
-          style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + a.bg, background: a.bg, fontSize: 14, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {a.label.split(" ")[0]}
-        </button>
-      ))}
+
     </div>
   );
 

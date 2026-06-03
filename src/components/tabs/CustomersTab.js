@@ -34,7 +34,7 @@ function fmtFollowUp(due_at) {
   return diffD === 1 ? "Tomorrow" : `In ${diffD} days`;
 }
 
-function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePriority, showActions }) {
+function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePriority}) {
   const openDeals  = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
   const latestDeal = openDeals[0] || (c.deals || [])[0];
   const totalValue = (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
@@ -136,18 +136,7 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePrior
         )}
       </div>
 
-      {showActions && queuePriority && c.number && (
-        <div style={{ display: "flex", gap: 6, marginTop: 8, marginLeft: 52 }} onClick={e => e.stopPropagation()}>
-          <a href={`https://wa.me/${c.number.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
-            style={{ flex: 1, padding: "6px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
-            💬 Message
-          </a>
-          <a href={`tel:${c.number}`}
-            style={{ flex: 1, padding: "6px 0", borderRadius: 8, background: "#F1F5F9", color: "#64748B", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
-            📞 Call
-          </a>
-        </div>
-      )}
+
     </div>
   );
 }
@@ -298,9 +287,12 @@ export default function CustomersTab() {
               { key: "inactive", label: "⚫ Inactive", color: "#94A3B8" },
               { key: "prospect", label: "🔵 Prospect", color: "#3B82F6" },
             ].filter(h => healthCounts[h.key] > 0).map(h => (
-              <div key={h.key} style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 20, background: "#F8FAFC", fontSize: 10, fontWeight: 700, color: h.color }}>
+              <button key={h.key}
+                onClick={() => { setViewMode("clients"); setFilter(h.key); setSearch(""); }}
+                style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 20, border: "none",
+                  background: "#F8FAFC", fontSize: 10, fontWeight: 700, color: h.color, cursor: "pointer" }}>
                 {h.label} {healthCounts[h.key]}
-              </div>
+              </button>
             ))}
           </div>
 
@@ -330,7 +322,7 @@ export default function CustomersTab() {
                 {s.items.map(({ c, priority }) => (
                   <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
                     lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
-                    queuePriority={priority} showActions={s.actions} />
+                    queuePriority={priority}  />
                 ))}
               </div>
             </div>
@@ -389,7 +381,7 @@ export default function CustomersTab() {
                 <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
                   lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
                   queuePriority={getQueuePriority(c, pendingFollowUpMap, stockMatchSet)}
-                  showActions={false} />
+                   />
               ))}
             </div>
           </div>

@@ -21,6 +21,7 @@ export default function ClientPreferencesPanel() {
 
   const [form, setForm] = useState({
     brands:               prefs.brands              || [],
+    product_types:        prefs.product_types        || [],
     condition:            prefs.condition            || "",
     budget_min:           prefs.budget_min           || "",
     budget_max:           prefs.budget_max           || "",
@@ -33,6 +34,7 @@ export default function ClientPreferencesPanel() {
     const p = activeCustomer?.preferences || {};
     setForm({
       brands:               p.brands              || [],
+      product_types:        p.product_types        || [],
       condition:            p.condition            || "",
       budget_min:           p.budget_min           || "",
       budget_max:           p.budget_max           || "",
@@ -71,7 +73,7 @@ export default function ClientPreferencesPanel() {
           {!hasPrefs && <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>What do they regularly buy?</div>}
           {hasPrefs && !editing && (
             <div style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>
-              {(prefs.brands || []).join(", ") || "Any brand"}
+              {[(prefs.product_types || []).join(", "), (prefs.brands || []).join(", ")].filter(Boolean).join(" · ") || "Any"}
               {prefs.condition ? ` · ${prefs.condition}` : ""}
               {prefs.budget_max ? ` · AED ${prefs.budget_min || 0}–${prefs.budget_max}` : ""}
               {prefs.typical_quantity ? ` · ${prefs.typical_quantity} units` : ""}
@@ -93,7 +95,7 @@ export default function ClientPreferencesPanel() {
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>BRANDS THEY BUY</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {["HP", "Dell", "Lenovo", "Apple", "Microsoft", "Asus", "Acer", "Samsung"].map(b => {
+              {["HP", "Dell", "Lenovo", "Apple", "Microsoft", "Asus", "Acer"].map(b => {
                 const sel = (form.brands || []).includes(b);
                 return (
                   <button key={b} onClick={() => toggleBrand(b)}
@@ -101,6 +103,26 @@ export default function ClientPreferencesPanel() {
                       background: sel ? "#6366F1" : "#F1F5F9",
                       color:      sel ? "#fff"    : "#64748B" }}>
                     {b}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Product type */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 6 }}>PRODUCT TYPE</div>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {["Laptops", "Screens", "RAM / SSD", "Gaming"].map(t => {
+                const sel = (form.product_types || []).includes(t);
+                return (
+                  <button key={t} onClick={() => {
+                    const curr = form.product_types || [];
+                    setForm(f => ({ ...f, product_types: sel ? curr.filter(x => x !== t) : [...curr, t] }));
+                  }}
+                    style={{ padding: "5px 10px", borderRadius: 20, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      background: sel ? "#6366F1" : "#F1F5F9", color: sel ? "#fff" : "#64748B" }}>
+                    {t}
                   </button>
                 );
               })}
