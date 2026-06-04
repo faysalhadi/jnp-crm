@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
-import { getMatchCategory, MATCH_CATEGORIES } from "../../constants";
+import { scoreMatch } from "../../constants";
 
 const WHATSAPP = "+971509423162";
 
@@ -18,21 +18,6 @@ function toAED(price, currency) {
   if (currency === "USD") return Math.round(Number(price) * 3.67);
   if (currency === "GBP") return Math.round(Number(price) * 4.65);
   return Number(price);
-}
-
-function brandMatches(a, b) {
-  if (!a || !b) return true; // no brand = loose match
-  return a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase());
-}
-
-function modelMatches(dealModel, listingModel) {
-  if (!dealModel || !listingModel) return true;
-  const dm = dealModel.toLowerCase();
-  const lm = listingModel.toLowerCase();
-  const words = dm.split(/\s+/).filter(w => w.length > 2);
-  if (!words.length) return true;
-  const matched = words.filter(w => lm.includes(w));
-  return matched.length >= Math.ceil(words.length * 0.5);
 }
 
 function budgetOk(budget, price, currency, tolerance = 1.15) {
@@ -76,45 +61,72 @@ export default function TraderMatchesPanel() {
     setStats({ waitingDeals: waitingDeals.length, sellingListings: selling.length, buyingListings: buying.length, yourStock: stock.length });
 
     // ── Section 1: You can SOURCE (trader selling → client waiting) ──
+    // Auto-link trader numbers from contacts
+    const { data: traderContacts } = await supabase
+      .from("customers")
+      .select("id, name, number")
+      .eq("contact_type", "trader");
+
+    const traderNumberMap = {};
+    (traderContacts || []).forEach(t => {
+      if (t.name && t.number) traderNumberMap[t.name.toLowerCase().trim()] = t.number;
+    });
     const srcResults = [];
     for (const listing of selling) {
-      const matchingDeals = waitingDeals.filter(deal => {
-        if (!brandMatches(deal.brand, listing.brand)) return false;
-        if (!modelMatches(deal.model, listing.model)) return false;
-        if (!budgetOk(deal.budget, listing.price, listing.currency)) return false;
-        return true;
-      });
+      const matchingDeals = waitingDeals
+        .map(deal => ({
+          ...deal,
+          matchScore: scoreMatch(listing.brand, listing.model, deal.brand, deal.model),
+        }))
+        .filter(deal => deal.matchScore.score >= 2 && budgetOk(deal.budget, listing.price, listing.currency))
+        .sort((a, b) => b.matchScore.score - a.matchScore.score);
+
       if (matchingDeals.length > 0) {
-        // Estimate margin: best client budget minus trader price
         const bestBudget = Math.max(...matchingDeals.map(d => Number(d.budget) || 0));
         const traderPriceAED = toAED(listing.price, listing.currency) || 0;
         const estMargin = bestBudget && traderPriceAED ? bestBudget - traderPriceAED : null;
-        srcResults.push({ listing, deals: matchingDeals, estMargin });
+        const topScore = matchingDeals[0].matchScore;
+        // Auto-link number from contacts if listing has none
+        const resolvedNumber = listing.trader_number ||
+          traderNumberMap[(listing.trader_name || "").toLowerCase().trim()] || null;
+        srcResults.push({ listing: { ...listing, trader_number: resolvedNumber }, deals: matchingDeals, estMargin, topScore });
       }
     }
-    srcResults.sort((a, b) => (b.estMargin || 0) - (a.estMargin || 0));
+    srcResults.sort((a, b) => (b.topScore.score - a.topScore.score) || ((b.estMargin || 0) - (a.estMargin || 0)));
     setSourceMatches(srcResults);
 
     // ── Section 2: You can SELL (your stock → trader buying) ──
     const sellResults = [];
     for (const item of stock) {
-      const matchingBuyers = buying.filter(b => {
-        if (!brandMatches(item.brand, b.brand)) return false;
-        if (!modelMatches(b.model, item.model)) return false;
-        // Trader's buy price must be >= your cost (with some margin)
-        if (b.price && item.cost_price) {
-          const buyPriceAED = toAED(b.price, b.currency) || 0;
-          if (buyPriceAED < Number(item.cost_price)) return false;
-        }
-        return true;
-      });
+      const matchingBuyers = buying
+        .map(b => ({
+          ...b,
+          matchScore: scoreMatch(item.brand, item.model, b.brand, b.model),
+        }))
+        .filter(b => {
+          if (b.matchScore.score < 2) return false;
+          if (b.price && item.cost_price) {
+            const buyPriceAED = toAED(b.price, b.currency) || 0;
+            if (buyPriceAED < Number(item.cost_price)) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => b.matchScore.score - a.matchScore.score);
+
       if (matchingBuyers.length > 0) {
         const bestOffer = Math.max(...matchingBuyers.map(b => toAED(b.price, b.currency) || 0));
         const profit    = bestOffer && item.cost_price ? bestOffer - Number(item.cost_price) : null;
-        sellResults.push({ stock: item, buyers: matchingBuyers, bestOffer, profit });
+        const topScore  = matchingBuyers[0].matchScore;
+        // Auto-link numbers from contacts
+        const resolvedBuyers = matchingBuyers.map(b => ({
+          ...b,
+          trader_number: b.trader_number ||
+            traderNumberMap[(b.trader_name || "").toLowerCase().trim()] || null,
+        }));
+        sellResults.push({ stock: item, buyers: resolvedBuyers, bestOffer, profit, topScore });
       }
     }
-    sellResults.sort((a, b) => (b.profit || 0) - (a.profit || 0));
+    sellResults.sort((a, b) => (b.topScore.score - a.topScore.score) || ((b.profit || 0) - (a.profit || 0)));
     setSellMatches(sellResults);
 
     // Default to whichever tab has matches
@@ -224,8 +236,12 @@ export default function TraderMatchesPanel() {
                     <div style={{ padding: "12px 14px", borderBottom: "1px solid #F1F5F9" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: "#6366F1", marginBottom: 3 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#6366F1", marginBottom: 3, display: "flex", alignItems: "center", gap: 6 }}>
                             🔵 TRADER SELLING
+                            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6,
+                              background: match.topScore.bg, color: match.topScore.color }}>
+                              {match.topScore.emoji} {match.topScore.label}
+                            </span>
                           </div>
                           <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>
                             {[listing.brand, listing.model].filter(Boolean).join(" ") || "Unknown Device"}
@@ -297,11 +313,15 @@ export default function TraderMatchesPanel() {
                               </div>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name}</div>
-                                <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
                                   Budget {deal.budget ? `AED ${Number(deal.budget).toLocaleString()}` : "not set"}
                                   {deal.model ? ` · wants ${[deal.brand, deal.model].filter(Boolean).join(" ")}` : ""}
                                 </div>
                               </div>
+                              <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6, flexShrink: 0,
+                                background: deal.matchScore.bg, color: deal.matchScore.color }}>
+                                {deal.matchScore.emoji} {deal.matchScore.label}
+                              </span>
                               {clientWaUrl && (
                                 <a href={clientWaUrl} target="_blank" rel="noreferrer"
                                   style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none" }}>
@@ -343,8 +363,12 @@ export default function TraderMatchesPanel() {
                     <div style={{ padding: "12px 14px", borderBottom: "1px solid #F1F5F9" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", marginBottom: 3 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", marginBottom: 3, display: "flex", alignItems: "center", gap: 6 }}>
                             🟢 YOUR STOCK
+                            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6,
+                              background: match.topScore.bg, color: match.topScore.color }}>
+                              {match.topScore.emoji} {match.topScore.label}
+                            </span>
                           </div>
                           <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>
                             {[item.brand, item.model].filter(Boolean).join(" ") || "Unknown"}

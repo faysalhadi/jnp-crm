@@ -54,6 +54,36 @@ export function stockMatchesCategory(stockItem, category) {
   return itemCat === category;
 }
 
+// Score how well a stock item / listing matches a deal requirement
+// Returns { score: 0-5, label, color, emoji }
+// Brand match = 2pts, Model match = 3pts
+// 5 = Strong (both), 2 = Likely (brand only), 3 = Likely (model only), 0 = None
+export function scoreMatch(stockBrand, stockModel, dealBrand, dealModel) {
+  let score = 0;
+
+  const sb = (stockBrand || "").toLowerCase().trim();
+  const sm = (stockModel || "").toLowerCase().trim();
+  const db = (dealBrand  || "").toLowerCase().trim();
+  const dm = (dealModel  || "").toLowerCase().trim();
+
+  // Brand match
+  if (db && sb && (sb.includes(db) || db.includes(sb))) score += 2;
+
+  // Model match — check if meaningful keywords from deal model appear in stock model
+  if (dm && sm) {
+    const keywords = dm.split(/[\s\-\/]+/).filter(w => w.length > 2);
+    if (keywords.length > 0) {
+      const matched = keywords.filter(w => sm.includes(w));
+      if (matched.length >= Math.ceil(keywords.length * 0.5)) score += 3;
+    }
+  }
+
+  if (score >= 5) return { score, label: "Strong match",  color: "#059669", bg: "#ECFDF5", emoji: "🟢" };
+  if (score === 3) return { score, label: "Model match",   color: "#D97706", bg: "#FFFBEB", emoji: "🟡" };
+  if (score === 2) return { score, label: "Brand match",   color: "#6366F1", bg: "#EEF2FF", emoji: "🔵" };
+  return { score, label: "Loose",        color: "#94A3B8", bg: "#F8FAFC",  emoji: "⚪" };
+}
+
 export const TIERS = {
   vip:     { label: "VIP",     color: "#EF4444", bg: "#FEF2F2", icon: "⭐" },
   regular: { label: "Regular", color: "#F59E0B", bg: "#FFFBEB", icon: "🟡" },

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
-import { stockMatchesCategory, MATCH_CATEGORIES } from "../../constants";
+import { scoreMatch } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
 
 export default function WaitingClientsPanel({ stockItem }) {
@@ -18,18 +18,20 @@ export default function WaitingClientsPanel({ stockItem }) {
     const { data: deals } = await supabase
       .from("deals")
       .select("*, customers(id, name, number, messages(content, role, ts))")
-      .eq("stage", "waiting")
-      .neq("match_category", "none");
+      .eq("stage", "waiting");
 
     if (!deals) return;
 
-    const matching = deals.filter(deal => {
-      const cat = deal.match_category || "none";
-      if (cat === "none") return false;
-      return stockMatchesCategory(stockItem, cat);
-    });
+    // Score each deal against this stock item, keep score >= 2
+    const scored = deals
+      .map(deal => ({
+        ...deal,
+        matchScore: scoreMatch(stockItem.brand, stockItem.model, deal.brand, deal.model),
+      }))
+      .filter(deal => deal.matchScore.score >= 2)
+      .sort((a, b) => b.matchScore.score - a.matchScore.score);
 
-    setWaitingDeals(matching);
+    setWaitingDeals(scored);
   };
 
   const generateMessages = async () => {
@@ -121,6 +123,10 @@ Return ONLY the message text, nothing else.`;
               {(deal.customers?.name || "?").slice(0, 2).toUpperCase()}
             </div>
             <span style={{ fontSize: 12, color: "#3C3489", flex: 1 }}>{deal.customers?.name}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6,
+              background: deal.matchScore.bg, color: deal.matchScore.color }}>
+              {deal.matchScore.emoji} {deal.matchScore.label}
+            </span>
             {deal.budget && <span style={{ fontSize: 10, color: "#7F77DD" }}>AED {Number(deal.budget).toLocaleString()}</span>}
           </div>
         ))}
