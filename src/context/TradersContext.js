@@ -43,7 +43,23 @@ export function TradersProvider({ children, anthropicKey }) {
       .eq("status", "active")
       .gte("created_at", thirtyDaysAgo)
       .order("created_at", { ascending: false });
-    setTraderListings(data || []);
+
+    // Deduplicate: keep newest row per trader_name + type + brand + model + price
+    const seen = new Set();
+    const deduped = (data || []).filter(row => {
+      const key = [
+        (row.trader_name || "").toLowerCase().trim(),
+        row.type || "",
+        (row.brand || "").toLowerCase().trim(),
+        (row.model || "").toLowerCase().trim(),
+        String(row.price || ""),
+      ].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    setTraderListings(deduped);
 
     const { data: importTimes } = await supabase
       .from("trader_inventory")
@@ -394,21 +410,11 @@ ${chunkText}`;
   async function saveTraderListings() {
     if (!traderImportPreview?.length) return;
     setSavingTraderListings(true);
-    const groups = [...new Set((traderImportPreview || []).map(l => l.source_group).filter(Boolean))];
-    const oneHourAgo = new Date(
-      Date.now() - 60 * 60 * 1000
-    ).toISOString();
-    for (const group of groups) {
-      await supabase.from("trader_inventory")
-        .delete()
-        .eq("source_group", group)
-        .lt("created_at", oneHourAgo);
-    }
-    const rows = traderImportPreview.map(l => ({
-      ...l, status: "active"
-    }));
-    const { error } = await supabase
-      .from("trader_inventory").insert(rows);
+
+    // Insert all new rows — no deletes, we keep history
+    // Deduplication happens at load time (newest wins per trader+brand+model+price)
+    const rows = traderImportPreview.map(l => ({ ...l, status: "active" }));
+    const { error } = await supabase.from("trader_inventory").insert(rows);
     if (!error) {
       await loadTraderListings();
       setTraderImportResult({
