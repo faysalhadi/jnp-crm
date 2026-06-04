@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { FACEBOOK_GROUPS } from "../../constants/facebookGroups";
+import { saveKey } from "../../hooks/useMarketingSettings";
 
 const WHATSAPP  = "+971509423162";
 const CHANNEL   = "https://whatsapp.com/channel/0029Vb818z5GufIwfVtYoB0z";
@@ -125,16 +126,19 @@ export default function FacebookPostingTab({ manualInput = null, strategyNotes =
   const [posted, setPosted]           = useState({});
   const [activeSection, setActiveSection] = useState("a");
 
-  // Load cached captions for today
+  // Load cached captions and posted state for today
   useEffect(() => {
-    try {
-      const cached = localStorage.getItem(`fb_captions_${todayKey}`);
-      if (cached) setCaptions(JSON.parse(cached));
-    } catch {}
-    try {
-      const p = localStorage.getItem(`fb_posted_${todayKey}`);
-      if (p) setPosted(JSON.parse(p));
-    } catch {}
+    (async () => {
+      try {
+        const { loadKey } = await import("../../hooks/useMarketingSettings");
+        const [cached, p] = await Promise.all([
+          loadKey(`fb_captions_${todayKey}`),
+          loadKey(`fb_posted_${todayKey}`),
+        ]);
+        if (cached) setCaptions(JSON.parse(cached));
+        if (p) setPosted(JSON.parse(p));
+      } catch {}
+    })();
   }, []); // eslint-disable-line
 
   // Mix strategy: alternate link/no-link by day
@@ -201,7 +205,7 @@ ${linkNote}`
     }
 
     setCaptions(newCaptions);
-    localStorage.setItem(`fb_captions_${todayKey}`, JSON.stringify(newCaptions));
+    saveKey(`fb_captions_${todayKey}`, JSON.stringify(newCaptions));
     setGenerating(false);
   }, [anthropicKey, stock, byRegion, todayKey, includeLink, cta]); // eslint-disable-line
 
@@ -216,7 +220,7 @@ ${linkNote}`
   function markPosted(groupUrl) {
     const updated = { ...posted, [groupUrl]: new Date().toISOString() };
     setPosted(updated);
-    localStorage.setItem(`fb_posted_${todayKey}`, JSON.stringify(updated));
+    saveKey(`fb_posted_${todayKey}`, JSON.stringify(updated));
   }
 
   const captionsReady = Object.keys(captions).length > 0;

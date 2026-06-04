@@ -4,6 +4,7 @@ import { useUI } from "../../context/UIContext";
 import { useAuth } from "../../context/AuthContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useSales } from "../../context/SalesContext";
+import { useMarketingSettings } from "../../hooks/useMarketingSettings";
 import GroupsTab from "./GroupsTab";
 import FacebookPostingTab from "./FacebookPostingTab";
 
@@ -266,19 +267,25 @@ export default function MarketingTab({ stock }) {
   const [mode, setMode]             = useState("auto");
   const [consignmentStock, setConsignmentStock] = useState([]);
   const [manualInput, setManualInput] = useState("");
-  const [strategyNotes, setStrategyNotes] = useState("");
   const [posts, setPosts]           = useState({});
   const [generating, setGenerating] = useState({});
   const [copied, setCopied]         = useState({});
-  const [postedDates, setPostedDates] = useState({});
   const [selectedTypes, setSelectedTypes] = useState({});
   const [postFeedback, setPostFeedback] = useState({});
 
-  // WhatsApp Groups state (same as before)
-  const [fbMode, setFbMode]         = useState("groups"); // groups | personal | business
-  const [weeklyPlan, setWeeklyPlan] = useState(null);
+  // Synced marketing settings (Supabase + localStorage)
+  const {
+    ready: settingsReady,
+    strategyNotes, setStrategyNotes,
+    library, setLibrary,
+    postedDates, setPostedDates,
+    weeklyPlan, setWeeklyPlan,
+    postFeedbackHistory, setPostFeedbackHistory,
+  } = useMarketingSettings();
+
+  // WhatsApp Groups state
+  const [fbMode, setFbMode]         = useState("groups");
   const [weeklyLoading, setWeeklyLoading] = useState(false);
-  const [library, setLibrary]       = useState([]);
   const [libGenerating, setLibGenerating] = useState(false);
 
   // Load consignment stock
@@ -289,17 +296,20 @@ export default function MarketingTab({ stock }) {
       .then(({ data }) => setConsignmentStock(data || []));
   }, []);
 
-  // Load persisted state
+  // Load today's per-day feedback from feedback history
   useEffect(() => {
-    try { const s = localStorage.getItem("jnp_posted_dates");    if (s) setPostedDates(JSON.parse(s)); } catch {}
-    try { const s = localStorage.getItem("jnp_content_library"); if (s) setLibrary(JSON.parse(s)); } catch {}
-    try { const s = localStorage.getItem("jnp_strategy_notes");  if (s) setStrategyNotes(s); } catch {}
-    try { const s = localStorage.getItem(`jnp_post_feedback_${todayKey}`); if (s) setPostFeedback(JSON.parse(s)); } catch {}
-    try { const s = localStorage.getItem("jnp_weekly_plan"); if (s) {
-      const p = JSON.parse(s);
-      if (p.weekKey === todayKey.slice(0, 7)) setWeeklyPlan(p);
-    }} catch {}
-  }, []); // eslint-disable-line
+    if (!settingsReady) return;
+    try {
+      const todayFeedback = {};
+      Object.entries(postFeedbackHistory).forEach(([k, v]) => {
+        if (k.endsWith(`_${todayKey}`)) {
+          const platformId = k.replace(`_${todayKey}`, "");
+          todayFeedback[platformId] = v;
+        }
+      });
+      setPostFeedback(todayFeedback);
+    } catch {}
+  }, [settingsReady]); // eslint-disable-line
 
   const availableStock = (stock || []).filter(s => s.status === "available");
 
@@ -328,8 +338,9 @@ export default function MarketingTab({ stock }) {
 
   function getPerfHint(platformId) {
     try {
-      const hist = JSON.parse(localStorage.getItem("jnp_post_feedback_history") || "{}");
-      const platHist = Object.entries(hist).filter(([k]) => k.startsWith(platformId)).slice(-10).map(([, v]) => v);
+      const platHist = Object.entries(postFeedbackHistory)
+        .filter(([k]) => k.startsWith(platformId))
+        .slice(-10).map(([, v]) => v);
       if (platHist.length < 3) return "";
       const avg = platHist.reduce((s, v) => s + (v === "many" ? 3 : v === "few" ? 1 : 0), 0) / platHist.length;
       if (avg > 2) return "\nNote: Posts here getting strong replies lately. Keep the same energy.";
@@ -406,19 +417,13 @@ export default function MarketingTab({ stock }) {
   function saveFeedback(platformId, rating) {
     const updated = { ...postFeedback, [platformId]: rating };
     setPostFeedback(updated);
-    localStorage.setItem(`jnp_post_feedback_${todayKey}`, JSON.stringify(updated));
-    // Save to history
-    try {
-      const hist = JSON.parse(localStorage.getItem("jnp_post_feedback_history") || "{}");
-      hist[`${platformId}_${todayKey}`] = rating;
-      localStorage.setItem("jnp_post_feedback_history", JSON.stringify(hist));
-    } catch {}
+    const updatedHistory = { ...postFeedbackHistory, [`${platformId}_${todayKey}`]: rating };
+    setPostFeedbackHistory(updatedHistory);
   }
 
   function markPosted() {
     const updated = { ...postedDates, [todayKey]: new Date().toISOString() };
     setPostedDates(updated);
-    localStorage.setItem("jnp_posted_dates", JSON.stringify(updated));
   }
 
   let streak = 0;
@@ -803,7 +808,6 @@ export default function MarketingTab({ stock }) {
                   const clean = raw.replace(/```json|```/g, "").trim();
                   const parsed = JSON.parse(clean);
                   setWeeklyPlan(parsed);
-                  localStorage.setItem("jnp_weekly_plan", JSON.stringify(parsed));
                 } catch (e) {
                   console.error("Weekly plan error:", e);
                   alert("Failed to generate weekly plan. Make sure you have API credits and try again.");
@@ -886,7 +890,6 @@ export default function MarketingTab({ stock }) {
                       const tagged = items.map(i => ({ ...i, type: item.type, id: Date.now() + Math.random() }));
                       const updated = [...library, ...tagged];
                       setLibrary(updated);
-                      localStorage.setItem("jnp_content_library", JSON.stringify(updated));
                     } catch { alert("Failed. Try again."); }
                     setLibGenerating(false);
                   }} disabled={libGenerating}
@@ -909,7 +912,7 @@ export default function MarketingTab({ stock }) {
                         background: copied[`lib-${item.id}`] ? "#ECFDF5" : "#6366F1", color: copied[`lib-${item.id}`] ? "#059669" : "#fff" }}>
                       {copied[`lib-${item.id}`] ? "✓" : "Copy"}
                     </button>
-                    <button onClick={() => { const u = library.filter(i => i.id !== item.id); setLibrary(u); localStorage.setItem("jnp_content_library", JSON.stringify(u)); }}
+                    <button onClick={() => { const u = library.filter(i => i.id !== item.id); setLibrary(u); }}
                       style={{ padding: "3px 8px", borderRadius: 8, border: "none", background: "#FEF2F2", color: "#EF4444", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>✕</button>
                   </div>
                 </div>
@@ -931,7 +934,7 @@ export default function MarketingTab({ stock }) {
               </div>
               <textarea
                 value={strategyNotes}
-                onChange={e => { setStrategyNotes(e.target.value); localStorage.setItem("jnp_strategy_notes", e.target.value); }}
+                onChange={e => { setStrategyNotes(e.target.value); }}
                 placeholder={"Write what you know about your market...\n\nExamples:\n• HP EliteBook is my fastest-selling model\n• UAE buyers respond to Grade A and Sharjah pickup\n• Pakistani traders care about price — mention bulk discount\n• Always mention JNP Market area\n• Thursday evenings get most WhatsApp replies\n• MacBook Air M2 is in highest demand\n• Export shipping available for international groups"}
                 rows={10}
                 style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0",
