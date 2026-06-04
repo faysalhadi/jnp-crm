@@ -489,17 +489,6 @@ export default function ChatHeader() {
                 </div>
               )}
 
-              {/* loss reason */}
-              {activeDeal.stage === "lost" && (
-                <div style={{ marginBottom: 10 }}>
-                  <select value={activeDeal.loss_reason || ""} onChange={e => updateDeal({ loss_reason: e.target.value })}
-                    style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #FEE2E2", fontSize: 12, outline: "none", color: "#EF4444", background: "#FEF2F2" }}>
-                    <option value="">Why was this lost?</option>
-                    {LOSS_REASONS.map(r => <option key={r}>{r}</option>)}
-                  </select>
-                </div>
-              )}
-
               {closedDealValue > 0 && (
                 <div style={{ padding: "8px 12px", borderRadius: 10, background: "#ECFDF5", fontSize: 12, color: "#10B981", fontWeight: 700 }}>
                   💰 Total from {activeCustomer.name}: AED {closedDealValue.toLocaleString()}
