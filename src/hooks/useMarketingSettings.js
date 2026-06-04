@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../supabase";
 
-// Keys we sync to Supabase
 const SYNC_KEYS = [
   "jnp_strategy_notes",
   "jnp_content_library",
@@ -26,93 +25,136 @@ async function dbSet(key, value) {
   );
 }
 
-// Load one key: Supabase first, fall back to localStorage
-async function loadKey(key) {
+export async function loadKey(key) {
   try {
     const remote = await dbGet(key);
     if (remote !== null) {
-      // Keep localStorage in sync for offline fallback
       localStorage.setItem(key, remote);
       return remote;
     }
   } catch {}
-  // Supabase unavailable — use localStorage
   return localStorage.getItem(key);
 }
 
-// Save one key: both Supabase and localStorage
-async function saveKey(key, value) {
+export async function saveKey(key, value) {
   localStorage.setItem(key, value);
   try { await dbSet(key, value); } catch {}
 }
 
-export function useMarketingSettings() {
-  const [ready, setReady] = useState(false);
-  const [strategyNotes, _setStrategyNotes]     = useState("");
-  const [library, _setLibrary]                 = useState([]);
-  const [postedDates, _setPostedDates]         = useState({});
-  const [weeklyPlan, _setWeeklyPlan]           = useState(null);
-  const [postFeedbackHistory, _setFeedbackHistory] = useState({});
+// Apply a raw string value from Supabase into the correct state setter
+function applyRemoteValue(key, raw, setters) {
+  if (raw === null || raw === undefined) return;
+  try {
+    switch (key) {
+      case "jnp_strategy_notes":
+        setters.setStrategyNotes(raw);
+        break;
+      case "jnp_content_library":
+        setters.setLibrary(JSON.parse(raw));
+        break;
+      case "jnp_posted_dates":
+        setters.setPostedDates(JSON.parse(raw));
+        break;
+      case "jnp_weekly_plan": {
+        const p = JSON.parse(raw);
+        const monthKey = new Date().toISOString().slice(0, 7);
+        if (p?.weekKey === monthKey) setters.setWeeklyPlan(p);
+        break;
+      }
+      case "jnp_post_feedback_history":
+        setters.setFeedbackHistory(JSON.parse(raw));
+        break;
+      default:
+        break;
+    }
+  } catch {}
+}
 
-  // Load all keys on mount
+export function useMarketingSettings() {
+  const [ready, setReady]                          = useState(false);
+  const [strategyNotes, setStrategyNotes]          = useState("");
+  const [library, setLibrary]                      = useState([]);
+  const [postedDates, setPostedDates]              = useState({});
+  const [weeklyPlan, setWeeklyPlan]                = useState(null);
+  const [postFeedbackHistory, setFeedbackHistory]  = useState({});
+
+  // Debounce timers per key
+  const debounceRefs = useRef({});
+
+  // Setters exposed to components — update state immediately, debounce Supabase write
+  const makeSetter = useCallback((key, stateSetter, serialize = (v) => v) => {
+    return (val) => {
+      stateSetter(val);
+      const serialized = serialize(val);
+      localStorage.setItem(key, serialized);
+      // Debounce Supabase write — 1.5s after last change
+      clearTimeout(debounceRefs.current[key]);
+      debounceRefs.current[key] = setTimeout(async () => {
+        try { await dbSet(key, serialized); } catch {}
+      }, 1500);
+    };
+  }, []);
+
+  const setStrategyNotesSync    = useCallback(makeSetter("jnp_strategy_notes",        setStrategyNotes,   (v) => v),           [makeSetter]);
+  const setLibrarySync          = useCallback(makeSetter("jnp_content_library",        setLibrary,         (v) => JSON.stringify(v)), [makeSetter]);
+  const setPostedDatesSync      = useCallback(makeSetter("jnp_posted_dates",           setPostedDates,     (v) => JSON.stringify(v)), [makeSetter]);
+  const setWeeklyPlanSync       = useCallback(makeSetter("jnp_weekly_plan",            setWeeklyPlan,      (v) => v ? JSON.stringify(v) : ""), [makeSetter]);
+  const setFeedbackHistorySync  = useCallback(makeSetter("jnp_post_feedback_history",  setFeedbackHistory, (v) => JSON.stringify(v)), [makeSetter]);
+
+  const setters = {
+    setStrategyNotes, setLibrary, setPostedDates,
+    setWeeklyPlan, setFeedbackHistory,
+  };
+  const settersRef = useRef(setters);
+  useEffect(() => { settersRef.current = setters; }); // always fresh
+
+  // Initial load from Supabase
   useEffect(() => {
     (async () => {
-      const [notes, lib, dates, plan, fbHist] = await Promise.all([
-        loadKey("jnp_strategy_notes"),
-        loadKey("jnp_content_library"),
-        loadKey("jnp_posted_dates"),
-        loadKey("jnp_weekly_plan"),
-        loadKey("jnp_post_feedback_history"),
-      ]);
-
-      if (notes)   _setStrategyNotes(notes);
-      if (lib)     { try { _setLibrary(JSON.parse(lib)); } catch {} }
-      if (dates)   { try { _setPostedDates(JSON.parse(dates)); } catch {} }
-      if (plan)    {
-        try {
-          const p = JSON.parse(plan);
-          const todayKey = new Date().toISOString().slice(0, 7);
-          if (p?.weekKey === todayKey) _setWeeklyPlan(p);
-        } catch {}
-      }
-      if (fbHist)  { try { _setFeedbackHistory(JSON.parse(fbHist)); } catch {} }
+      const [notes, lib, dates, plan, fbHist] = await Promise.all(
+        SYNC_KEYS.map(k => loadKey(k))
+      );
+      const raw = {
+        jnp_strategy_notes: notes,
+        jnp_content_library: lib,
+        jnp_posted_dates: dates,
+        jnp_weekly_plan: plan,
+        jnp_post_feedback_history: fbHist,
+      };
+      SYNC_KEYS.forEach(k => applyRemoteValue(k, raw[k], settersRef.current));
       setReady(true);
     })();
-  }, []);
+  }, []); // eslint-disable-line
 
-  const setStrategyNotes = useCallback((val) => {
-    _setStrategyNotes(val);
-    saveKey("jnp_strategy_notes", val);
-  }, []);
+  // Realtime subscription — updates from other devices appear instantly
+  useEffect(() => {
+    const channel = supabase
+      .channel("marketing_settings_sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "marketing_settings" },
+        (payload) => {
+          const { key, value } = payload.new || {};
+          if (!key || !SYNC_KEYS.includes(key)) return;
+          // Don't apply if we just wrote this ourselves (debounce still pending)
+          if (debounceRefs.current[key]) return;
+          localStorage.setItem(key, value);
+          applyRemoteValue(key, value, settersRef.current);
+        }
+      )
+      .subscribe();
 
-  const setLibrary = useCallback((val) => {
-    _setLibrary(val);
-    saveKey("jnp_content_library", JSON.stringify(val));
-  }, []);
-
-  const setPostedDates = useCallback((val) => {
-    _setPostedDates(val);
-    saveKey("jnp_posted_dates", JSON.stringify(val));
-  }, []);
-
-  const setWeeklyPlan = useCallback((val) => {
-    _setWeeklyPlan(val);
-    saveKey("jnp_weekly_plan", val ? JSON.stringify(val) : "");
-  }, []);
-
-  const setPostFeedbackHistory = useCallback((val) => {
-    _setFeedbackHistory(val);
-    saveKey("jnp_post_feedback_history", JSON.stringify(val));
-  }, []);
+    return () => { supabase.removeChannel(channel); };
+  }, []); // eslint-disable-line
 
   return {
     ready,
-    strategyNotes, setStrategyNotes,
-    library, setLibrary,
-    postedDates, setPostedDates,
-    weeklyPlan, setWeeklyPlan,
-    postFeedbackHistory, setPostFeedbackHistory,
+    strategyNotes,    setStrategyNotes:   setStrategyNotesSync,
+    library,          setLibrary:         setLibrarySync,
+    postedDates,      setPostedDates:     setPostedDatesSync,
+    weeklyPlan,       setWeeklyPlan:      setWeeklyPlanSync,
+    postFeedbackHistory, setPostFeedbackHistory: setFeedbackHistorySync,
   };
 }
 
-export { SYNC_KEYS, loadKey, saveKey };
+export { SYNC_KEYS };
