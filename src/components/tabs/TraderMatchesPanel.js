@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { getMatchCategory, MATCH_CATEGORIES } from "../../constants";
 
+const WHATSAPP = "+971509423162";
+
 function fmtAED(price, currency) {
   if (!price) return "—";
   if (!currency || currency === "AED") return "AED " + Number(price).toLocaleString();
@@ -10,229 +12,439 @@ function fmtAED(price, currency) {
   return `${currency} ${price}`;
 }
 
+function toAED(price, currency) {
+  if (!price) return null;
+  if (!currency || currency === "AED") return Number(price);
+  if (currency === "USD") return Math.round(Number(price) * 3.67);
+  if (currency === "GBP") return Math.round(Number(price) * 4.65);
+  return Number(price);
+}
+
+function brandMatches(a, b) {
+  if (!a || !b) return true; // no brand = loose match
+  return a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase());
+}
+
+function modelMatches(dealModel, listingModel) {
+  if (!dealModel || !listingModel) return true;
+  const dm = dealModel.toLowerCase();
+  const lm = listingModel.toLowerCase();
+  const words = dm.split(/\s+/).filter(w => w.length > 2);
+  if (!words.length) return true;
+  const matched = words.filter(w => lm.includes(w));
+  return matched.length >= Math.ceil(words.length * 0.5);
+}
+
+function budgetOk(budget, price, currency, tolerance = 1.15) {
+  if (!budget || !price) return true;
+  const priceAED = toAED(price, currency);
+  return Number(budget) * tolerance >= priceAED;
+}
+
 export default function TraderMatchesPanel() {
-  const [waitingDeals, setWaitingDeals] = useState([]);
-  const [traderListings, setTraderListings] = useState([]);
-  const [matches, setMatches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState({});
+  const [loading, setLoading]       = useState(true);
+  const [sellMatches, setSellMatches] = useState([]); // your stock → trader buying
+  const [sourceMatches, setSourceMatches] = useState([]); // trader selling → client waiting
+  const [activeTab, setActiveTab]   = useState("source"); // source | sell
+  const [expanded, setExpanded]     = useState({});
+  const [copied, setCopied]         = useState({});
+  const [stats, setStats]           = useState({ waitingDeals: 0, sellingListings: 0, buyingListings: 0, yourStock: 0 });
 
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
     setLoading(true);
-
-    // Load waiting client deals — must have brand or model set to match
-    const { data: allDeals } = await supabase
-      .from("deals")
-      .select("*, customers(id, name, number)")
-      .eq("stage", "waiting")
-      .neq("match_category", "none");
-
-    // Filter out deals with no brand AND no model — they would match everything
-    const deals = (allDeals || []).filter(d => d.brand || d.model);
-
-    // Load trader selling listings
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-    const { data: listings } = await supabase
-      .from("trader_inventory")
-      .select("*")
-      .eq("type", "selling")
-      .eq("status", "active")
-      .gte("created_at", thirtyDaysAgo);
 
-    if (!deals || !listings) { setLoading(false); return; }
+    const [
+      { data: allDeals },
+      { data: sellingListings },
+      { data: buyingListings },
+      { data: yourStock },
+    ] = await Promise.all([
+      supabase.from("deals").select("*, customers(id, name, number)").eq("stage", "waiting"),
+      supabase.from("trader_inventory").select("*").eq("type", "selling").gte("created_at", thirtyDaysAgo),
+      supabase.from("trader_inventory").select("*").eq("type", "buying").gte("created_at", thirtyDaysAgo),
+      supabase.from("stock").select("*").eq("status", "available"),
+    ]);
 
-    setWaitingDeals(deals);
-    setTraderListings(listings);
+    const waitingDeals = (allDeals || []).filter(d => d.brand || d.model);
+    const selling      = sellingListings || [];
+    const buying       = buyingListings  || [];
+    const stock        = yourStock       || [];
 
-    // Match each trader listing against waiting client deals
-    const results = [];
-    for (const listing of listings) {
-      const listingCat = getMatchCategory(listing.brand, listing.model, listing.processor);
-      if (listingCat === "none") continue;
+    setStats({ waitingDeals: waitingDeals.length, sellingListings: selling.length, buyingListings: buying.length, yourStock: stock.length });
 
-      const matchingDeals = deals.filter(deal => {
-        if (!deal.match_category || deal.match_category === "none") return false;
+    // ── Section 1: You can SOURCE (trader selling → client waiting) ──
+    const srcResults = [];
+    for (const listing of selling) {
+      const matchingDeals = waitingDeals.filter(deal => {
+        if (!brandMatches(deal.brand, listing.brand)) return false;
+        if (!modelMatches(deal.model, listing.model)) return false;
+        if (!budgetOk(deal.budget, listing.price, listing.currency)) return false;
+        return true;
+      });
+      if (matchingDeals.length > 0) {
+        // Estimate margin: best client budget minus trader price
+        const bestBudget = Math.max(...matchingDeals.map(d => Number(d.budget) || 0));
+        const traderPriceAED = toAED(listing.price, listing.currency) || 0;
+        const estMargin = bestBudget && traderPriceAED ? bestBudget - traderPriceAED : null;
+        srcResults.push({ listing, deals: matchingDeals, estMargin });
+      }
+    }
+    srcResults.sort((a, b) => (b.estMargin || 0) - (a.estMargin || 0));
+    setSourceMatches(srcResults);
 
-        // Brand must match if client specified one
-        if (deal.brand) {
-          const db = deal.brand.toLowerCase();
-          const lb = (listing.brand || "").toLowerCase();
-          if (lb && db && !lb.includes(db) && !db.includes(lb)) return false;
-        }
-
-        // Model must match if client specified one (loose — keywords)
-        if (deal.model) {
-          const dm = deal.model.toLowerCase();
-          const lm = (listing.model || "").toLowerCase();
-          if (lm && dm) {
-            // Split model into words and check at least half match
-            const dmWords = dm.split(/\s+/).filter(w => w.length > 2);
-            if (dmWords.length > 0) {
-              const matched = dmWords.filter(w => lm.includes(w));
-              if (matched.length < Math.ceil(dmWords.length * 0.5)) return false;
-            }
-          }
-        }
-
-        // Budget check with 15% tolerance
-        if (deal.budget && listing.price) {
-          const priceAED = listing.currency === "USD"
-            ? listing.price * 3.67
-            : listing.currency === "GBP"
-            ? listing.price * 4.65
-            : listing.price;
-          if (Number(deal.budget) * 1.15 < priceAED) return false;
+    // ── Section 2: You can SELL (your stock → trader buying) ──
+    const sellResults = [];
+    for (const item of stock) {
+      const matchingBuyers = buying.filter(b => {
+        if (!brandMatches(item.brand, b.brand)) return false;
+        if (!modelMatches(b.model, item.model)) return false;
+        // Trader's buy price must be >= your cost (with some margin)
+        if (b.price && item.cost_price) {
+          const buyPriceAED = toAED(b.price, b.currency) || 0;
+          if (buyPriceAED < Number(item.cost_price)) return false;
         }
         return true;
       });
-
-      if (matchingDeals.length > 0) {
-        results.push({ listing, deals: matchingDeals, listingCat });
+      if (matchingBuyers.length > 0) {
+        const bestOffer = Math.max(...matchingBuyers.map(b => toAED(b.price, b.currency) || 0));
+        const profit    = bestOffer && item.cost_price ? bestOffer - Number(item.cost_price) : null;
+        sellResults.push({ stock: item, buyers: matchingBuyers, bestOffer, profit });
       }
     }
+    sellResults.sort((a, b) => (b.profit || 0) - (a.profit || 0));
+    setSellMatches(sellResults);
 
-    // Sort by most matches first
-    results.sort((a, b) => b.deals.length - a.deals.length);
-    setMatches(results);
+    // Default to whichever tab has matches
+    if (srcResults.length > 0) setActiveTab("source");
+    else if (sellResults.length > 0) setActiveTab("sell");
+
     setLoading(false);
   }
 
-  if (loading) {
-    return (
-      <div style={{ padding: 20, textAlign: "center", color: "#94A3B8", fontSize: 13 }}>
-        Loading matches...
-      </div>
-    );
+  function copyWA(text, key) {
+    navigator.clipboard.writeText(text);
+    setCopied(p => ({ ...p, [key]: true }));
+    setTimeout(() => setCopied(p => ({ ...p, [key]: false })), 2000);
   }
 
-  if (matches.length === 0) {
-    return (
-      <div style={{ padding: "40px 20px", textAlign: "center" }}>
-        <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8" }}>No matches found</div>
-        <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4, lineHeight: 1.6 }}>
-          Matches appear when trader selling listings align with your waiting clients' requirements
-        </div>
-      </div>
-    );
+  function buildSourceMsg(listing, deals) {
+    const device = [listing.brand, listing.model].filter(Boolean).join(" ") || "device";
+    const specs  = [listing.processor, listing.ram, listing.storage].filter(Boolean).join(", ");
+    const client = deals[0]?.customers?.name || "mera client";
+    return `Bhai, ${device}${specs ? ` (${specs})` : ""} available hai aapke paas? ${client} ko chahiye. Price aur condition batao? 🙏`;
   }
+
+  function buildSellMsg(item, buyer) {
+    const device = [item.brand, item.model].filter(Boolean).join(" ") || "laptop";
+    const specs  = [item.processor, item.ram, item.ssd, `Grade ${item.condition}`].filter(Boolean).join(", ");
+    const price  = item.min_price ? `AED ${Number(item.min_price).toLocaleString()}` : "good price";
+    return `Bhai, ${device}${specs ? ` (${specs})` : ""} available hai mere paas — ${price}. Interested ho? 🙏`;
+  }
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: "#94A3B8", fontSize: 13 }}>Loading matches...</div>;
+  }
+
+  const totalMatches = sourceMatches.length + sellMatches.length;
 
   return (
-    <div style={{ padding: "10px 12px 100px", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
 
       {/* Header */}
-      <div style={{ padding: "10px 14px", borderRadius: 14, background: "linear-gradient(135deg, #6366F1, #7C3AED)", color: "#fff" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 2 }}>
-          🎯 {matches.length} trader listing{matches.length !== 1 ? "s" : ""} match waiting clients
+      <div style={{ padding: "12px 12px 0" }}>
+        <div style={{ background: "linear-gradient(135deg, #6366F1, #7C3AED)", borderRadius: 14, padding: "12px 14px", color: "#fff", marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
+            🎯 {totalMatches} match{totalMatches !== 1 ? "es" : ""} found
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+            {[
+              { label: "Waiting clients", val: stats.waitingDeals },
+              { label: "Trader selling", val: stats.sellingListings },
+              { label: "Trader buying",  val: stats.buyingListings },
+              { label: "Your stock",     val: stats.yourStock },
+            ].map(s => (
+              <div key={s.label} style={{ background: "rgba(255,255,255,0.15)", borderRadius: 8, padding: "6px 4px", textAlign: "center" }}>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{s.val}</div>
+                <div style={{ fontSize: 8, opacity: 0.85, lineHeight: 1.3 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div style={{ fontSize: 11, opacity: 0.85 }}>
-          {waitingDeals.length} waiting clients · {traderListings.length} active trader listings
+
+        {/* Tab toggle */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 2 }}>
+          <button onClick={() => setActiveTab("source")}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12,
+              background: activeTab === "source" ? "#6366F1" : "#F1F5F9",
+              color:      activeTab === "source" ? "#fff"    : "#64748B" }}>
+            🔵 Source ({sourceMatches.length})
+            <div style={{ fontSize: 9, fontWeight: 500, opacity: 0.8, marginTop: 1 }}>Trader selling → client waiting</div>
+          </button>
+          <button onClick={() => setActiveTab("sell")}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12,
+              background: activeTab === "sell" ? "#10B981" : "#F1F5F9",
+              color:      activeTab === "sell" ? "#fff"    : "#64748B" }}>
+            🟢 Sell ({sellMatches.length})
+            <div style={{ fontSize: 9, fontWeight: 500, opacity: 0.8, marginTop: 1 }}>Your stock → trader buying</div>
+          </button>
         </div>
       </div>
 
-      {/* Match cards */}
-      {matches.map((match, i) => {
-        const { listing, deals, listingCat } = match;
-        const catDef = MATCH_CATEGORIES.find(c => c.id === listingCat);
-        const isExpanded = expanded[i];
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 100px" }}>
 
-        return (
-          <div key={i} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #F1F5F9", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-
-            {/* Trader listing */}
-            <div style={{ padding: "12px 14px", borderBottom: "1px solid #F1F5F9" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>
-                      {catDef?.icon} {catDef?.label}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>
-                    {[listing.brand, listing.model].filter(Boolean).join(" ") || "Unknown Device"}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
-                    {[listing.processor, listing.ram, listing.storage, listing.condition].filter(Boolean).join(" · ")}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-                    📦 {listing.trader_name || "Unknown Trader"}
-                    {listing.quantity > 1 && ` · ×${listing.quantity} units`}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>
-                    {fmtAED(listing.price, listing.currency)}
-                  </div>
-                  {listing.quantity > 1 && (
-                    <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>×{listing.quantity} available</div>
-                  )}
-                </div>
+        {/* ── SOURCE TAB ── */}
+        {activeTab === "source" && (
+          sourceMatches.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px 20px" }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>🔵</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8" }}>No source matches</div>
+              <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4, lineHeight: 1.6 }}>
+                Matches appear when traders are selling what your clients are waiting for
               </div>
-
-              {/* Contact trader */}
-              {listing.trader_number && (
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <a href={`tel:${listing.trader_number}`}
-                    style={{ flex: 1, padding: "7px 0", borderRadius: 8, background: "#F1F5F9", color: "#64748B", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
-                    📞 Call Trader
-                  </a>
-                  <a href={`https://wa.me/${listing.trader_number.replace(/\D/g, "")}`}
-                    target="_blank" rel="noreferrer"
-                    style={{ flex: 1, padding: "7px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
-                    💬 WhatsApp
-                  </a>
-                </div>
-              )}
             </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {sourceMatches.map((match, i) => {
+                const { listing, deals, estMargin } = match;
+                const isExp = expanded[`src_${i}`];
+                const msgKey = `src_msg_${i}`;
+                const msg = buildSourceMsg(listing, deals);
+                const waUrl = listing.trader_number
+                  ? `https://wa.me/${listing.trader_number.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`
+                  : null;
 
-            {/* Matching clients */}
-            <button onClick={() => setExpanded(e => ({ ...e, [i]: !e[i] }))}
-              style={{ width: "100%", padding: "10px 14px", border: "none", background: "#F8FAFC", cursor: "pointer",
-                display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#10B981" }}>
-                ✅ {deals.length} client{deals.length !== 1 ? "s" : ""} waiting for this
-              </span>
-              <span style={{ fontSize: 11, color: "#94A3B8" }}>{isExpanded ? "▲" : "▼"}</span>
-            </button>
+                return (
+                  <div key={i} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1.5px solid #E0E7FF", boxShadow: "0 1px 4px rgba(99,102,241,0.07)" }}>
 
-            {isExpanded && (
-              <div style={{ borderTop: "1px solid #F1F5F9" }}>
-                {deals.map((deal, di) => {
-                  const customer = deal.customers;
-                  return (
-                    <div key={di} style={{
-                      padding: "10px 14px", borderBottom: di < deals.length - 1 ? "1px solid #F8FAFC" : "none",
-                      display: "flex", alignItems: "center", gap: 10,
-                    }}>
-                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#EEF2FF", flexShrink: 0,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
-                        {(customer?.name || "?")[0].toUpperCase()}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name}</div>
-                        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>
-                          {deal.budget ? `Budget AED ${Number(deal.budget).toLocaleString()}` : "No budget set"}
-                          {deal.brand || deal.model ? ` · Looking for ${[deal.brand, deal.model].filter(Boolean).join(" ")}` : ""}
+                    {/* Trader listing */}
+                    <div style={{ padding: "12px 14px", borderBottom: "1px solid #F1F5F9" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#6366F1", marginBottom: 3 }}>
+                            🔵 TRADER SELLING
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>
+                            {[listing.brand, listing.model].filter(Boolean).join(" ") || "Unknown Device"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                            {[listing.processor, listing.ram, listing.storage, listing.condition].filter(Boolean).join(" · ")}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>
+                            👤 {listing.trader_name || "Unknown"}{listing.quantity > 1 ? ` · ×${listing.quantity}` : ""}
+                            {listing.source_group ? ` · ${listing.source_group}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: "#6366F1" }}>
+                            {fmtAED(listing.price, listing.currency)}
+                          </div>
+                          {estMargin > 0 && (
+                            <div style={{ fontSize: 10, color: "#10B981", fontWeight: 700, marginTop: 2 }}>
+                              ~AED {estMargin.toLocaleString()} margin
+                            </div>
+                          )}
                         </div>
                       </div>
-                      {customer?.number && (
-                        <a href={`https://wa.me/${customer.number.replace(/\D/g, "")}`}
-                          target="_blank" rel="noreferrer"
-                          style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none" }}>
-                          WA
-                        </a>
-                      )}
+
+                      {/* WhatsApp actions */}
+                      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                        <button onClick={() => copyWA(msg, msgKey)}
+                          style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                            background: copied[msgKey] ? "#ECFDF5" : "#F1F5F9",
+                            color: copied[msgKey] ? "#059669" : "#64748B" }}>
+                          {copied[msgKey] ? "✓ Copied!" : "📋 Copy message"}
+                        </button>
+                        {waUrl ? (
+                          <a href={waUrl} target="_blank" rel="noreferrer"
+                            style={{ flex: 1, padding: "7px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+                            💬 WhatsApp trader
+                          </a>
+                        ) : (
+                          <div style={{ flex: 1, padding: "7px 0", borderRadius: 8, background: "#F1F5F9", color: "#CBD5E1", fontSize: 11, fontWeight: 700, textAlign: "center" }}>
+                            No number
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  );
-                })}
+
+                    {/* Waiting clients */}
+                    <button onClick={() => setExpanded(e => ({ ...e, [`src_${i}`]: !e[`src_${i}`] }))}
+                      style={{ width: "100%", padding: "9px 14px", border: "none", background: "#F8FAFC", cursor: "pointer",
+                        display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#10B981" }}>
+                        ✅ {deals.length} client{deals.length !== 1 ? "s" : ""} waiting for this
+                      </span>
+                      <span style={{ fontSize: 11, color: "#94A3B8" }}>{isExp ? "▲" : "▼"}</span>
+                    </button>
+
+                    {isExp && (
+                      <div style={{ borderTop: "1px solid #F1F5F9" }}>
+                        {deals.map((deal, di) => {
+                          const customer = deal.customers;
+                          const clientWaUrl = customer?.number
+                            ? `https://wa.me/${customer.number.replace(/\D/g, "")}?text=${encodeURIComponent(`${customer.name} bhai, ${[listing.brand, listing.model].filter(Boolean).join(" ")} mil sakta hai — price confirm karta hoon. Interest hai?`)}`
+                            : null;
+                          return (
+                            <div key={di} style={{ padding: "10px 14px", borderBottom: di < deals.length - 1 ? "1px solid #F8FAFC" : "none",
+                              display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#EEF2FF", flexShrink: 0,
+                                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#6366F1" }}>
+                                {(customer?.name || "?")[0].toUpperCase()}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{customer?.name}</div>
+                                <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                                  Budget {deal.budget ? `AED ${Number(deal.budget).toLocaleString()}` : "not set"}
+                                  {deal.model ? ` · wants ${[deal.brand, deal.model].filter(Boolean).join(" ")}` : ""}
+                                </div>
+                              </div>
+                              {clientWaUrl && (
+                                <a href={clientWaUrl} target="_blank" rel="noreferrer"
+                                  style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none" }}>
+                                  WA
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* ── SELL TAB ── */}
+        {activeTab === "sell" && (
+          sellMatches.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px 20px" }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>🟢</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#94A3B8" }}>No sell matches</div>
+              <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4, lineHeight: 1.6 }}>
+                Matches appear when traders want to buy what you have in stock
               </div>
-            )}
-          </div>
-        );
-      })}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {sellMatches.map((match, i) => {
+                const { stock: item, buyers, bestOffer, profit } = match;
+                const isExp = expanded[`sell_${i}`];
+
+                return (
+                  <div key={i} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1.5px solid #D1FAE5", boxShadow: "0 1px 4px rgba(16,185,129,0.07)" }}>
+
+                    {/* Your stock item */}
+                    <div style={{ padding: "12px 14px", borderBottom: "1px solid #F1F5F9" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", marginBottom: 3 }}>
+                            🟢 YOUR STOCK
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>
+                            {[item.brand, item.model].filter(Boolean).join(" ") || "Unknown"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                            {[item.processor, item.ram, item.ssd, `Grade ${item.condition}`].filter(Boolean).join(" · ")}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
+                            Cost: AED {Number(item.cost_price || 0).toLocaleString()}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          {bestOffer > 0 && (
+                            <div style={{ fontSize: 15, fontWeight: 800, color: "#10B981" }}>
+                              AED {bestOffer.toLocaleString()}
+                            </div>
+                          )}
+                          {profit > 0 && (
+                            <div style={{ fontSize: 10, color: "#10B981", fontWeight: 700, marginTop: 2 }}>
+                              ~AED {profit.toLocaleString()} profit
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Buyers toggle */}
+                    <button onClick={() => setExpanded(e => ({ ...e, [`sell_${i}`]: !e[`sell_${i}`] }))}
+                      style={{ width: "100%", padding: "9px 14px", border: "none", background: "#F8FAFC", cursor: "pointer",
+                        display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>
+                        🔵 {buyers.length} trader{buyers.length !== 1 ? "s" : ""} want{buyers.length === 1 ? "s" : ""} to buy this
+                      </span>
+                      <span style={{ fontSize: 11, color: "#94A3B8" }}>{isExp ? "▲" : "▼"}</span>
+                    </button>
+
+                    {isExp && (
+                      <div style={{ borderTop: "1px solid #F1F5F9" }}>
+                        {buyers.map((buyer, bi) => {
+                          const msg    = buildSellMsg(item, buyer);
+                          const msgKey = `sell_msg_${i}_${bi}`;
+                          const waUrl  = buyer.trader_number
+                            ? `https://wa.me/${buyer.trader_number.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`
+                            : null;
+                          const buyerPriceAED = toAED(buyer.price, buyer.currency);
+                          return (
+                            <div key={bi} style={{ padding: "10px 14px", borderBottom: bi < buyers.length - 1 ? "1px solid #F8FAFC" : "none" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{buyer.trader_name || "Unknown"}</div>
+                                  <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                                    {buyer.source_group || ""}
+                                    {[buyer.brand, buyer.model].filter(Boolean).length > 0 ? ` · wants ${[buyer.brand, buyer.model].filter(Boolean).join(" ")}` : ""}
+                                  </div>
+                                </div>
+                                {buyerPriceAED > 0 && (
+                                  <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
+                                      AED {buyerPriceAED.toLocaleString()}
+                                    </div>
+                                    {item.cost_price && (
+                                      <div style={{ fontSize: 10, color: buyerPriceAED > item.cost_price ? "#10B981" : "#EF4444", fontWeight: 700 }}>
+                                        {buyerPriceAED > item.cost_price
+                                          ? `+AED ${(buyerPriceAED - item.cost_price).toLocaleString()}`
+                                          : `-AED ${(item.cost_price - buyerPriceAED).toLocaleString()}`}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => copyWA(msg, msgKey)}
+                                  style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                                    background: copied[msgKey] ? "#ECFDF5" : "#F1F5F9",
+                                    color: copied[msgKey] ? "#059669" : "#64748B" }}>
+                                  {copied[msgKey] ? "✓ Copied" : "📋 Copy msg"}
+                                </button>
+                                {waUrl ? (
+                                  <a href={waUrl} target="_blank" rel="noreferrer"
+                                    style={{ flex: 1, padding: "6px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+                                    💬 WhatsApp
+                                  </a>
+                                ) : (
+                                  <div style={{ flex: 1, padding: "6px 0", borderRadius: 8, background: "#F1F5F9", color: "#CBD5E1", fontSize: 11, textAlign: "center" }}>
+                                    No number
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
     </div>
   );
 }
