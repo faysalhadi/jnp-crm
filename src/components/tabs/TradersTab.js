@@ -8,6 +8,7 @@ import TraderMatchesPanel from "./TraderMatchesPanel";
 import { TRADER_CATEGORIES } from "../../constants";
 import { formatWhatsAppNumber } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
+import { TraderProfileBadges } from "./TraderInventoryProfile";
 
 export default function TradersTab({
   anthropicKey,
@@ -182,6 +183,7 @@ export default function TradersTab({
                             )}
                           </div>
                         )}
+                        <TraderProfileBadges traderName={c.name} />
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
                         {c.number && (
