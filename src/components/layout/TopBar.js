@@ -36,7 +36,7 @@ export default function TopBar() {
         </button>
         <button onClick={() => setShowSideDrawer(true)}
           style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>
-          📊
+          ☰
         </button>
         <button onClick={() => setView("settings")}
           style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>

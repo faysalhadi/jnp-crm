@@ -33,7 +33,7 @@ export default function DesktopSidebar({ NAV_TABS }) {
         {/* Extra nav items only accessible via drawer on mobile */}
         <div style={{ borderTop: "1px solid #F1F5F9", marginTop: 8, paddingTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
           {[
-            { icon: "📊", label: "Marketing" },
+            { icon: "📣", label: "Marketing" },
             { icon: "💰", label: "Sales History" },
           ].map(item => (
             <button key={item.label}

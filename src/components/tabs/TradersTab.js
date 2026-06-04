@@ -17,6 +17,7 @@ export default function TradersTab({
 }) {
   const { isMobile } = useUI();
   const { customers, setActiveCustomerId, setActiveDealId, setView } = useCustomers();
+  const { setActiveTab } = useUI();
   const traderContacts = customers.filter(c => c.contact_type === "trader");
 
   const {
@@ -158,7 +159,7 @@ export default function TradersTab({
                   const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
                   return (
                     <div key={c.id}
-                      onClick={() => { setActiveCustomerId(c.id); setActiveDealId(null); setView("detail"); }}
+                      onClick={() => { setActiveCustomerId(c.id); setActiveDealId(null); setView("detail"); setActiveTab("customers"); }}
                       style={{ background: "#fff", borderRadius: 16, padding: "12px 14px", border: "1.5px solid #F1F5F9", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", display: "flex", alignItems: "center", gap: 12 }}>
                       <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#FFFBEB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, color: "#D97706", flexShrink: 0 }}>
                         {initials}
