@@ -3,7 +3,7 @@ import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
 
 export default function DesktopSidebar({ NAV_TABS }) {
-  const { activeTab, setActiveTab, setShowSearch } = useUI();
+  const { activeTab, setActiveTab, setShowSearch, setShowSideDrawer } = useUI();
   const { setView, setActiveCustomerId, setActiveDealId } = useCustomers();
 
   return (
@@ -29,6 +29,21 @@ export default function DesktopSidebar({ NAV_TABS }) {
             {activeTab === t.key && <div style={{ width: 4, height: 20, borderRadius: 2, background: "#6366F1" }} />}
           </button>
         ))}
+
+        {/* Extra nav items only accessible via drawer on mobile */}
+        <div style={{ borderTop: "1px solid #F1F5F9", marginTop: 8, paddingTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
+          {[
+            { icon: "📊", label: "Marketing" },
+            { icon: "💰", label: "Sales History" },
+          ].map(item => (
+            <button key={item.label}
+              onClick={() => setShowSideDrawer(true)}
+              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", width: "100%", fontSize: 14, fontWeight: 500, background: "transparent", color: "#64748B", transition: "all 0.15s" }}>
+              <span style={{ fontSize: 19 }}>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <div style={{ padding: "16px 20px", borderTop: "1px solid #F1F5F9" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -38,6 +53,7 @@ export default function DesktopSidebar({ NAV_TABS }) {
             <div style={{ fontSize: 10, color: "#94A3B8" }}>Owner</div>
           </div>
           <button onClick={() => setShowSearch(true)} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }}>🔍</button>
+          <button onClick={() => setShowSideDrawer(true)} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }} title="Menu">☰</button>
           <button onClick={() => setView("settings")} style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 15 }}>⚙️</button>
         </div>
       </div>
