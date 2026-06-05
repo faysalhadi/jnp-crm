@@ -248,7 +248,15 @@ export default function App() {
   }
 
   // detail view
-  if (view === "detail" && activeCustomer) {
+  if (view === "detail") {
+    if (!activeCustomer) {
+      return (
+        <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 13, color: "#94A3B8" }}>Loading...</div>
+          <button onClick={() => setView("list")} style={{ fontSize: 11, color: "#CBD5E1", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
+        </div>
+      );
+    }
     return <ChatDetailView />;
   }
 

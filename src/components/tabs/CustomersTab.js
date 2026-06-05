@@ -162,7 +162,8 @@ export default function CustomersTab() {
   useEffect(() => {
     if (customerViewMode && customerViewMode !== "queue") {
       setViewModeLocal(customerViewMode);
-      setCustomerViewMode("queue");
+      // Use setTimeout to avoid triggering re-render during navigation
+      setTimeout(() => setCustomerViewMode("queue"), 100);
     }
   }, [customerViewMode]); // eslint-disable-line
   const { stock } = useStock();
