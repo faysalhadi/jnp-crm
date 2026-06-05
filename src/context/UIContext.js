@@ -10,6 +10,7 @@ export function UIProvider({ children }) {
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [activeMarketingTab, setActiveMarketingTab] = useState("today");
+  const [customerViewMode, setCustomerViewMode] = useState("queue");
   const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export function UIProvider({ children }) {
       installPromptEvent, setInstallPromptEvent,
       showInstallBanner, setShowInstallBanner,
       activeMarketingTab, setActiveMarketingTab,
+      customerViewMode, setCustomerViewMode,
       showSearch, setShowSearch,
     }}>
       {children}

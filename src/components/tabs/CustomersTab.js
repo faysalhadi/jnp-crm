@@ -154,8 +154,17 @@ function SectionLabel({ label, count, color = "#94A3B8" }) {
 }
 
 export default function CustomersTab() {
-  const [viewMode, setViewMode] = useState("queue");
-  const { isMobile } = useUI();
+  const [viewMode, setViewModeLocal] = useState("queue");
+  const { isMobile, customerViewMode, setCustomerViewMode } = useUI();
+
+  const setViewMode = (mode) => setViewModeLocal(mode);
+
+  useEffect(() => {
+    if (customerViewMode && customerViewMode !== "queue") {
+      setViewModeLocal(customerViewMode);
+      setCustomerViewMode("queue");
+    }
+  }, [customerViewMode]); // eslint-disable-line
   const { stock } = useStock();
   const {
     customers, loading,

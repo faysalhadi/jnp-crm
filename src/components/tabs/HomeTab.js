@@ -11,7 +11,7 @@ import { useParts } from "../../context/PartsContext";
 import MorningBrief from "./MorningBrief";
 
 export default function HomeTab({ tasks, sourcingAlerts }) {
-  const { activeTab, setActiveTab, isMobile } = useUI();
+  const { activeTab, setActiveTab, isMobile, setCustomerViewMode } = useUI();
   const {
     customers,
     setView, setActiveCustomerId, setActiveDealId, setPendingSuggestion,
@@ -194,7 +194,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10 }}>
         {[
-          { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF", icon: "📋" },
+          { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF", icon: "📋", onClick: () => { setCustomerViewMode("pipeline"); setActiveTab("customers"); } },
           { label: "Revenue MTD", value: (() => { const total = revenue + partsRevMTD; return `AED ${total >= 1000 ? (total/1000).toFixed(1)+"k" : total}`; })(), color: "#10B981", bg: "#ECFDF5", icon: "💰" },
           { label: "In Stock", value: stock.filter(s => s.status === "available").length, color: "#F59E0B", bg: "#FFFBEB", icon: "📦" },
           { label: "Incomplete", value: customers.filter(c => (!c.contact_type || c.contact_type === "client" || c.contact_type === "walkin") && !(c.deals || []).length && !c.notes).length, color: "#F97316", bg: "#FFF7ED", icon: "🟠", onClick: () => { setActiveTab("customers"); setFilter && setFilter("all"); } },
