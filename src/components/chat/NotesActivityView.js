@@ -41,7 +41,22 @@ export default function NotesActivityView() {
   const [reengageMsg, setReengageMsg]   = useState("");
   const [reengageLoading, setReengageLoading] = useState(false);
   const [reengageCopied, setReengageCopied]   = useState(false);
+  // Follow-up state
+  const [followUp, setFollowUp]         = useState(null);
+  const [showFUForm, setShowFUForm]     = useState(false);
+  const [fuNote, setFuNote]             = useState("");
+  const [fuDays, setFuDays]             = useState(1);
+  const [fuSaving, setFuSaving]         = useState(false);
   const recognitionRef = useRef(null);
+
+  const FU_OPTIONS = [
+    { label: "Today", days: 0 },
+    { label: "Tomorrow", days: 1 },
+    { label: "2 days", days: 2 },
+    { label: "3 days", days: 3 },
+    { label: "1 week", days: 7 },
+    { label: "2 weeks", days: 14 },
+  ];
 
   useEffect(() => {
     if (activeCustomerId) {
@@ -49,10 +64,63 @@ export default function NotesActivityView() {
       setEditingId(null);
       setShowReengage(false);
       setReengageMsg("");
+      setFollowUp(null);
+      setShowFUForm(false);
+      setFuNote("");
       fetchActivityLog(activeCustomerId);
       fetchLostDeals(activeCustomerId);
+      fetchFollowUp(activeCustomerId);
     }
   }, [activeCustomerId]); // eslint-disable-line
+
+  async function fetchFollowUp(cid) {
+    const { data } = await supabase
+      .from("follow_ups")
+      .select("*")
+      .eq("customer_id", cid)
+      .eq("status", "pending")
+      .order("due_at", { ascending: true })
+      .limit(1);
+    setFollowUp(data?.[0] || null);
+  }
+
+  async function saveFollowUp() {
+    if (fuSaving) return;
+    setFuSaving(true);
+    const due = new Date();
+    due.setDate(due.getDate() + fuDays);
+    due.setHours(10, 0, 0, 0);
+    if (followUp) {
+      await supabase.from("follow_ups").update({
+        due_at: due.toISOString(), note: fuNote, status: "pending",
+      }).eq("id", followUp.id);
+    } else {
+      await supabase.from("follow_ups").insert({
+        customer_id: activeCustomerId, due_at: due.toISOString(),
+        note: fuNote, status: "pending",
+      });
+    }
+    await fetchFollowUp(activeCustomerId);
+    await loadCustomers();
+    setShowFUForm(false);
+    setFuNote("");
+    setFuDays(1);
+    setFuSaving(false);
+  }
+
+  async function markFollowUpDone() {
+    if (!followUp) return;
+    await supabase.from("follow_ups").update({ status: "done" }).eq("id", followUp.id);
+    setFollowUp(null);
+    await loadCustomers();
+  }
+
+  async function deleteFollowUp() {
+    if (!followUp) return;
+    await supabase.from("follow_ups").delete().eq("id", followUp.id);
+    setFollowUp(null);
+    await loadCustomers();
+  }
 
   async function fetchLostDeals(cid) {
     const { data } = await supabase
@@ -361,6 +429,82 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
             ) : null}
           </div>
         )}
+
+        {/* ── Follow-up Section ── */}
+        <div style={{ marginBottom: 10 }}>
+          {followUp ? (
+            // Existing follow-up card
+            <div style={{
+              background: new Date(followUp.due_at) < new Date() ? "#FEF2F2" : "#FFFBEB",
+              border: `1px solid ${new Date(followUp.due_at) < new Date() ? "#FECACA" : "#FDE68A"}`,
+              borderRadius: 10, padding: "10px 12px",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: new Date(followUp.due_at) < new Date() ? "#EF4444" : "#D97706", marginBottom: 2 }}>
+                    {new Date(followUp.due_at) < new Date() ? "⚠️ OVERDUE" : "⏰ FOLLOW UP"} — {new Date(followUp.due_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  </div>
+                  {followUp.note && <div style={{ fontSize: 12, color: "#374151" }}>{followUp.note}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+                  <button onClick={() => { setFuNote(followUp.note || ""); setFuDays(1); setShowFUForm(true); }}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: "#FDE68A", color: "#92400E", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                    ✏️
+                  </button>
+                  <button onClick={markFollowUpDone}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: "#ECFDF5", color: "#059669", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                    ✓ Done
+                  </button>
+                  <button onClick={deleteFollowUp}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: "#FEE2E2", color: "#EF4444", fontSize: 10, cursor: "pointer" }}>
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // No follow-up — set one button
+            !showFUForm && (
+              <button onClick={() => { setFuNote(""); setFuDays(1); setShowFUForm(true); }}
+                style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1.5px dashed #E2E8F0", background: "transparent", color: "#94A3B8", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left" }}>
+                ⏰ Set follow-up reminder
+              </button>
+            )
+          )}
+
+          {/* Follow-up form */}
+          {showFUForm && (
+            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "12px" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#D97706", marginBottom: 10 }}>⏰ SET FOLLOW-UP</div>
+              <input
+                value={fuNote}
+                onChange={e => setFuNote(e.target.value)}
+                placeholder="What to follow up on? (optional)"
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #FDE68A", fontSize: 12, outline: "none", marginBottom: 10, boxSizing: "border-box", background: "#fff" }}
+              />
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                {FU_OPTIONS.map(opt => (
+                  <button key={opt.days} onClick={() => setFuDays(opt.days)}
+                    style={{ padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700,
+                      background: fuDays === opt.days ? "#D97706" : "#FEF3C7",
+                      color: fuDays === opt.days ? "#fff" : "#92400E" }}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={saveFollowUp} disabled={fuSaving}
+                  style={{ flex: 2, padding: "9px", borderRadius: 8, border: "none", background: "#D97706", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: fuSaving ? 0.7 : 1 }}>
+                  {fuSaving ? "Saving..." : "✓ Set Follow-up"}
+                </button>
+                <button onClick={() => setShowFUForm(false)}
+                  style={{ flex: 1, padding: "9px", borderRadius: 8, border: "none", background: "#F1F5F9", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Note input */}
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
