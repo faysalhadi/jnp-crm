@@ -253,3 +253,34 @@ export const TRADER_CATEGORIES = [
   { id: 'parts',    label: 'Parts' },
   { id: 'mixed',    label: 'Mixed' },
 ];
+
+// ── Unified stock matching ─────────────────────────────────────────────────
+
+// Full match with scoring — used by WaitingClientsPanel, HomeTab lost deal matches
+export function matchStockToClients(stockItem, waitingDeals) {
+  if (!waitingDeals?.length) return [];
+  return waitingDeals
+    .map(deal => ({
+      ...deal,
+      matchScore: scoreMatch(stockItem.brand, stockItem.model, deal.brand, deal.model),
+    }))
+    .filter(deal => {
+      if (deal.matchScore.score < 2) return false;
+      if (deal.budget && stockItem.max_price) {
+        if (Number(stockItem.max_price) > Number(deal.budget) * 1.15) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.matchScore.score - a.matchScore.score);
+}
+
+// Lightweight boolean — used by CustomersTab queue priority (preferences-based)
+export function stockMatchesClient(stockItem, customer) {
+  if (stockItem.status !== "available") return false;
+  const prefs = customer.preferences || {};
+  if (prefs.brands?.length) {
+    if (!prefs.brands.some(b => (stockItem.brand || "").toLowerCase().includes(b.toLowerCase()))) return false;
+  }
+  if (prefs.budget_max && Number(stockItem.max_price) > Number(prefs.budget_max)) return false;
+  return true;
+}

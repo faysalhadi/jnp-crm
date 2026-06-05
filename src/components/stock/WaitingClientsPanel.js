@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
-import { scoreMatch } from "../../constants";
+import { matchStockToClients } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
 
 export default function WaitingClientsPanel({ stockItem }) {
@@ -22,15 +22,7 @@ export default function WaitingClientsPanel({ stockItem }) {
 
     if (!deals) return;
 
-    // Score each deal against this stock item, keep score >= 2
-    const scored = deals
-      .map(deal => ({
-        ...deal,
-        matchScore: scoreMatch(stockItem.brand, stockItem.model, deal.brand, deal.model),
-      }))
-      .filter(deal => deal.matchScore.score >= 2)
-      .sort((a, b) => b.matchScore.score - a.matchScore.score);
-
+    const scored = matchStockToClients(stockItem, deals);
     setWaitingDeals(scored);
   };
 

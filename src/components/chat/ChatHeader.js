@@ -7,7 +7,6 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
-import FollowUpPanel from "./FollowUpPanel";
 import ClientPreferencesPanel from "./ClientPreferencesPanel";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
 import { useBroadcast } from "../../hooks/useBroadcast";
@@ -91,16 +90,15 @@ export default function ChatHeader() {
     if (finalReason && activeDealId) {
       await supabase.from("deals").update({ loss_reason: finalReason }).eq("id", activeDealId);
     }
-    // Auto-create 14-day re-engagement reminder
+    // Auto-create 14-day re-engagement follow-up tied to the client
     const reengageDate = new Date();
     reengageDate.setDate(reengageDate.getDate() + 14);
     reengageDate.setHours(10, 0, 0, 0);
     const dealDesc = [activeDeal?.brand, activeDeal?.model].filter(Boolean).join(" ") || "device";
-    await supabase.from("reminders").insert({
-      title: `Re-engage ${activeCustomer?.name} — ${dealDesc}`,
-      note: `Lost deal${finalReason ? `. Reason: ${finalReason}` : ""}. Originally wanted: ${dealDesc}${activeDeal?.budget ? `, budget ~${activeDeal.budget} AED` : ""}.`,
+    await supabase.from("follow_ups").insert({
+      customer_id: activeCustomerId,
       due_at: reengageDate.toISOString(),
-      category: "reengagement",
+      note: `Re-engage — was looking for ${dealDesc}${activeDeal?.budget ? `, budget ~${activeDeal.budget} AED` : ""}${finalReason ? `. Lost: ${finalReason}` : ""}`,
       status: "pending",
     });
     await loadCustomers();
@@ -797,11 +795,6 @@ export default function ChatHeader() {
 
       {/* Preferences Panel — clients only */}
       {(activeCustomer?.contact_type === "client" || !activeCustomer?.contact_type || activeCustomer?.contact_type === "walkin") && <ClientPreferencesPanel />}
-
-      {/* Follow-up, Notes & Activity Panel */}
-      <FollowUpPanel />
-
-
 
       {/* ADD DEAL FORM */}
       {showAddDeal && (

@@ -117,7 +117,7 @@ export default function TradersTab({
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Section toggle */}
         <div style={{ display: "flex", padding: "10px 12px 0", gap: 8, background: "#fff", borderBottom: "1px solid #F1F5F9" }}>
-          {[{ key: "contacts", label: "👤 Contacts" }, { key: "inventory", label: "📋 Inventory" }, { key: "traders", label: "📊 By Trader" }, { key: "matches", label: "🎯 Matches" }].map(s => (
+          {[{ key: "contacts", label: "👤 Contacts" }, { key: "inventory", label: "📋 Inventory" }, { key: "matches", label: "🎯 Matches" }].map(s => (
             <button key={s.key} onClick={() => setTraderSection(s.key)}
               style={{ flex: 1, padding: "9px", borderRadius: 10, border: "none", background: traderSection === s.key ? "#6366F1" : "#F1F5F9", color: traderSection === s.key ? "#fff" : "#64748B", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
               {s.label}
@@ -303,38 +303,6 @@ export default function TradersTab({
           </div>
         )}
 
-        {traderSection === "traders" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 100px" }}>
-            {(() => {
-              const grouped = {};
-              traderListings.forEach(t => {
-                const key = t.trader_name || "Unknown";
-                if (!grouped[key]) grouped[key] = { name: key, number: t.trader_number, group: t.source_group, selling: 0, buying: 0, lastDate: t.created_at };
-                if (t.type === "selling") grouped[key].selling++;
-                else grouped[key].buying++;
-                if (new Date(t.created_at) > new Date(grouped[key].lastDate)) grouped[key].lastDate = t.created_at;
-              });
-              const traders = Object.values(grouped).sort((a, b) => new Date(b.lastDate) - new Date(a.lastDate));
-              if (!traders.length) return <div style={{ textAlign: "center", padding: "60px 20px" }}><div style={{ fontSize: 40, marginBottom: 10 }}>👤</div><div style={{ fontSize: 15, fontWeight: 700, color: "#94A3B8" }}>No traders yet</div><div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 4 }}>Import a group chat to see traders</div></div>;
-              return traders.map((tr, i) => (
-                <div key={i} style={{ background: "#fff", borderRadius: 16, padding: "14px 16px", marginBottom: 8, border: "1.5px solid #F1F5F9", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: "#0F172A" }}>{tr.name}</div>
-                      {tr.group && <div style={{ fontSize: 11, color: "#94A3B8" }}>{tr.group}</div>}
-                    </div>
-                    {tr.number && <a href={`https://wa.me/${tr.number.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{ padding: "5px 12px", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>WhatsApp</a>}
-                  </div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <span style={{ fontSize: 12, color: "#10B981", fontWeight: 700 }}>🟢 {tr.selling} selling</span>
-                    <span style={{ fontSize: 12, color: "#6366F1", fontWeight: 700 }}>🔵 {tr.buying} buying</span>
-                  </div>
-                  <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 4 }}>Last active: {timeAgo(tr.lastDate)}</div>
-                </div>
-              ));
-            })()}
-          </div>
-        )}
       </div>
 
       {/* Import modal */}

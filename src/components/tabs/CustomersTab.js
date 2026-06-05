@@ -186,7 +186,6 @@ export default function CustomersTab() {
     });
     return matched;
   }, [allClients, stock]);
-
   const queueClients = useMemo(() =>
     allClients
       .map(c => ({ c, priority: getQueuePriority(c, pendingFollowUpMap, stockMatchSet) }))

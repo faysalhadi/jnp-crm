@@ -10,7 +10,7 @@ import {
 import SourcingCalculator from "./SourcingCalculator";
 import SourcingMessages from "./SourcingMessages";
 import SupplierNotesView from "../chat/SupplierNotesView";
-import FollowUpPanel from "../chat/FollowUpPanel";
+import NotesActivityView from "../chat/NotesActivityView";
 
 // ── Cost allocation helper ────────────────────────────────────────────────────
 function allocateLotCost(rows, lotCost) {
@@ -500,7 +500,7 @@ Write TWO reply versions. Return JSON only:
         {/* Follow-up panel */}
         {d.supplier_id && (
           <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-            <FollowUpPanel customerId={d.supplier_id} />
+            <NotesActivityView />
           </div>
         )}
 

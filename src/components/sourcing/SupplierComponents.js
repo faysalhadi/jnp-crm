@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import FollowUpPanel from "../chat/FollowUpPanel";
+import NotesActivityView from "../chat/NotesActivityView";
 import SupplierNotesView from "../chat/SupplierNotesView";
 import { supabase } from "../../supabase";
 import {
@@ -455,7 +455,7 @@ export function SupplierDetail({ supplier, deals, rate, onBack, onSelectDeal, on
 
       {/* Follow-up */}
       <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-        <FollowUpPanel customerId={supplier.id} />
+        <NotesActivityView />
       </div>
 
       {/* Notes & Activity */}

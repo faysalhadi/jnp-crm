@@ -83,23 +83,17 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const loadWaitingMatches = async () => {
     const { data: availableStock } = await supabase
       .from("stock")
-      .select("brand, model, processor")
+      .select("brand,model,max_price,status")
       .eq("status", "available");
-
     const { data: waitingDeals } = await supabase
       .from("deals")
-      .select("match_category")
-      .eq("stage", "waiting")
-      .neq("match_category", "none");
-
-    if (!availableStock || !waitingDeals) return;
-
-    const { stockMatchesCategory } = await import("../../constants");
+      .select("brand,model,budget")
+      .eq("stage", "waiting");
+    if (!availableStock?.length || !waitingDeals?.length) return;
+    const { matchStockToClients } = await import("../../constants");
     let matches = 0;
-    for (const deal of waitingDeals) {
-      for (const item of availableStock) {
-        if (stockMatchesCategory(item, deal.match_category)) { matches++; break; }
-      }
+    for (const item of availableStock) {
+      if (matchStockToClients(item, waitingDeals).length > 0) matches++;
     }
     setWaitingMatchCount(matches);
   };
