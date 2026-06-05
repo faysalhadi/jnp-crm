@@ -224,7 +224,7 @@ Current deal: ${deal ? `${deal.brand || ""} ${deal.model || ""}, Budget AED ${de
 Return:
 {
   "budgetUpdate": number or null,
-  "stageUpdate": "new_inquiry|requirement_noted|searching|device_found|negotiation|confirmed_pending_pickup|closed|lost|waiting" or null,
+  "stageUpdate": "new_inquiry|device_found|negotiation|confirmed_pending_pickup|closed|lost" or null,
   "followUpSuggestion": "description of suggested follow-up" or null,
   "followUpDays": number or null,
   "insight": "one sentence insight" or null

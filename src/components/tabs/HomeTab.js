@@ -90,7 +90,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     const { data: waitingDeals } = await supabase
       .from("deals")
       .select("id,brand,model,budget,customer_id,customers(id,name,number)")
-      .eq("stage", "waiting");
+      .eq("stage", "new_inquiry");
     if (!availableStock?.length || !waitingDeals?.length) return;
     const { matchStockToClients } = await import("../../constants");
     const details = [];

@@ -228,7 +228,7 @@ export default function CustomersTab() {
       }
       if (filter === "urgent")     return c.urgent;
       if (filter === "overdue")    return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
-      if (filter === "waiting")    return (c.deals || []).some(d => d.stage === "waiting");
+      if (filter === "waiting")    return (c.deals || []).some(d => d.stage === "new_inquiry");
       if (filter === "incomplete") return !(c.deals || []).length && !c.notes && !pendingFollowUpMap?.[c.id];
       if (filter === "cooling")    return getClientHealth(c).status === "cooling";
       if (filter === "inactive")   return getClientHealth(c).status === "inactive";

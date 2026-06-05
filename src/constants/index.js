@@ -1,15 +1,12 @@
 export const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
 
 export const STAGES = [
-  { id: "new_inquiry",       label: "New Inquiry",       color: "#6366F1", bg: "#EEF2FF" },
-  { id: "waiting",           label: "Waiting",           color: "#F59E0B", bg: "#FFFBEB" },
-  { id: "requirement_noted", label: "Requirement Noted", color: "#F59E0B", bg: "#FFFBEB" },
-  { id: "searching",         label: "Searching Device",  color: "#3B82F6", bg: "#EFF6FF" },
-  { id: "device_found",      label: "Device Found",      color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "new_inquiry",              label: "New Inquiry",              color: "#6366F1", bg: "#EEF2FF" },
+  { id: "device_found",             label: "Device Found",             color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "negotiation",              label: "Negotiation",              color: "#EC4899", bg: "#FDF2F8" },
   { id: "confirmed_pending_pickup", label: "Confirmed — Pending Pickup", color: "#F59E0B", bg: "#FFFBEB" },
-  { id: "closed",                   label: "Deal Closed",                color: "#10B981", bg: "#ECFDF5" },
-  { id: "lost",              label: "Lost",              color: "#EF4444", bg: "#FEF2F2" },
+  { id: "closed",                   label: "Deal Closed",              color: "#10B981", bg: "#ECFDF5" },
+  { id: "lost",                     label: "Lost",                     color: "#EF4444", bg: "#FEF2F2" },
 ];
 
 export const MATCH_CATEGORIES = [
@@ -170,7 +167,7 @@ ALWAYS return valid JSON only — no markdown, no explanation:
   "charger": "yes|no|unknown",
   "box": "yes|no|unknown",
   "notes": "any extra context",
-  "suggestedStage": "new_inquiry|requirement_noted|searching|device_found|negotiation|closed|lost",
+  "suggestedStage": "new_inquiry|device_found|negotiation|confirmed_pending_pickup|closed|lost" or null,
   "stageReason": "one line reason",
   "reply": "ready to send WhatsApp reply"
 }
@@ -216,11 +213,10 @@ OWNER STOCK QUERIES (when owner asks about their own inventory):
 - "sitting X days" → compare created_at to today, list items older than X days
 
 STAGE LOGIC:
-- new_inquiry: just reached out
-- requirement_noted: specs and budget captured
-- searching: actively looking
-- device_found: matching device located
+- new_inquiry: client asked for something, actively looking for it
+- device_found: matching device located, presenting to client
 - negotiation: price being discussed
+- confirmed_pending_pickup: deal agreed, pending collection
 - closed: sale confirmed and completed
 - lost: deal fell through`;
 

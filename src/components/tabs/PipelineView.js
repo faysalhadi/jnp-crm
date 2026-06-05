@@ -4,7 +4,7 @@ import { STAGES } from "../../constants";
 
 const STAGE_COLORS = {
   new_inquiry:   { dot: "#888780", bg: "#F1EFE8", text: "#5F5E5A" },
-  waiting:       { dot: "#EF9F27", bg: "#FAEEDA", text: "#854F0B" },
+  new_inquiry:   { dot: "#6366F1", bg: "#EEF2FF", text: "#4338CA" },
   interested:    { dot: "#378ADD", bg: "#E6F1FB", text: "#185FA5" },
   negotiation:   { dot: "#378ADD", bg: "#E6F1FB", text: "#185FA5" },
   closed:        { dot: "#534AB7", bg: "#EEEDFE", text: "#3C3489" },
@@ -240,7 +240,7 @@ export default function PipelineView() {
                 {isVeryOverdue && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700 }}>⚠️ {days}d no activity</span>}
                 {!isVeryOverdue && isOverdue && <span style={{ fontSize: 10, color: "#D97706", fontWeight: 700 }}>⏰ Follow up needed</span>}
                 {days >= 14 && deal.stage === "negotiation" && <span style={{ fontSize: 10, color: "#7C3AED", fontWeight: 700 }}>💡 14d in negotiation</span>}
-                {days >= 7 && deal.stage === "searching" && <span style={{ fontSize: 10, color: "#2563EB", fontWeight: 700 }}>🔍 Still searching {days}d</span>}
+                {days >= 7 && deal.stage === "new_inquiry" && <span style={{ fontSize: 10, color: "#6366F1", fontWeight: 700 }}>🔍 Still searching {days}d</span>}
                 {days >= 21 && <span style={{ fontSize: 10, color: "#EF4444", fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "#FEF2F2" }}>Consider marking lost</span>}
               </div>
 

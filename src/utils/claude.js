@@ -106,8 +106,7 @@ Cold (3+ days silent): ${cold}
 
 DEALS BY STAGE:
 New Inquiry: ${stageCounts["new_inquiry"]||0}
-Requirement Noted: ${stageCounts["requirement_noted"]||0}
-Searching: ${stageCounts["searching"]||0}
+New Inquiry: ${stageCounts["new_inquiry"]||0}
 Device Found: ${stageCounts["device_found"]||0}
 Negotiation: ${stageCounts["negotiation"]||0}
 Closed this month: ${closedThisMonth}

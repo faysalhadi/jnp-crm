@@ -47,7 +47,7 @@ export default function TraderMatchesPanel() {
       { data: buyingListings },
       { data: yourStock },
     ] = await Promise.all([
-      supabase.from("deals").select("*, customers(id, name, number)").eq("stage", "waiting"),
+      supabase.from("deals").select("*, customers(id, name, number)").eq("stage", "new_inquiry"),
       supabase.from("trader_inventory").select("*").eq("type", "selling").gte("created_at", thirtyDaysAgo),
       supabase.from("trader_inventory").select("*").eq("type", "buying").gte("created_at", thirtyDaysAgo),
       supabase.from("stock").select("*").eq("status", "available"),

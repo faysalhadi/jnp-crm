@@ -404,7 +404,7 @@ export default function ChatHeader() {
                 </div>
               </div>
 
-              {activeDeal.stage === "waiting" && (() => {
+              {activeDeal.stage === "new_inquiry" && (() => {
                 const autoCategory = getMatchCategory(activeDeal.brand, activeDeal.model, activeDeal.processor || "");
                 const currentCategory = activeDeal.match_category || autoCategory || "none";
                 const currentCat = MATCH_CATEGORIES.find(c => c.id === currentCategory);

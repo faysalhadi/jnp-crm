@@ -81,7 +81,7 @@ EXTRACT:
 - quantity: units wanted (default 1)
 - budget: price in AED if mentioned (number only, null if not)
 - urgency: true if said urgent/today/asap/need now
-- stage: 'new_inquiry'|'requirement_noted'|'negotiation'|'closed'|'lost'
+- stage: 'new_inquiry'|'device_found'|'negotiation'|'closed'|'lost'
 - notes: important context
 - phone: extract phone number of the customer if visible in the chat, else empty string
 
@@ -232,7 +232,7 @@ SHORTHAND SPECS:
 
 STAGE RULES:
 - new_inquiry: asked if something is available, no price/specs discussed
-- requirement_noted: specs and/or price mentioned by either side
+- new_inquiry: client asked for a device, looking for it
 - negotiation: back-and-forth on price happened
 - closed: deal confirmed ("confirmed", "done", "I'll take it", "ok done")
 - lost: said no, or no reply after price given
@@ -252,7 +252,7 @@ Return ONLY a JSON array — no markdown, no explanation:
   "quantity": units wanted as number or null,
   "urgent": true or false,
   "notes": "key context from the conversation",
-  "stage": "new_inquiry or requirement_noted or negotiation or closed or lost"
+  "stage": "new_inquiry or device_found or negotiation or closed or lost"
 }]
 
 CRITICAL RULES:
