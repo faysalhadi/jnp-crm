@@ -23,6 +23,8 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [waitingMatchCount, setWaitingMatchCount] = useState(0);
+  const [waitingMatchDetails, setWaitingMatchDetails] = useState([]);
+  const [showWaitingMatches, setShowWaitingMatches] = useState(false);
   const [lostDealMatches, setLostDealMatches] = useState([]);
 
   useEffect(() => {
@@ -83,19 +85,23 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const loadWaitingMatches = async () => {
     const { data: availableStock } = await supabase
       .from("stock")
-      .select("brand,model,max_price,status")
+      .select("id,brand,model,processor,ram,ssd,condition,max_price,status")
       .eq("status", "available");
     const { data: waitingDeals } = await supabase
       .from("deals")
-      .select("brand,model,budget")
+      .select("id,brand,model,budget,customer_id,customers(id,name,number)")
       .eq("stage", "waiting");
     if (!availableStock?.length || !waitingDeals?.length) return;
     const { matchStockToClients } = await import("../../constants");
-    let matches = 0;
+    const details = [];
     for (const item of availableStock) {
-      if (matchStockToClients(item, waitingDeals).length > 0) matches++;
+      const matched = matchStockToClients(item, waitingDeals);
+      if (matched.length > 0) {
+        details.push({ stock: item, clients: matched });
+      }
     }
-    setWaitingMatchCount(matches);
+    setWaitingMatchCount(details.length);
+    setWaitingMatchDetails(details);
   };
 
   const loadFollowUps = async () => {
@@ -328,13 +334,76 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
             {overduePickups.length > 0 && <button onClick={() => { setStockFilter("reserved"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF2F2", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#EF4444", fontWeight: 700 }}>⚠️ {overduePickups.length} reservation{overduePickups.length !== 1 ? "s" : ""} overdue — client didn't show</span><span style={{ color: "#EF4444", fontSize: 13 }}>→</span></button>}
             {urgentClients > 0 && <button onClick={() => { setFilter("urgent"); setActiveTab("customers"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF2F2", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#EF4444", fontWeight: 700 }}>🔴 {urgentClients} urgent client{urgentClients !== 1 ? "s" : ""}</span><span style={{ color: "#EF4444", fontSize: 13 }}>→</span></button>}
             {waitingMatchCount > 0 && (
-              <button onClick={() => setActiveTab("stock")}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#EEEDFE", cursor: "pointer", textAlign: "left" }}>
-                <span style={{ fontSize: 13, color: "#534AB7", fontWeight: 700 }}>
-                  👥 {waitingMatchCount} waiting client{waitingMatchCount !== 1 ? "s" : ""} match available stock
-                </span>
-                <span style={{ color: "#534AB7", fontSize: 13 }}>→</span>
-              </button>
+              <div>
+                <button
+                  onClick={() => setShowWaitingMatches(v => !v)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: showWaitingMatches ? "10px 10px 0 0" : 10, border: "none", background: "#EEEDFE", cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ fontSize: 13, color: "#534AB7", fontWeight: 700 }}>
+                    👥 {waitingMatchCount} stock item{waitingMatchCount !== 1 ? "s" : ""} match waiting clients
+                  </span>
+                  <span style={{ color: "#534AB7", fontSize: 13 }}>{showWaitingMatches ? "▲" : "▼"}</span>
+                </button>
+                {showWaitingMatches && (
+                  <div style={{ background: "#F5F4FF", borderRadius: "0 0 10px 10px", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {waitingMatchDetails.map((match, i) => (
+                      <div key={i} style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "1px solid #E0DFFE" }}>
+                        {/* Stock item */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>
+                              {[match.stock.brand, match.stock.model].filter(Boolean).join(" ")}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>
+                              {[match.stock.processor, match.stock.ram, match.stock.ssd, match.stock.condition].filter(Boolean).join(" · ")}
+                            </div>
+                          </div>
+                          {match.stock.max_price && (
+                            <div style={{ fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
+                              AED {Number(match.stock.max_price).toLocaleString()}
+                            </div>
+                          )}
+                        </div>
+                        {/* Matched clients */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                          {match.clients.map((deal, di) => {
+                            const customer = deal.customers;
+                            const waUrl = customer?.number
+                              ? `https://wa.me/${customer.number.replace(/\D/g, "")}?text=${encodeURIComponent(`${customer?.name} bhai, ${[match.stock.brand, match.stock.model].filter(Boolean).join(" ")} available hai — AED ${match.stock.max_price}. Interest hai?`)}`
+                              : null;
+                            return (
+                              <div key={di} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "#F8F7FF", borderRadius: 8 }}>
+                                <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#6366F1", flexShrink: 0 }}>
+                                  {(customer?.name || "?")[0].toUpperCase()}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{customer?.name}</div>
+                                  <div style={{ fontSize: 10, color: "#94A3B8" }}>
+                                    {deal.matchScore?.emoji} {deal.matchScore?.label}
+                                    {deal.budget ? ` · Budget AED ${Number(deal.budget).toLocaleString()}` : ""}
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+                                  <button
+                                    onClick={() => { setActiveCustomerId(customer?.id); setActiveTab("customers"); }}
+                                    style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: "#EEF2FF", color: "#6366F1", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                                    Open
+                                  </button>
+                                  {waUrl && (
+                                    <a href={waUrl} target="_blank" rel="noreferrer"
+                                      style={{ padding: "4px 8px", borderRadius: 6, background: "#25D366", color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none" }}>
+                                      WA
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {overdueFollowUps > 0 && <button onClick={() => { setActiveTab("customers"); setFilter("overdue"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FFFBEB", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#F59E0B", fontWeight: 700 }}>⏰ {overdueFollowUps} overdue follow up{overdueFollowUps !== 1 ? "s" : ""}</span><span style={{ color: "#F59E0B", fontSize: 13 }}>→</span></button>}
             {slowStock > 0 && <button onClick={() => { setStockFilter("available"); setActiveTab("stock"); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 10, border: "none", background: "#FEF9C3", cursor: "pointer", textAlign: "left" }}><span style={{ fontSize: 13, color: "#CA8A04", fontWeight: 700 }}>⚠️ {slowStock} device{slowStock !== 1 ? "s" : ""} unsold 7+ days</span><span style={{ color: "#CA8A04", fontSize: 13 }}>→</span></button>}
