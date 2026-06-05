@@ -92,7 +92,8 @@ export function CustomerProvider({ children }) {
       .from("customers")
       .select("*, deals(*)")
       .order("last_active", { ascending: false });
-    setCustomers(custs || []);
+    // Only update if we got data — never wipe existing customers during reload
+    if (custs) setCustomers(custs);
     setLoading(false);
 
     const customerIds = (custs || []).map(c => c.id);

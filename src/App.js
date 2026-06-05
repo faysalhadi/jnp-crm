@@ -250,6 +250,12 @@ export default function App() {
   // detail view
   if (view === "detail") {
     if (!activeCustomer) {
+      // If customers loaded but customer not found — go back to list
+      if (customers.length > 0) {
+        setView("list");
+        return null;
+      }
+      // Still loading first time
       return (
         <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
           <div style={{ fontSize: 13, color: "#94A3B8" }}>Loading...</div>
