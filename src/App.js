@@ -124,6 +124,13 @@ export default function App() {
   useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
   useEffect(() => { if (session) { loadStock(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); } }, [session, loadStock, refreshCachedStock, loadTodaySales, loadPartsRevMTD]);
 
+  // Auto-reset detail view if customer not found after customers are loaded
+  useEffect(() => {
+    if (view === "detail" && !activeCustomer && customers.length > 0) {
+      setView("list");
+    }
+  }, [view, activeCustomer, customers.length]); // eslint-disable-line
+
   useEffect(() => {
     if (localStorage.getItem('jnp_install_dismissed')) return;
     const handler = (e) => { e.preventDefault(); setInstallPromptEvent(e); setShowInstallBanner(true); };
@@ -250,12 +257,6 @@ export default function App() {
   // detail view
   if (view === "detail") {
     if (!activeCustomer) {
-      // If customers loaded but customer not found — go back to list
-      if (customers.length > 0) {
-        setView("list");
-        return null;
-      }
-      // Still loading first time
       return (
         <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
           <div style={{ fontSize: 13, color: "#94A3B8" }}>Loading...</div>
