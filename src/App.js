@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { supabase } from "./supabase";
+import ErrorBoundary from "./components/ErrorBoundary";
 import SourcingModule, { useSourcingAlerts } from "./SourcingModule";
 import ContactModalWrapper from "./components/modals/ContactModalWrapper";
 
@@ -264,7 +264,7 @@ export default function App() {
         </div>
       );
     }
-    return <ChatDetailView />;
+    return <ErrorBoundary><ChatDetailView /></ErrorBoundary>;
   }
 
   // list view
