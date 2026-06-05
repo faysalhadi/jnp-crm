@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef } from 
 import { supabase } from "../supabase";
 import * as XLSX from "xlsx";
 import { EMPTY_STOCK } from "../constants";
+import { daysSince } from "../utils/helpers";
 
 const StockContext = createContext(null);
 
@@ -217,6 +218,9 @@ export function StockProvider({ children }) {
   }
 
   const filteredStock = stock.filter(item => {
+    if (stockSearch === "slow") {
+      return item.status === "available" && daysSince(item.created_at) >= 7;
+    }
     if (stockSearch) {
       const q = stockSearch.toLowerCase();
       return (item.brand || "").toLowerCase().includes(q) ||
