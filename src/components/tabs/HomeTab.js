@@ -474,7 +474,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
             const device = [d?.brand, d?.model].filter(Boolean).join(" ") || "Open deal";
             const stage = STAGES.find(s => s.id === d?.stage)?.label || "";
             return (
-              <div key={i} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(d?.id); setView("detail"); setPendingSuggestion(null); }}
+              <div key={i} onClick={() => { setActiveCustomerId(c.id); setActiveDealId(d?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", marginBottom: i < topFocus.length - 1 ? 6 : 0, background: "#F8FAFC", borderRadius: 12, cursor: "pointer", border: "1px solid #F1F5F9" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{c.name}</div>
