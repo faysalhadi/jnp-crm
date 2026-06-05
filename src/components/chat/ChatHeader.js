@@ -112,11 +112,13 @@ export default function ChatHeader() {
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);
   const addDeal = () => _addDeal(activeCustomerId, newDeal);
 
-  const tier = TIERS[activeCustomer.tier] || TIERS.cold;
-  const overdue = daysSince(activeCustomer.last_active) >= 1 && (activeCustomer.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
-  const closedDealValue = (activeCustomer.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
-  const initials = (activeCustomer.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const tier = TIERS[activeCustomer?.tier] || TIERS.cold;
+  const overdue = daysSince(activeCustomer?.last_active) >= 1 && (activeCustomer?.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+  const closedDealValue = (activeCustomer?.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
+  const initials = (activeCustomer?.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
   const currentStageLabel = STAGES.find(s => s.id === activeDeal?.stage)?.label || activeDeal?.stage || "";
+
+  if (!activeCustomer) return null;
 
   async function saveQuoteAndFollowUp(withFollowUp) {
     setQuoteSaving(true);
