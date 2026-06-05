@@ -46,17 +46,27 @@ export default function NotesActivityView() {
   const [showFUForm, setShowFUForm]     = useState(false);
   const [fuNote, setFuNote]             = useState("");
   const [fuDays, setFuDays]             = useState(1);
+  const [fuCustomDate, setFuCustomDate] = useState("");
   const [fuSaving, setFuSaving]         = useState(false);
   const recognitionRef = useRef(null);
 
   const FU_OPTIONS = [
-    { label: "Today", days: 0 },
+    { label: "Today",   days: 0 },
     { label: "Tomorrow", days: 1 },
-    { label: "2 days", days: 2 },
-    { label: "3 days", days: 3 },
-    { label: "1 week", days: 7 },
+    { label: "2 days",  days: 2 },
+    { label: "3 days",  days: 3 },
+    { label: "1 week",  days: 7 },
     { label: "2 weeks", days: 14 },
   ];
+
+  function fuDatetimeLocal(days) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(10, 0, 0, 0);
+    // Format for datetime-local input: YYYY-MM-DDTHH:MM
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
 
   useEffect(() => {
     if (activeCustomerId) {
@@ -85,11 +95,9 @@ export default function NotesActivityView() {
   }
 
   async function saveFollowUp() {
-    if (fuSaving) return;
+    if (fuSaving || !fuCustomDate) return;
     setFuSaving(true);
-    const due = new Date();
-    due.setDate(due.getDate() + fuDays);
-    due.setHours(10, 0, 0, 0);
+    const due = new Date(fuCustomDate);
     if (followUp) {
       await supabase.from("follow_ups").update({
         due_at: due.toISOString(), note: fuNote, status: "pending",
@@ -104,6 +112,7 @@ export default function NotesActivityView() {
     await loadCustomers();
     setShowFUForm(false);
     setFuNote("");
+    setFuCustomDate("");
     setFuDays(1);
     setFuSaving(false);
   }
@@ -447,7 +456,14 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
                   {followUp.note && <div style={{ fontSize: 12, color: "#374151" }}>{followUp.note}</div>}
                 </div>
                 <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-                  <button onClick={() => { setFuNote(followUp.note || ""); setFuDays(1); setShowFUForm(true); }}
+                  <button onClick={() => {
+                    setFuNote(followUp.note || "");
+                    const d = new Date(followUp.due_at);
+                    const pad = n => String(n).padStart(2, "0");
+                    setFuCustomDate(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+                    setFuDays(1);
+                    setShowFUForm(true);
+                  }}
                     style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: "#FDE68A", color: "#92400E", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                     ✏️
                   </button>
@@ -465,7 +481,7 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
           ) : (
             // No follow-up — set one button
             !showFUForm && (
-              <button onClick={() => { setFuNote(""); setFuDays(1); setShowFUForm(true); }}
+              <button onClick={() => { setFuNote(""); setFuDays(1); setFuCustomDate(fuDatetimeLocal(1)); setShowFUForm(true); }}
                 style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1.5px dashed #E2E8F0", background: "transparent", color: "#94A3B8", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left" }}>
                 ⏰ Set follow-up reminder
               </button>
@@ -482,9 +498,11 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
                 placeholder="What to follow up on? (optional)"
                 style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #FDE68A", fontSize: 12, outline: "none", marginBottom: 10, boxSizing: "border-box", background: "#fff" }}
               />
+              {/* Quick day buttons */}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                 {FU_OPTIONS.map(opt => (
-                  <button key={opt.days} onClick={() => setFuDays(opt.days)}
+                  <button key={opt.days}
+                    onClick={() => { setFuDays(opt.days); setFuCustomDate(fuDatetimeLocal(opt.days)); }}
                     style={{ padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700,
                       background: fuDays === opt.days ? "#D97706" : "#FEF3C7",
                       color: fuDays === opt.days ? "#fff" : "#92400E" }}>
@@ -492,9 +510,19 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
                   </button>
                 ))}
               </div>
+              {/* Exact date + time picker */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>EXACT DATE & TIME</div>
+                <input
+                  type="datetime-local"
+                  value={fuCustomDate}
+                  onChange={e => { setFuCustomDate(e.target.value); setFuDays(-1); }}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #FDE68A", fontSize: 13, outline: "none", background: "#fff", boxSizing: "border-box", color: "#374151" }}
+                />
+              </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={saveFollowUp} disabled={fuSaving}
-                  style={{ flex: 2, padding: "9px", borderRadius: 8, border: "none", background: "#D97706", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: fuSaving ? 0.7 : 1 }}>
+                <button onClick={saveFollowUp} disabled={fuSaving || !fuCustomDate}
+                  style={{ flex: 2, padding: "9px", borderRadius: 8, border: "none", background: "#D97706", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: (fuSaving || !fuCustomDate) ? 0.6 : 1 }}>
                   {fuSaving ? "Saving..." : "✓ Set Follow-up"}
                 </button>
                 <button onClick={() => setShowFUForm(false)}
