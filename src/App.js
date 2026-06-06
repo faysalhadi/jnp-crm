@@ -23,6 +23,7 @@ import ReservationModal from "./components/modals/ReservationModal";
 import QuickSaleModal from "./components/modals/QuickSaleModal";
 import AskClaudeTab from "./components/tabs/AskClaudeTab";
 import MarketingTab from "./components/tabs/MarketingTab";
+import PartsCompatibilityTab from "./components/tabs/PartsCompatibilityTab";
 import SalesTab from "./components/tabs/SalesTab";
 import HomeTab from "./components/tabs/HomeTab";
 import CustomersTab from "./components/tabs/CustomersTab";
@@ -356,6 +357,13 @@ export default function App() {
         <MarketingTab
           stock={stock}
         />
+      )}
+
+      {/* ── PARTS DB TAB ── */}
+      {activeTab === "parts" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <PartsCompatibilityTab />
+        </div>
       )}
 
       {/* ── SOURCING TAB ── */}

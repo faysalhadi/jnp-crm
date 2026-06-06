@@ -20,6 +20,10 @@ export default function SideDrawer({ handleLogout }) {
             style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#FFF7ED", color: "#D97706", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
             📣 Marketing
           </button>
+          <button onClick={() => { setShowSideDrawer(false); setActiveTab("parts"); }}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#F0FDF4", color: "#16A34A", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
+            🔧 Parts DB
+          </button>
           <button onClick={() => { setShowSideDrawer(false); setActiveTab("sales"); }}
             style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
             💰 Sales History

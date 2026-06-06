@@ -34,6 +34,7 @@ export default function DesktopSidebar({ NAV_TABS }) {
         <div style={{ borderTop: "1px solid #F1F5F9", marginTop: 8, paddingTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
           {[
             { icon: "📣", label: "Marketing" },
+          { icon: "🔧", label: "Parts DB" },
             { icon: "💰", label: "Sales History" },
           ].map(item => (
             <button key={item.label}
