@@ -498,16 +498,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
                   <div style={{ display: "flex", gap: 6 }}>
                     {waUrl ? (
                       <a href={waUrl} target="_blank" rel="noreferrer"
-                        onClick={async () => {
-                          // Log activity
-                          try {
-                            await supabase.from("activity_log").insert({
-                              customer_id: m.customer.id,
-                              activity_type: "messaged",
-                              note: `Stock match sent: ${m.stock.brand} ${m.stock.model}${m.stock.max_price ? ` · AED ${Number(m.stock.max_price).toLocaleString()}` : ""}`,
-                              logged_at: new Date().toISOString(),
-                            });
-                          } catch {}
+                        onClick={() => {
                           // Throttle for 7 days
                           try {
                             const key = "jnp_reengage_sent";
