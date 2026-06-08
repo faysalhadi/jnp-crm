@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { STAGES, EMPTY_STOCK } from "../../constants";
 import PullToRefresh from "../ui/PullToRefresh";
-import { daysSince, timeAgo, getGreeting } from "../../utils/helpers";
+import { daysSince, timeAgo, getGreeting, formatWhatsAppNumber } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useStock } from "../../context/StockContext";
@@ -40,8 +40,9 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   }, []); // eslint-disable-line
 
   const loadLostDealMatches = async () => {
+    // 90-day window
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 60);
+    cutoff.setDate(cutoff.getDate() - 90);
     const { data: lostDeals } = await supabase
       .from("deals")
       .select("*, customers(id, name, number, contact_type)")
@@ -49,36 +50,65 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .gte("updated_at", cutoff.toISOString())
       .not("brand", "is", null);
     if (!lostDeals?.length) return;
+
     const { data: availableStockData } = await supabase
       .from("stock")
-      .select("brand,model,processor,ram,ssd,max_price")
+      .select("id,brand,model,processor,ram,ssd,condition,max_price")
       .eq("status", "available");
     if (!availableStockData?.length) return;
+
+    const { scoreMatch } = await import("../../constants");
+
+    // 7-day throttle — don't show same client twice within 7 days
+    const throttleKey = "jnp_reengage_sent";
+    let throttleMap = {};
+    try { throttleMap = JSON.parse(localStorage.getItem(throttleKey) || "{}"); } catch {}
+    const sevenDaysAgo = Date.now() - 7 * 86400000;
+    // Clean old entries
+    Object.keys(throttleMap).forEach(k => { if (throttleMap[k] < sevenDaysAgo) delete throttleMap[k]; });
+
     const matches = [];
     for (const deal of lostDeals) {
       if (!deal.brand) continue;
-      const matchingStock = availableStockData.filter(s => {
-        const brandMatch = s.brand?.toLowerCase() === deal.brand?.toLowerCase();
-        if (!brandMatch) return false;
-        if (deal.budget && s.max_price && Number(s.max_price) > Number(deal.budget) * 1.15) return false;
-        return true;
-      });
+      const customerId = deal.customers?.id;
+      // Skip if messaged in last 7 days
+      if (customerId && throttleMap[customerId]) continue;
+
+      const matchingStock = availableStockData
+        .map(s => ({ ...s, matchScore: scoreMatch(s.brand, s.model, deal.brand, deal.model) }))
+        .filter(s => {
+          if (s.matchScore.score < 2) return false;
+          if (deal.budget && s.max_price && Number(s.max_price) > Number(deal.budget) * 1.15) return false;
+          return true;
+        })
+        .sort((a, b) => b.matchScore.score - a.matchScore.score);
+
       if (matchingStock.length > 0) {
+        const best = matchingStock[0];
+        const name = deal.customers?.name || "Bhai";
+        const device = [best.brand, best.model].filter(Boolean).join(" ");
+        const specs = [best.processor, best.ram, best.ssd, best.condition ? `Grade ${best.condition}` : ""].filter(Boolean).join(", ");
+        const price = best.max_price ? `AED ${Number(best.max_price).toLocaleString()}` : "";
+        const waMsg = `${name.split(" ")[0]} bhai, ${device}${specs ? ` (${specs})` : ""} available hai${price ? ` — ${price}` : ""}. Interest hai? 🙏`;
+
         matches.push({
           deal,
           customer: deal.customers,
-          stock: matchingStock[0],
+          stock: best,
           daysAgo: Math.floor((Date.now() - new Date(deal.updated_at)) / 86400000),
+          waMsg,
         });
       }
     }
-    // Deduplicate by customer
+
+    // Deduplicate by customer — best match per customer
     const seen = new Set();
     const deduped = matches.filter(m => {
       if (!m.customer?.id || seen.has(m.customer.id)) return false;
       seen.add(m.customer.id);
       return true;
-    }).slice(0, 5);
+    }).slice(0, 8);
+
     setLostDealMatches(deduped);
   };
 
@@ -437,30 +467,80 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       {/* Re-engage Opportunities */}
       {lostDealMatches.length > 0 && (
         <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1", marginBottom: 10, letterSpacing: 0.5 }}>⚡ RE-ENGAGE OPPORTUNITIES</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1", marginBottom: 4, letterSpacing: 0.5 }}>⚡ RE-ENGAGE — MATCHING STOCK</div>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 10 }}>These clients had lost deals — you now have stock they wanted</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {lostDealMatches.map((m, i) => (
-              <div key={i}
-                onClick={() => { setActiveCustomerId(m.customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
-                style={{
-                  background: "#F8F7FF", border: "1px solid #C7D2FE", borderLeft: "3px solid #6366F1",
-                  borderRadius: 12, padding: "11px 14px", cursor: "pointer",
-                  display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10,
-                }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{m.customer?.name}</div>
-                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-                    Wanted {[m.deal.brand, m.deal.model].filter(Boolean).join(" ")} · {m.daysAgo}d ago
+            {lostDealMatches.map((m, i) => {
+              const number = m.customer?.number ? formatWhatsAppNumber(m.customer.number) : null;
+              const waUrl = number ? `https://wa.me/${number}?text=${encodeURIComponent(m.waMsg)}` : null;
+              return (
+                <div key={i} style={{ background: "#F8F7FF", border: "1px solid #C7D2FE", borderLeft: "3px solid #6366F1", borderRadius: 12, padding: "11px 14px" }}>
+                  {/* Client + deal info */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{m.customer?.name}</div>
+                      <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
+                        Wanted {[m.deal.brand, m.deal.model].filter(Boolean).join(" ")} · {m.daysAgo}d ago
+                        {m.deal.loss_reason ? ` · Lost: ${m.deal.loss_reason.replace(/_/g, " ")}` : ""}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#6366F1", marginTop: 2, fontWeight: 600 }}>
+                        📦 {m.stock.brand} {m.stock.model}{[m.stock.processor, m.stock.ram, m.stock.ssd].filter(Boolean).join(" · ") ? ` · ${[m.stock.processor, m.stock.ram, m.stock.ssd].filter(Boolean).join(" · ")}` : ""}
+                        {m.stock.max_price ? ` · AED ${Number(m.stock.max_price).toLocaleString()}` : ""}
+                        <span style={{ marginLeft: 6, color: m.stock.matchScore?.color, fontSize: 10 }}>{m.stock.matchScore?.emoji} {m.stock.matchScore?.label}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "#6366F1", marginTop: 2, fontWeight: 600 }}>
-                    📦 You have: {m.stock.brand} {m.stock.model}{m.stock.max_price ? ` · AED ${Number(m.stock.max_price).toLocaleString()}` : ""}
+                  {/* Pre-written message preview */}
+                  <div style={{ fontSize: 12, color: "#374151", background: "#fff", borderRadius: 8, padding: "8px 10px", marginBottom: 8, lineHeight: 1.5, border: "1px solid #E0DFFE" }}>
+                    {m.waMsg}
+                  </div>
+                  {/* Action buttons */}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {waUrl ? (
+                      <a href={waUrl} target="_blank" rel="noreferrer"
+                        onClick={() => {
+                          // Mark as sent — throttle for 7 days
+                          try {
+                            const key = "jnp_reengage_sent";
+                            const map = JSON.parse(localStorage.getItem(key) || "{}");
+                            map[m.customer.id] = Date.now();
+                            localStorage.setItem(key, JSON.stringify(map));
+                            setLostDealMatches(prev => prev.filter((_, idx) => idx !== i));
+                          } catch {}
+                        }}
+                        style={{ flex: 2, padding: "8px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+                        💬 Send on WhatsApp
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => { setActiveCustomerId(m.customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                        style={{ flex: 2, padding: "8px 0", borderRadius: 8, background: "#EEF2FF", color: "#6366F1", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
+                        📞 No number — Open profile
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setActiveCustomerId(m.customer?.id); setView("detail"); setPendingSuggestion(null); setActiveTab("customers"); }}
+                      style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#F1F5F9", color: "#64748B", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
+                      Open
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Dismiss — throttle for 7 days
+                        try {
+                          const key = "jnp_reengage_sent";
+                          const map = JSON.parse(localStorage.getItem(key) || "{}");
+                          map[m.customer.id] = Date.now();
+                          localStorage.setItem(key, JSON.stringify(map));
+                          setLostDealMatches(prev => prev.filter((_, idx) => idx !== i));
+                        } catch {}
+                      }}
+                      style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#F1F5F9", color: "#94A3B8", fontSize: 12, border: "none", cursor: "pointer" }}>
+                      ✕
+                    </button>
                   </div>
                 </div>
-                <div style={{ background: "#EEF2FF", color: "#6366F1", fontSize: 10, padding: "4px 8px", borderRadius: 6, fontWeight: 700, flexShrink: 0 }}>
-                  Re-engage →
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
