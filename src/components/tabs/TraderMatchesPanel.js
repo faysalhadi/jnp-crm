@@ -76,9 +76,9 @@ export default function TraderMatchesPanel() {
       const matchingDeals = waitingDeals
         .map(deal => ({
           ...deal,
-          matchScore: scoreMatch(listing.brand, listing.model, deal.brand, deal.model),
+          matchScore: scoreMatch(listing.brand, listing.model, deal.brand, deal.model, listing.processor, deal.processor),
         }))
-        .filter(deal => deal.matchScore.score >= 2 && budgetOk(deal.budget, listing.price, listing.currency))
+        .filter(deal => deal.matchScore.score >= 1 && budgetOk(deal.budget, listing.price, listing.currency))
         .sort((a, b) => b.matchScore.score - a.matchScore.score);
 
       if (matchingDeals.length > 0) {
@@ -101,10 +101,10 @@ export default function TraderMatchesPanel() {
       const matchingBuyers = buying
         .map(b => ({
           ...b,
-          matchScore: scoreMatch(item.brand, item.model, b.brand, b.model),
+          matchScore: scoreMatch(item.brand, item.model, b.brand, b.model, item.processor, b.processor),
         }))
         .filter(b => {
-          if (b.matchScore.score < 2) return false;
+          if (b.matchScore.score < 1) return false;
           if (b.price && item.cost_price) {
             const buyPriceAED = toAED(b.price, b.currency) || 0;
             if (buyPriceAED < Number(item.cost_price)) return false;

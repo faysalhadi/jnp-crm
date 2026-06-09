@@ -10,75 +10,111 @@ export const STAGES = [
 ];
 
 export const MATCH_CATEGORIES = [
-  { id: "macbook",      label: "MacBook (any)",        icon: "🍎" },
-  { id: "high_gen_win", label: "High Gen Windows",     icon: "💻" },
-  { id: "low_gen_win",  label: "Low Gen Windows",      icon: "🖥️" },
-  { id: "gaming",       label: "Gaming Laptop",        icon: "🎮" },
-  { id: "budget",       label: "Budget",               icon: "💰" },
-  { id: "none",         label: "No auto-match",        icon: "🚫" },
+  { id: "macbook_pro",   label: "MacBook Pro",           icon: "🍎" },
+  { id: "macbook_air",   label: "MacBook Air",           icon: "🍏" },
+  { id: "macbook_intel", label: "MacBook Intel (older)", icon: "💻" },
+  { id: "premium_win",   label: "Premium Business Win",  icon: "⭐" },
+  { id: "mid_win",       label: "Mid Business Win",      icon: "🖥️" },
+  { id: "budget_win",    label: "Budget Windows",        icon: "💰" },
+  { id: "gaming",        label: "Gaming Laptop",         icon: "🎮" },
+  { id: "surface",       label: "Microsoft Surface",     icon: "🪟" },
+  { id: "none",          label: "No auto-match",         icon: "🚫" },
 ];
 
 export function getMatchCategory(brand, model, processor) {
-  const b = (brand || "").toLowerCase();
-  const m = (model || "").toLowerCase();
-  const p = (processor || "").toLowerCase();
+  const b = (brand     || "").toLowerCase().trim();
+  const m = (model     || "").toLowerCase().trim();
+  const p = (processor || "").toLowerCase().trim();
 
-  if (b === "macbook" || b === "apple") return "macbook";
+  // Apple
+  if (b === "apple" || b === "macbook" || m.includes("macbook")) {
+    if (m.includes("pro")) return "macbook_pro";
+    if (m.includes("intel") || m.includes("2019") || m.includes("a1990") || m.includes("a2159") || m.includes("a2179") || m.includes("a1932")) return "macbook_intel";
+    return "macbook_air";
+  }
 
-  const gamingModels = ["g3", "g5", "g7", "g15", "g16", "omen", "legion", "ideapad gaming", "tuf", "rog", "nitro", "predator"];
+  // Microsoft Surface
+  if (b === "microsoft" || m.includes("surface")) return "surface";
+
+  // Gaming
+  const gamingModels = ["g3","g5","g7","g15","g16","omen","legion","ideapad gaming","tuf","rog","nitro","predator","scar","strix"];
   if (gamingModels.some(g => m.includes(g))) return "gaming";
 
-  const budgetProcs = ["celeron", "pentium", "i3", "atom", "dual core"];
-  if (budgetProcs.some(bp => p.includes(bp))) return "budget";
+  // Budget processors
+  if (["celeron","pentium","atom","dual core"].some(bp => p.includes(bp))) return "budget_win";
+  if (p.includes("i3")) return "budget_win";
 
-  if (b === "dell" || b === "hp" || b === "lenovo") {
-    const genMatch = p.match(/i[357]-(\d{4,5})/);
+  // Premium business — top-tier models
+  const premiumModels = ["x1 carbon","x1carbon","thinkpad x1","latitude 7","latitude 9","elitebook 1","elitebook x","xps 13","xps 15","spectre","folio"];
+  if (premiumModels.some(pm => m.includes(pm))) return "premium_win";
+
+  // Mid business — mainstream business laptops
+  if (["dell","hp","lenovo","asus","acer"].some(mb => b.includes(mb))) {
+    const genMatch = p.match(/i[3579]-(\d{4,5})/);
     if (genMatch) {
-      const modelNum = genMatch[1];
-      const gen = modelNum.length === 4 ? parseInt(modelNum[0]) : parseInt(modelNum.slice(0, 2));
-      return gen >= 6 ? "high_gen_win" : "low_gen_win";
+      const num = genMatch[1];
+      const gen = num.length === 4 ? parseInt(num[0]) : parseInt(num.slice(0, 2));
+      return gen >= 8 ? "mid_win" : "budget_win";
     }
-    if (p.includes("ryzen")) return "high_gen_win";
-    return "high_gen_win";
+    if (p.includes("ryzen 5") || p.includes("ryzen 7") || p.includes("ryzen 9")) return "mid_win";
+    if (p.includes("ryzen 3")) return "budget_win";
+    return "mid_win";
   }
 
   return "none";
 }
 
+// Categories that are cross-pitchable
+export function categoriesCompatible(cat1, cat2) {
+  if (!cat1 || !cat2 || cat1 === "none" || cat2 === "none") return false;
+  if (cat1 === cat2) return true;
+  const crossPitch = [
+    ["premium_win", "mid_win"],
+    ["macbook_air", "macbook_intel"],
+  ];
+  return crossPitch.some(([a, b]) => (cat1 === a && cat2 === b) || (cat1 === b && cat2 === a));
+}
+
 export function stockMatchesCategory(stockItem, category) {
   if (!stockItem || !category || category === "none") return false;
   const itemCat = getMatchCategory(stockItem.brand, stockItem.model, stockItem.processor);
-  return itemCat === category;
+  return itemCat === category || categoriesCompatible(itemCat, category);
 }
 
-// Score how well a stock item / listing matches a deal requirement
-// Returns { score: 0-5, label, color, emoji }
-// Brand match = 2pts, Model match = 3pts
-// 5 = Strong (both), 2 = Likely (brand only), 3 = Likely (model only), 0 = None
-export function scoreMatch(stockBrand, stockModel, dealBrand, dealModel) {
+// Score match: brand+model (exact) OR category (cross-model pitch)
+// 5 = Strong (brand+model), 3 = Model only, 2 = Brand only, 1 = Category match
+export function scoreMatch(stockBrand, stockModel, dealBrand, dealModel, stockProcessor, dealProcessor) {
   let score = 0;
 
-  const sb = (stockBrand || "").toLowerCase().trim();
-  const sm = (stockModel || "").toLowerCase().trim();
-  const db = (dealBrand  || "").toLowerCase().trim();
-  const dm = (dealModel  || "").toLowerCase().trim();
+  const sb = (stockBrand     || "").toLowerCase().trim();
+  const sm = (stockModel     || "").toLowerCase().trim();
+  const db = (dealBrand      || "").toLowerCase().trim();
+  const dm = (dealModel      || "").toLowerCase().trim();
 
   // Brand match
   if (db && sb && (sb.includes(db) || db.includes(sb))) score += 2;
 
-  // Model match — check if meaningful keywords from deal model appear in stock model
+  // Model match — 75% keyword threshold (tightened from 50%)
   if (dm && sm) {
     const keywords = dm.split(/[\s\-\/]+/).filter(w => w.length > 2);
     if (keywords.length > 0) {
       const matched = keywords.filter(w => sm.includes(w));
-      if (matched.length >= Math.ceil(keywords.length * 0.5)) score += 3;
+      if (matched.length >= Math.ceil(keywords.length * 0.75)) score += 3;
     }
   }
 
-  if (score >= 5) return { score, label: "Strong match",  color: "#059669", bg: "#ECFDF5", emoji: "🟢" };
-  if (score === 3) return { score, label: "Model match",   color: "#D97706", bg: "#FFFBEB", emoji: "🟡" };
-  if (score === 2) return { score, label: "Brand match",   color: "#6366F1", bg: "#EEF2FF", emoji: "🔵" };
-  return { score, label: "Loose",        color: "#94A3B8", bg: "#F8FAFC",  emoji: "⚪" };
+  // Category match — cross-model pitch (only if no brand/model match)
+  if (score === 0) {
+    const stockCat = getMatchCategory(stockBrand, stockModel, stockProcessor);
+    const dealCat  = getMatchCategory(dealBrand,  dealModel,  dealProcessor);
+    if (categoriesCompatible(stockCat, dealCat)) score = 1;
+  }
+
+  if (score >= 5) return { score, label: "Strong match",   color: "#059669", bg: "#ECFDF5", emoji: "🟢" };
+  if (score === 3) return { score, label: "Model match",    color: "#D97706", bg: "#FFFBEB", emoji: "🟡" };
+  if (score === 2) return { score, label: "Brand match",    color: "#6366F1", bg: "#EEF2FF", emoji: "🔵" };
+  if (score === 1) return { score, label: "Category match", color: "#8B5CF6", bg: "#F5F3FF", emoji: "🟣" };
+  return                  { score, label: "Loose",          color: "#94A3B8", bg: "#F8FAFC",  emoji: "⚪" };
 }
 
 export const TIERS = {
@@ -258,10 +294,14 @@ export function matchStockToClients(stockItem, waitingDeals) {
   return waitingDeals
     .map(deal => ({
       ...deal,
-      matchScore: scoreMatch(stockItem.brand, stockItem.model, deal.brand, deal.model),
+      matchScore: scoreMatch(
+        stockItem.brand, stockItem.model,
+        deal.brand, deal.model,
+        stockItem.processor, deal.processor
+      ),
     }))
     .filter(deal => {
-      if (deal.matchScore.score < 2) return false;
+      if (deal.matchScore.score < 1) return false;
       if (deal.budget && stockItem.max_price) {
         if (Number(stockItem.max_price) > Number(deal.budget) * 1.15) return false;
       }

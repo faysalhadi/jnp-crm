@@ -75,9 +75,9 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       if (customerId && throttleMap[customerId]) continue;
 
       const matchingStock = availableStockData
-        .map(s => ({ ...s, matchScore: scoreMatch(s.brand, s.model, deal.brand, deal.model) }))
+        .map(s => ({ ...s, matchScore: scoreMatch(s.brand, s.model, deal.brand, deal.model, s.processor, deal.processor) }))
         .filter(s => {
-          if (s.matchScore.score < 2) return false;
+          if (s.matchScore.score < 1) return false;
           if (deal.budget && s.max_price && Number(s.max_price) > Number(deal.budget) * 1.15) return false;
           return true;
         })
