@@ -345,6 +345,19 @@ export default function ChatHeader() {
             {(activeCustomer.tags || []).length ? "✏️ Edit tags" : "🏷️ Add tags"}
           </button>
         </div>
+        {/* Order frequency — visible in profile */}
+        {activeCustomer.preferences?.order_frequency_days && (
+          <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+            🔁 Buys every {
+              activeCustomer.preferences.order_frequency_days === 1  ? "day" :
+              activeCustomer.preferences.order_frequency_days === 7  ? "week" :
+              activeCustomer.preferences.order_frequency_days === 14 ? "2 weeks" :
+              activeCustomer.preferences.order_frequency_days === 30 ? "month" :
+              `${activeCustomer.preferences.order_frequency_days} days`
+            }
+            {activeCustomer.preferences.condition ? ` · Prefers ${activeCustomer.preferences.condition}` : ""}
+          </div>
+        )}
       </div>
 
       {/* SUPPLIER ACTIONS */}
