@@ -165,6 +165,8 @@ export default function CustomersTab() {
 
   const [tagFilter, setTagFilter] = useState(null);
 
+  const setViewMode = (mode) => setViewModeLocal(mode);
+
   useEffect(() => {
     if (customerViewMode && customerViewMode !== "queue") {
       setViewModeLocal(customerViewMode);
