@@ -7,6 +7,7 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
+import TagEditor, { TagPill } from "./TagEditor";
 import ClientPreferencesPanel from "./ClientPreferencesPanel";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
 import { useBroadcast } from "../../hooks/useBroadcast";
@@ -61,6 +62,7 @@ export default function ChatHeader() {
   const [quoteText, setQuoteText] = useState("");
   const [quoteSaving, setQuoteSaving] = useState(false);
   const [showLossReasonPrompt, setShowLossReasonPrompt] = useState(false);
+  const [showTagEditor, setShowTagEditor] = useState(false);
   const [selectedLossReason, setSelectedLossReason] = useState(null);
   const [lossReasonOther, setLossReasonOther] = useState("");
   const [lossReasonSaving, setLossReasonSaving] = useState(false);
@@ -331,6 +333,19 @@ export default function ChatHeader() {
           )}
         </div>
       )}
+
+      {/* TAGS SECTION — all contact types */}
+      <div style={{ padding: "6px 14px 8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {(activeCustomer.tags || []).map(tagId => (
+            <TagPill key={tagId} tagId={tagId} />
+          ))}
+          <button onClick={() => setShowTagEditor(true)}
+            style={{ padding: "3px 10px", borderRadius: 20, border: "1.5px dashed #E2E8F0", background: "transparent", color: "#94A3B8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+            {(activeCustomer.tags || []).length ? "✏️ Edit tags" : "🏷️ Add tags"}
+          </button>
+        </div>
+      </div>
 
       {/* SUPPLIER ACTIONS */}
       {activeCustomer.contact_type === "supplier" && (
@@ -835,6 +850,17 @@ export default function ChatHeader() {
     </div>
 
     {showContactSheet && <ContactSheet onClose={() => setShowContactSheet(false)} />}
+
+    {showTagEditor && (
+      <TagEditor
+        tags={activeCustomer.tags || []}
+        clientName={activeCustomer.name}
+        onClose={() => setShowTagEditor(false)}
+        onChange={async (newTags) => {
+          await updateCustomer(activeCustomerId, { tags: newTags });
+        }}
+      />
+    )}
     </>
   );
 }

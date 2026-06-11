@@ -6,6 +6,8 @@ import { useCustomers, getClientHealth, getQueuePriority } from "../../context/C
 import { useUI } from "../../context/UIContext";
 import { useStock } from "../../context/StockContext";
 import PipelineView from "./PipelineView";
+import { TagStrip } from "../chat/TagEditor";
+import { getTag } from "../../constants";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -136,8 +138,11 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePrior
         )}
       </div>
 
-
-    </div>
+      {(c.tags || []).length > 0 && (
+        <div style={{ marginLeft: 52 }}>
+          <TagStrip tags={c.tags} max={4} />
+        </div>
+      )}
   );
 }
 
@@ -157,7 +162,7 @@ export default function CustomersTab() {
   const [viewMode, setViewModeLocal] = useState("queue");
   const { isMobile, customerViewMode, setCustomerViewMode } = useUI();
 
-  const setViewMode = (mode) => setViewModeLocal(mode);
+  const [tagFilter, setTagFilter] = useState(null);
 
   useEffect(() => {
     if (customerViewMode && customerViewMode !== "queue") {
@@ -219,6 +224,7 @@ export default function CustomersTab() {
 
   const filteredAll = useMemo(() => {
     return allClients.filter(c => {
+      if (tagFilter && !(c.tags || []).includes(tagFilter)) return false;
       if (search) {
         const q = search.toLowerCase();
         const dealMatch = (c.deals || []).some(d =>
@@ -238,7 +244,7 @@ export default function CustomersTab() {
       if (!a.urgent && b.urgent) return 1;
       return new Date(b.last_activity_at || b.last_active || "") - new Date(a.last_activity_at || a.last_active || "");
     });
-  }, [allClients, search, filter, pendingFollowUpMap]);
+  }, [allClients, search, filter, tagFilter, pendingFollowUpMap]);
 
   const healthCounts = useMemo(() => {
     const c = { active: 0, warm: 0, cooling: 0, inactive: 0, prospect: 0, new: 0 };
@@ -376,6 +382,34 @@ export default function CustomersTab() {
                 </button>
               ))}
             </div>
+            {/* Tag filter row */}
+            {(() => {
+              const usedTags = [...new Set(allClients.flatMap(c => c.tags || []))];
+              if (!usedTags.length) return null;
+              return (
+                <div style={{ display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 10, marginTop: -2 }}>
+                  <span style={{ fontSize: 10, color: "#94A3B8", alignSelf: "center", flexShrink: 0 }}>🏷️</span>
+                  {tagFilter && (
+                    <button onClick={() => setTagFilter(null)}
+                      style={{ padding: "4px 10px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 10, fontWeight: 700, cursor: "pointer", background: "#F1F5F9", color: "#94A3B8" }}>
+                      ✕ Clear
+                    </button>
+                  )}
+                  {usedTags.map(tagId => {
+                    const tag = getTag(tagId);
+                    const active = tagFilter === tagId;
+                    return (
+                      <button key={tagId} onClick={() => setTagFilter(active ? null : tagId)}
+                        style={{ padding: "4px 10px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 10, fontWeight: 700, cursor: "pointer",
+                          background: active ? tag.color : tag.bg,
+                          color: active ? "#fff" : tag.color }}>
+                        {tag.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
           <div style={{ flex: 1, padding: isMobile ? "10px 12px 100px" : "16px 24px 40px", overflowY: "auto" }}>
             {loading && <Spinner />}

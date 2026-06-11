@@ -320,3 +320,57 @@ export function stockMatchesClient(stockItem, customer) {
   if (prefs.budget_max && Number(stockItem.max_price) > Number(prefs.budget_max)) return false;
   return true;
 }
+
+// ── Tag System ─────────────────────────────────────────────────────────────
+
+export const DEFAULT_TAGS = [
+  // Buying Interest (blue)
+  { id: "macbook",           label: "MacBook",           group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "windows_business",  label: "Windows Business",  group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "budget_windows",    label: "Budget Windows",    group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "gaming",            label: "Gaming",            group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "bulk_buyer",        label: "Bulk Buyer",        group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "high_spec",         label: "High Spec",         group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "any_model",         label: "Any Model",         group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  // Business Type (purple)
+  { id: "trader",            label: "Trader",            group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "retailer",          label: "Retailer",          group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "repair_shop",       label: "Repair Shop",       group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "corporate",         label: "Corporate",         group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "reseller",          label: "Reseller",          group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
+  // Relationship (amber)
+  { id: "vip",               label: "VIP",               group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  { id: "regular",           label: "Regular",           group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  { id: "new_lead",          label: "New Lead",          group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  { id: "reliable",          label: "Reliable",          group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  { id: "cash_only",         label: "Cash Only",         group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  { id: "slow_payer",        label: "Slow Payer",        group: "relation",  color: "#EF4444", bg: "#FEF2F2" },
+  { id: "price_sensitive",   label: "Price Sensitive",   group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  // Location (green)
+  { id: "jnp_bldg_1",        label: "JNP Bldg 1",        group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "jnp_bldg_2",        label: "JNP Bldg 2",        group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "jnp_bldg_3",        label: "JNP Bldg 3",        group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "computer_mall",     label: "Computer Mall",     group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "mega_mall",         label: "Mega Mall",         group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "sharjah",           label: "Sharjah",           group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "dubai",             label: "Dubai",             group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "abu_dhabi",         label: "Abu Dhabi",         group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "online_only",       label: "Online Only",       group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  // Source (grey)
+  { id: "facebook",          label: "Facebook",          group: "source",    color: "#64748B", bg: "#F1F5F9" },
+  { id: "whatsapp_group",    label: "WhatsApp Group",    group: "source",    color: "#64748B", bg: "#F1F5F9" },
+  { id: "referral",          label: "Referral",          group: "source",    color: "#64748B", bg: "#F1F5F9" },
+  { id: "walk_in",           label: "Walk-in",           group: "source",    color: "#64748B", bg: "#F1F5F9" },
+];
+
+export const TAG_GROUPS = [
+  { id: "interest",  label: "Buying Interest" },
+  { id: "business",  label: "Business Type" },
+  { id: "relation",  label: "Relationship" },
+  { id: "location",  label: "Location" },
+  { id: "source",    label: "Source" },
+];
+
+export function getTag(tagId) {
+  return DEFAULT_TAGS.find(t => t.id === tagId) || { id: tagId, label: tagId, group: "other", color: "#64748B", bg: "#F1F5F9" };
+}
