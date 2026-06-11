@@ -857,7 +857,7 @@ export default function ChatHeader() {
         clientName={activeCustomer.name}
         onClose={() => setShowTagEditor(false)}
         onChange={async (newTags) => {
-          await updateCustomer(activeCustomerId, { tags: newTags });
+          await updateCustomer({ tags: newTags });
         }}
       />
     )}
