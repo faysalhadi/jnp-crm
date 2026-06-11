@@ -143,6 +143,7 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePrior
           <TagStrip tags={c.tags} max={4} />
         </div>
       )}
+    </div>
   );
 }
 
