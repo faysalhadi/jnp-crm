@@ -324,43 +324,46 @@ export function stockMatchesClient(stockItem, customer) {
 // ── Tag System ─────────────────────────────────────────────────────────────
 
 export const DEFAULT_TAGS = [
-  // Buying Interest (blue)
+  // Buying Interest (blue) — drives stock matching
   { id: "macbook",           label: "MacBook",           group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
   { id: "windows_business",  label: "Windows Business",  group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
   { id: "budget_windows",    label: "Budget Windows",    group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
   { id: "gaming",            label: "Gaming",            group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
-  { id: "bulk_buyer",        label: "Bulk Buyer",        group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
-  { id: "high_spec",         label: "High Spec",         group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
-  { id: "any_model",         label: "Any Model",         group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "any_laptop",        label: "Any Laptop",        group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "screens",           label: "Screens",           group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "ram_ssd",           label: "RAM / SSD",         group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "parts",             label: "Parts",             group: "interest",  color: "#3B82F6", bg: "#EFF6FF" },
   // Business Type (purple)
   { id: "trader",            label: "Trader",            group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "retailer",          label: "Retailer",          group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "repair_shop",       label: "Repair Shop",       group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "corporate",         label: "Corporate",         group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "reseller",          label: "Reseller",          group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "end_user",          label: "End User",          group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
   // Relationship (amber)
   { id: "vip",               label: "VIP",               group: "relation",  color: "#D97706", bg: "#FFFBEB" },
   { id: "regular",           label: "Regular",           group: "relation",  color: "#D97706", bg: "#FFFBEB" },
   { id: "new_lead",          label: "New Lead",          group: "relation",  color: "#D97706", bg: "#FFFBEB" },
-  { id: "reliable",          label: "Reliable",          group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  { id: "reliable",          label: "Reliable",          group: "relation",  color: "#059669", bg: "#ECFDF5" },
   { id: "cash_only",         label: "Cash Only",         group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  { id: "credit",            label: "Credit",            group: "relation",  color: "#D97706", bg: "#FFFBEB" },
   { id: "slow_payer",        label: "Slow Payer",        group: "relation",  color: "#EF4444", bg: "#FEF2F2" },
   { id: "price_sensitive",   label: "Price Sensitive",   group: "relation",  color: "#D97706", bg: "#FFFBEB" },
-  // Location (green)
+  // Location (green) — JNP physical + regions
   { id: "jnp_bldg_1",        label: "JNP Bldg 1",        group: "location",  color: "#10B981", bg: "#ECFDF5" },
   { id: "jnp_bldg_2",        label: "JNP Bldg 2",        group: "location",  color: "#10B981", bg: "#ECFDF5" },
   { id: "jnp_bldg_3",        label: "JNP Bldg 3",        group: "location",  color: "#10B981", bg: "#ECFDF5" },
   { id: "computer_mall",     label: "Computer Mall",     group: "location",  color: "#10B981", bg: "#ECFDF5" },
-  { id: "mega_mall",         label: "Mega Mall",         group: "location",  color: "#10B981", bg: "#ECFDF5" },
-  { id: "sharjah",           label: "Sharjah",           group: "location",  color: "#10B981", bg: "#ECFDF5" },
-  { id: "dubai",             label: "Dubai",             group: "location",  color: "#10B981", bg: "#ECFDF5" },
-  { id: "abu_dhabi",         label: "Abu Dhabi",         group: "location",  color: "#10B981", bg: "#ECFDF5" },
-  { id: "online_only",       label: "Online Only",       group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "uae",               label: "UAE",               group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "pakistan",          label: "Pakistan",          group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "africa",            label: "Africa",            group: "location",  color: "#10B981", bg: "#ECFDF5" },
+  { id: "international",     label: "International",     group: "location",  color: "#10B981", bg: "#ECFDF5" },
   // Source (grey)
   { id: "facebook",          label: "Facebook",          group: "source",    color: "#64748B", bg: "#F1F5F9" },
   { id: "whatsapp_group",    label: "WhatsApp Group",    group: "source",    color: "#64748B", bg: "#F1F5F9" },
   { id: "referral",          label: "Referral",          group: "source",    color: "#64748B", bg: "#F1F5F9" },
   { id: "walk_in",           label: "Walk-in",           group: "source",    color: "#64748B", bg: "#F1F5F9" },
+  { id: "cold_outreach",     label: "Cold Outreach",     group: "source",    color: "#64748B", bg: "#F1F5F9" },
 ];
 
 export const TAG_GROUPS = [
@@ -373,4 +376,26 @@ export const TAG_GROUPS = [
 
 export function getTag(tagId) {
   return DEFAULT_TAGS.find(t => t.id === tagId) || { id: tagId, label: tagId, group: "other", color: "#64748B", bg: "#F1F5F9" };
+}
+
+// Map buying interest tags to match categories for stock matching
+export const TAG_CATEGORY_MAP = {
+  macbook:          ["macbook_pro", "macbook_air", "macbook_intel"],
+  windows_business: ["premium_win", "mid_win"],
+  budget_windows:   ["budget_win"],
+  gaming:           ["gaming"],
+  any_laptop:       ["macbook_pro", "macbook_air", "macbook_intel", "premium_win", "mid_win", "budget_win", "gaming", "surface"],
+};
+
+// Check if a stock item matches a client's tags
+export function stockMatchesTags(stockItem, tags = []) {
+  if (!tags.length) return false;
+  if (tags.includes("any_laptop")) return true;
+  const itemCat = getMatchCategory(stockItem.brand, stockItem.model, stockItem.processor);
+  if (itemCat === "none") return false;
+  for (const tag of tags) {
+    const cats = TAG_CATEGORY_MAP[tag];
+    if (cats && cats.includes(itemCat)) return true;
+  }
+  return false;
 }

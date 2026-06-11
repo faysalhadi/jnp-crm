@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { supabase } from "./supabase";
-import { TRADER_CATEGORIES } from "./constants";
+import { TRADER_CATEGORIES, DEFAULT_TAGS } from "./constants";
+
+const INTEREST_TAGS = DEFAULT_TAGS.filter(t => t.group === "interest");
+const LOCATION_TAGS = DEFAULT_TAGS.filter(t => t.group === "location");
+const RELATION_TAGS = DEFAULT_TAGS.filter(t => t.group === "relation");
 
 // ── type definitions ──────────────────────────────────────────────────────────
 const TYPES = [
@@ -55,7 +59,7 @@ const TYPE_MAP = Object.fromEntries(TYPES.map(t => [t.id, t]));
 const EMPTY_FORM = {
   name: "", number: "", notes: "",
   // client
-  looking_for: "", budget: "", urgent: false, lead_source: "",
+  looking_for: "", budget: "", urgent: false, lead_source: "", tags: [],
   // trader
   group: "", usually_sells: "", usually_buys: "",
   // supplier
@@ -93,6 +97,7 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
       lead_source:  (type === "client" || type === "walkin") ? (form.lead_source || null) : null,
       stall_number: type === "trader" ? (form.stall_number || null) : null,
       categories:   type === "trader" ? (form.categories?.length ? form.categories : null) : null,
+      tags:         (form.tags || []).length ? form.tags : null,
     };
 
     if (type === "trader") {
@@ -260,6 +265,38 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
                 {type === "client" && (
                   <>
                     <Field label="LOOKING FOR" value={form.looking_for} onChange={v => set("looking_for", v)} placeholder="e.g. MacBook Air M2 16GB, budget 4000 AED" />
+
+                    {/* Tags */}
+                    <div>
+                      <div style={labelStyle}>WHAT DO THEY BUY?</div>
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 6 }}>
+                        {INTEREST_TAGS.map(tag => {
+                          const sel = (form.tags || []).includes(tag.id);
+                          return (
+                            <button key={tag.id} type="button"
+                              onClick={() => set("tags", sel ? (form.tags || []).filter(t => t !== tag.id) : [...(form.tags || []), tag.id])}
+                              style={{ padding: "5px 10px", borderRadius: 20, border: sel ? `2px solid ${tag.color}` : "1.5px solid #E2E8F0", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                                background: sel ? tag.bg : "#fff", color: sel ? tag.color : "#64748B" }}>
+                              {sel ? "✓ " : ""}{tag.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div style={labelStyle}>LOCATION</div>
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 6 }}>
+                        {LOCATION_TAGS.map(tag => {
+                          const sel = (form.tags || []).includes(tag.id);
+                          return (
+                            <button key={tag.id} type="button"
+                              onClick={() => set("tags", sel ? (form.tags || []).filter(t => t !== tag.id) : [...(form.tags || []), tag.id])}
+                              style={{ padding: "5px 10px", borderRadius: 20, border: sel ? `2px solid ${tag.color}` : "1.5px solid #E2E8F0", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                                background: sel ? tag.bg : "#fff", color: sel ? tag.color : "#64748B" }}>
+                              {sel ? "✓ " : ""}{tag.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div>
                       <div style={labelStyle}>BUDGET (AED)</div>
                       <input type="number" value={form.budget} onChange={e => set("budget", e.target.value)}
