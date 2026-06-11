@@ -163,7 +163,7 @@ export default function CustomersTab() {
   const [viewMode, setViewModeLocal] = useState("queue");
   const { isMobile, customerViewMode, setCustomerViewMode } = useUI();
 
-  const [tagFilter, setTagFilter] = useState(null);
+  const [tagFilter, setTagFilter] = useState([]);
 
   const setViewMode = (mode) => setViewModeLocal(mode);
 
@@ -224,7 +224,7 @@ export default function CustomersTab() {
 
   const filteredAll = useMemo(() => {
     return allClients.filter(c => {
-      if (tagFilter && !(c.tags || []).includes(tagFilter)) return false;
+      if (tagFilter.length > 0 && !tagFilter.every(t => (c.tags || []).includes(t))) return false;
       if (search) {
         const q = search.toLowerCase();
         const dealMatch = (c.deals || []).some(d =>
@@ -389,21 +389,22 @@ export default function CustomersTab() {
               return (
                 <div style={{ display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 10, marginTop: -2 }}>
                   <span style={{ fontSize: 10, color: "#94A3B8", alignSelf: "center", flexShrink: 0 }}>🏷️</span>
-                  {tagFilter && (
-                    <button onClick={() => setTagFilter(null)}
+                  {tagFilter.length > 0 && (
+                    <button onClick={() => setTagFilter([])}
                       style={{ padding: "4px 10px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 10, fontWeight: 700, cursor: "pointer", background: "#F1F5F9", color: "#94A3B8" }}>
                       ✕ Clear
                     </button>
                   )}
                   {usedTags.map(tagId => {
                     const tag = getTag(tagId);
-                    const active = tagFilter === tagId;
+                    const active = tagFilter.includes(tagId);
                     return (
-                      <button key={tagId} onClick={() => setTagFilter(active ? null : tagId)}
-                        style={{ padding: "4px 10px", borderRadius: 20, border: "none", flexShrink: 0, fontSize: 10, fontWeight: 700, cursor: "pointer",
-                          background: active ? tag.color : tag.bg,
-                          color: active ? "#fff" : tag.color }}>
-                        {tag.label}
+                      <button key={tagId}
+                        onClick={() => setTagFilter(prev => active ? prev.filter(t => t !== tagId) : [...prev, tagId])}
+                        style={{ padding: "4px 10px", borderRadius: 20, border: active ? `2px solid ${tag.color}` : "none", flexShrink: 0, fontSize: 10, fontWeight: 700, cursor: "pointer",
+                          background: active ? tag.bg : "#F1F5F9",
+                          color: active ? tag.color : "#64748B" }}>
+                        {active ? "✓ " : ""}{tag.label}
                       </button>
                     );
                   })}
