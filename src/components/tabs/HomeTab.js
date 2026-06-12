@@ -45,7 +45,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     cutoff.setDate(cutoff.getDate() - 90);
     const { data: lostDeals } = await supabase
       .from("deals")
-      .select("*, customers(id, name, number, contact_type)")
+      .select("*, customers(id, name, number, contact_type, last_reengaged_at)")
       .eq("stage", "lost")
       .gte("updated_at", cutoff.toISOString())
       .not("brand", "is", null);
@@ -60,19 +60,15 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     const { scoreMatch } = await import("../../constants");
 
     // 7-day throttle — don't show same client twice within 7 days
-    const throttleKey = "jnp_reengage_sent";
-    let throttleMap = {};
-    try { throttleMap = JSON.parse(localStorage.getItem(throttleKey) || "{}"); } catch {}
+    // (stored on customers.last_reengaged_at so it syncs across iPhone + laptop)
     const sevenDaysAgo = Date.now() - 7 * 86400000;
-    // Clean old entries
-    Object.keys(throttleMap).forEach(k => { if (throttleMap[k] < sevenDaysAgo) delete throttleMap[k]; });
 
     const matches = [];
     for (const deal of lostDeals) {
       if (!deal.brand) continue;
-      const customerId = deal.customers?.id;
-      // Skip if messaged in last 7 days
-      if (customerId && throttleMap[customerId]) continue;
+      // Skip if re-engaged in last 7 days (any device)
+      const lastRe = deal.customers?.last_reengaged_at;
+      if (lastRe && new Date(lastRe).getTime() > sevenDaysAgo) continue;
 
       const matchingStock = availableStockData
         .map(s => ({ ...s, matchScore: scoreMatch(s.brand, s.model, deal.brand, deal.model, s.processor, deal.processor) }))
@@ -499,14 +495,12 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
                     {waUrl ? (
                       <a href={waUrl} target="_blank" rel="noreferrer"
                         onClick={() => {
-                          // Throttle for 7 days
-                          try {
-                            const key = "jnp_reengage_sent";
-                            const map = JSON.parse(localStorage.getItem(key) || "{}");
-                            map[m.customer.id] = Date.now();
-                            localStorage.setItem(key, JSON.stringify(map));
-                            setLostDealMatches(prev => prev.filter((_, idx) => idx !== i));
-                          } catch {}
+                          // Throttle for 7 days — synced across devices
+                          supabase.from("customers")
+                            .update({ last_reengaged_at: new Date().toISOString() })
+                            .eq("id", m.customer.id)
+                            .then(() => {});
+                          setLostDealMatches(prev => prev.filter((_, idx) => idx !== i));
                         }}
                         style={{ flex: 2, padding: "8px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
                         💬 Send on WhatsApp
@@ -525,14 +519,12 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
                     </button>
                     <button
                       onClick={() => {
-                        // Dismiss — throttle for 7 days
-                        try {
-                          const key = "jnp_reengage_sent";
-                          const map = JSON.parse(localStorage.getItem(key) || "{}");
-                          map[m.customer.id] = Date.now();
-                          localStorage.setItem(key, JSON.stringify(map));
-                          setLostDealMatches(prev => prev.filter((_, idx) => idx !== i));
-                        } catch {}
+                        // Dismiss — throttle for 7 days, synced across devices
+                        supabase.from("customers")
+                          .update({ last_reengaged_at: new Date().toISOString() })
+                          .eq("id", m.customer.id)
+                          .then(() => {});
+                        setLostDealMatches(prev => prev.filter((_, idx) => idx !== i));
                       }}
                       style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#F1F5F9", color: "#94A3B8", fontSize: 12, border: "none", cursor: "pointer" }}>
                       ✕
