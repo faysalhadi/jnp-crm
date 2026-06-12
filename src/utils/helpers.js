@@ -37,11 +37,12 @@ export function daysSince(ts) {
   return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
 }
 
-export function autoTier(deals) {
+export function autoTier(deals, currentTier) {
   const closed = (deals || []).filter(d => d.stage === "closed").length;
-  if (closed >= 3) return "vip";
-  if (closed >= 1) return "regular";
-  return "cold";
+  const auto = closed >= 3 ? "vip" : closed >= 1 ? "regular" : "cold";
+  const rank = { cold: 0, regular: 1, vip: 2 };
+  // Never downgrade a manually-set higher tier
+  return (rank[currentTier] || 0) > rank[auto] ? currentTier : auto;
 }
 
 export function monthRevenue(customers) {

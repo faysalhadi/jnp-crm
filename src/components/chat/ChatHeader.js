@@ -49,6 +49,8 @@ export default function ChatHeader() {
   const { openBroadcast } = useBroadcast();
 
   const [dealExpanded, setDealExpanded] = useState(false);
+  const [showTierPicker, setShowTierPicker] = useState(false);
+  const [showFreqPicker, setShowFreqPicker] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
   const [showBulkQuote, setShowBulkQuote] = useState(false);
   const [showDeleteDeal, setShowDeleteDeal] = useState(false);
@@ -239,9 +241,24 @@ export default function ChatHeader() {
             {activeCustomer.contact_type === "supplier" && <Badge color="#2563EB" bg="#EFF6FF" small>SUPPLIER</Badge>}
             {activeCustomer.contact_type === "walkin"   && <Badge color="#6366F1" bg="#EEF2FF" small>WALK-IN</Badge>}
             {(!activeCustomer.contact_type || activeCustomer.contact_type === "client") && (
-              <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>
+              <span onClick={() => setShowTierPicker(v => !v)} style={{ cursor: "pointer" }}>
+                <Badge color={tier.color} bg={tier.bg} small>{tier.icon} {tier.label}</Badge>
+              </span>
             )}
           </div>
+          {showTierPicker && (
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              {Object.entries(TIERS).map(([id, t]) => (
+                <button key={id}
+                  onClick={async () => { await updateCustomer({ tier: id }); setShowTierPicker(false); }}
+                  style={{ padding: "4px 10px", borderRadius: 14, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    border: activeCustomer.tier === id ? `1.5px solid ${t.color}` : "1.5px solid #E2E8F0",
+                    background: activeCustomer.tier === id ? t.bg : "#fff", color: t.color }}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
             {editingNumber ? (
               <input autoFocus value={numberInput} onChange={e => setNumberInput(e.target.value)}
@@ -344,18 +361,39 @@ export default function ChatHeader() {
             {(activeCustomer.tags || []).length ? "✏️ Edit tags" : "🏷️ Add tags"}
           </button>
         </div>
-        {/* Order frequency — visible in profile */}
-        {activeCustomer.preferences?.order_frequency_days && (
-          <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-            🔁 Buys every {
-              activeCustomer.preferences.order_frequency_days === 1  ? "day" :
-              activeCustomer.preferences.order_frequency_days === 7  ? "week" :
-              activeCustomer.preferences.order_frequency_days === 14 ? "2 weeks" :
-              activeCustomer.preferences.order_frequency_days === 30 ? "month" :
-              `${activeCustomer.preferences.order_frequency_days} days`
-            }
-            {activeCustomer.preferences.condition ? ` · Prefers ${activeCustomer.preferences.condition}` : ""}
-          </div>
+        {/* Order frequency — tappable, drives client health */}
+        {(!activeCustomer.contact_type || activeCustomer.contact_type === "client") && (
+          <>
+            <div onClick={() => setShowFreqPicker(v => !v)}
+              style={{ fontSize: 10, color: activeCustomer.preferences?.order_frequency_days ? "#94A3B8" : "#CBD5E1", marginTop: 5, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              🔁 {activeCustomer.preferences?.order_frequency_days ? `Buys every ${
+                activeCustomer.preferences.order_frequency_days === 1  ? "day" :
+                activeCustomer.preferences.order_frequency_days === 7  ? "week" :
+                activeCustomer.preferences.order_frequency_days === 14 ? "2 weeks" :
+                activeCustomer.preferences.order_frequency_days === 30 ? "month" :
+                `${activeCustomer.preferences.order_frequency_days} days`
+              }` : "Set order frequency"} ✏️
+            </div>
+            {showFreqPicker && (
+              <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                {[{ d: 1, l: "Daily" }, { d: 7, l: "Weekly" }, { d: 14, l: "2 Weeks" }, { d: 30, l: "Monthly" }, { d: null, l: "Clear" }].map(opt => (
+                  <button key={opt.l}
+                    onClick={async () => {
+                      const prefs = { ...(activeCustomer.preferences || {}) };
+                      if (opt.d) prefs.order_frequency_days = opt.d; else delete prefs.order_frequency_days;
+                      await updateCustomer({ preferences: prefs });
+                      setShowFreqPicker(false);
+                    }}
+                    style={{ padding: "4px 10px", borderRadius: 14, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      border: activeCustomer.preferences?.order_frequency_days === opt.d ? "1.5px solid #6366F1" : "1.5px solid #E2E8F0",
+                      background: activeCustomer.preferences?.order_frequency_days === opt.d ? "#EEF2FF" : "#fff",
+                      color: opt.d ? "#6366F1" : "#94A3B8" }}>
+                    {opt.l}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -107,7 +107,7 @@ export function useChat(
     if (stageId === "closed") fields.closed_at = new Date().toISOString();
     await updateDeal(activeDealId, fields);
     const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
-    await updateCustomer(activeCustomerId, { tier: autoTier(updatedDeals) });
+    await updateCustomer(activeCustomerId, { tier: autoTier(updatedDeals, activeCustomer.tier) });
     setPendingSuggestion(null);
     if (stageId === "lost") setShowLossReason(true);
     if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }

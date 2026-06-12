@@ -346,10 +346,7 @@ export const DEFAULT_TAGS = [
   { id: "corporate",         label: "Corporate",         group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "reseller",          label: "Reseller",          group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "end_user",          label: "End User",          group: "business",  color: "#8B5CF6", bg: "#F5F3FF" },
-  // Relationship (amber)
-  { id: "vip",               label: "VIP",               group: "relation",  color: "#D97706", bg: "#FFFBEB" },
-  { id: "regular",           label: "Regular",           group: "relation",  color: "#D97706", bg: "#FFFBEB" },
-  { id: "new_lead",          label: "New Lead",          group: "relation",  color: "#D97706", bg: "#FFFBEB" },
+  // Relationship (amber) — VIP/Regular handled by tier system (tap tier badge in profile)
   { id: "reliable",          label: "Reliable",          group: "relation",  color: "#059669", bg: "#ECFDF5" },
   { id: "cash_only",         label: "Cash Only",         group: "relation",  color: "#D97706", bg: "#FFFBEB" },
   { id: "credit",            label: "Credit",            group: "relation",  color: "#D97706", bg: "#FFFBEB" },
