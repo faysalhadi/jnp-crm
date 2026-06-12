@@ -39,7 +39,6 @@ import ReceiptModal from "./components/layout/ReceiptModal";
 import BroadcastModal from "./components/layout/BroadcastModal";
 import AuthScreen from "./components/layout/AuthScreen";
 import GlobalSearch from "./components/layout/GlobalSearch";
-import RemindersTab from "./components/tabs/RemindersTab";
 import { startNotificationChecker, stopNotificationChecker } from "./utils/notifications";
 import StockMatchAlert from "./components/stock/StockMatchAlert";
 import ApiKeySetup from "./components/layout/ApiKeySetup";
@@ -333,13 +332,6 @@ export default function App() {
           stock={stock}
           activeDeal={activeDeal}
         />
-      )}
-
-      {/* ── REMINDERS TAB ── */}
-      {activeTab === "reminders" && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <RemindersTab />
-        </div>
       )}
 
       {/* ── ASK CLAUDE TAB ── */}
