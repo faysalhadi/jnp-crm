@@ -75,12 +75,6 @@ export function categoriesCompatible(cat1, cat2) {
   return crossPitch.some(([a, b]) => (cat1 === a && cat2 === b) || (cat1 === b && cat2 === a));
 }
 
-export function stockMatchesCategory(stockItem, category) {
-  if (!stockItem || !category || category === "none") return false;
-  const itemCat = getMatchCategory(stockItem.brand, stockItem.model, stockItem.processor);
-  return itemCat === category || categoriesCompatible(itemCat, category);
-}
-
 // Score match: brand+model (exact) OR category (cross-model pitch)
 // 5 = Strong (brand+model), 3 = Model only, 2 = Brand only, 1 = Category match
 export function scoreMatch(stockBrand, stockModel, dealBrand, dealModel, stockProcessor, dealProcessor) {
@@ -310,15 +304,27 @@ export function matchStockToClients(stockItem, waitingDeals) {
     .sort((a, b) => b.matchScore.score - a.matchScore.score);
 }
 
-// Lightweight boolean — used by CustomersTab queue priority (preferences-based)
-export function stockMatchesClient(stockItem, customer) {
-  if (stockItem.status !== "available") return false;
-  const prefs = customer.preferences || {};
-  if (prefs.brands?.length) {
-    if (!prefs.brands.some(b => (stockItem.brand || "").toLowerCase().includes(b.toLowerCase()))) return false;
+// ── Unified customer match: deal-based first, then tag-based ──────────────
+// Returns {source:'deal'|'tag', stock, deal?, score?} or null.
+// Used by CustomersTab queue (STOCK MATCH section / priority 5).
+export function customerStockMatch(customer, availableStock = []) {
+  if (!availableStock.length) return null;
+  // 1) Deal-based: open deals with a real model-level match (score >= 3)
+  const openDeals = (customer.deals || []).filter(d =>
+    ["new_inquiry", "device_found", "negotiation"].includes(d.stage));
+  for (const d of openDeals) {
+    for (const s of availableStock) {
+      const m = scoreMatch(s.brand, s.model, d.brand, d.model, s.processor, d.processor);
+      if (m.score >= 3) return { source: "deal", deal: d, stock: s, score: m.score };
+    }
   }
-  if (prefs.budget_max && Number(stockItem.max_price) > Number(prefs.budget_max)) return false;
-  return true;
+  // 2) Tag-based: buying interest tags vs stock category
+  const tags = customer.tags || [];
+  if (tags.some(t => TAG_CATEGORY_MAP[t])) {
+    const s = availableStock.find(st => stockMatchesTags(st, tags));
+    if (s) return { source: "tag", stock: s };
+  }
+  return null;
 }
 
 // ── Tag System ─────────────────────────────────────────────────────────────

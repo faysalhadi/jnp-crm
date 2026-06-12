@@ -7,7 +7,7 @@ import { useUI } from "../../context/UIContext";
 import { useStock } from "../../context/StockContext";
 import PipelineView from "./PipelineView";
 import { TagStrip } from "../chat/TagEditor";
-import { getTag, stockMatchesTags } from "../../constants";
+import { getTag, customerStockMatch } from "../../constants";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -193,11 +193,7 @@ export default function CustomersTab() {
     const available = (stock || []).filter(s => s.status === "available");
     const matched = new Set();
     allClients.forEach(c => {
-      const tags = c.tags || [];
-      const hasBuyingTag = tags.some(t => ["macbook","windows_business","budget_windows","gaming","any_laptop"].includes(t));
-      if (!hasBuyingTag) return;
-      const has = available.some(s => stockMatchesTags(s, tags));
-      if (has) matched.add(c.id);
+      if (customerStockMatch(c, available)) matched.add(c.id);
     });
     return matched;
   }, [allClients, stock]);
