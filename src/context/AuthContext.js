@@ -26,9 +26,22 @@ export function AuthProvider({ children }) {
           supabase.auth.setSession({
             access_token: parsed.access_token,
             refresh_token: parsed.refresh_token || '',
-          }).catch(() => {});
-          setSession(parsed);
-          setAuthLoading(false);
+          }).then(({ data, error }) => {
+            if (error || !data?.session) {
+              // Token expired or invalid — clear it and force re-login
+              localStorage.removeItem('jnp_session');
+              setSession(null);
+            } else {
+              // Update stored session with refreshed tokens
+              localStorage.setItem('jnp_session', JSON.stringify(data.session));
+              setSession(data.session);
+            }
+            setAuthLoading(false);
+          }).catch(() => {
+            localStorage.removeItem('jnp_session');
+            setSession(null);
+            setAuthLoading(false);
+          });
           return;
         }
       } catch {}
