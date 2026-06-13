@@ -121,8 +121,9 @@ export default function App() {
   const { openBroadcast } = useBroadcast();
 
 
-  useEffect(() => { if (session) loadCustomers(); }, [session, loadCustomers]);
-  useEffect(() => { if (session) { loadStock(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); } }, [session, loadStock, refreshCachedStock, loadTodaySales, loadPartsRevMTD]);
+  const sessionUserId = session?.user?.id;
+  useEffect(() => { if (sessionUserId) loadCustomers(); }, [sessionUserId]); // eslint-disable-line
+  useEffect(() => { if (sessionUserId) { loadStock(); refreshCachedStock(); loadTodaySales(); loadPartsRevMTD(); } }, [sessionUserId]); // eslint-disable-line
 
   // Auto-reset detail view if customer not found after customers are loaded
   useEffect(() => {
