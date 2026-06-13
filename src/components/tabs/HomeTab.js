@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../supabase";
 import { STAGES, EMPTY_STOCK } from "../../constants";
 import PullToRefresh from "../ui/PullToRefresh";
@@ -26,7 +26,17 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const [waitingMatchDetails, setWaitingMatchDetails] = useState([]);
   const [showWaitingMatches, setShowWaitingMatches] = useState(false);
   const [lostDealMatches, setLostDealMatches] = useState([]);
-  const [coldProspects, setColdProspects] = useState([]);
+  const [dismissedProspects, setDismissedProspects] = useState(new Set());
+
+  const sevenDaysAgo = Date.now() - 7 * 86400000;
+  const coldProspects = useMemo(() => {
+    return (customers || [])
+      .filter(c => (c.tags || []).includes("cold_outreach"))
+      .filter(c => !(c.deals || []).length)
+      .filter(c => !c.last_active || new Date(c.last_active).getTime() < sevenDaysAgo)
+      .filter(c => !dismissedProspects.has(c.id))
+      .slice(0, 10);
+  }, [customers, dismissedProspects]); // eslint-disable-line
 
   useEffect(() => {
     loadFollowUps();
@@ -108,52 +118,6 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
 
     setLostDealMatches(deduped);
   };
-
-  const loadColdProspects = async () => {
-    // Fetch all clients tagged cold_outreach — filter in JS for reliability
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, name, number, tags, last_activity_at, last_active, notes")
-      .order("last_activity_at", { ascending: true, nullsFirst: true });
-
-    console.log("[ColdProspects] all customers fetched:", data?.length, "error:", error);
-
-    if (error || !data?.length) return;
-
-    // Filter in JS: must have cold_outreach tag
-    const coldTagged = data.filter(c => (c.tags || []).includes("cold_outreach"));
-    console.log("[ColdProspects] cold_outreach tagged:", coldTagged.length, coldTagged.map(c => ({ name: c.name, tags: c.tags, last_active: c.last_active })));
-    if (!coldTagged.length) return;
-
-    // Filter out anyone who has deals
-    const ids = coldTagged.map(c => c.id);
-    const { data: dealsData } = await supabase
-      .from("deals")
-      .select("customer_id")
-      .in("customer_id", ids);
-
-    const clientsWithDeals = new Set((dealsData || []).map(d => d.customer_id));
-    console.log("[ColdProspects] clients with deals:", [...clientsWithDeals]);
-
-    const sevenDaysAgo = Date.now() - 7 * 86400000;
-    const prospects = coldTagged
-      .filter(c => !clientsWithDeals.has(c.id))
-      .filter(c => {
-        const passes = !c.last_active || new Date(c.last_active).getTime() < sevenDaysAgo;
-        console.log("[ColdProspects] filter check:", c.name, "last_active:", c.last_active, "passes:", passes);
-        return passes;
-      })
-      .slice(0, 10);
-
-    console.log("[ColdProspects] final prospects:", prospects.length);
-    setColdProspects(prospects);
-  };
-
-  // eslint-disable-next-line
-  useEffect(() => { 
-    console.log("[ColdProspects] useEffect firing, calling loadColdProspects");
-    loadColdProspects(); 
-  }, []);
 
   const loadWaitingMatches = async () => {
     const { data: availableStock } = await supabase
@@ -253,7 +217,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   })();
 
   return (
-    <PullToRefresh onRefresh={async () => { await loadFollowUps(); await loadLostDealMatches(); await loadColdProspects(); }}>
+    <PullToRefresh onRefresh={async () => { await loadFollowUps(); await loadLostDealMatches(); }}>
     <div style={{ padding: isMobile ? "16px 12px 100px" : "24px 32px 40px", display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Greeting */}
       <div>
@@ -613,7 +577,6 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
                     {number && (
                       <a href={`https://wa.me/${number}`} target="_blank" rel="noreferrer"
                         onClick={async () => {
-                          // Log contact + update last_activity_at
                           await supabase.from("activity_log").insert({
                             customer_id: c.id,
                             activity_type: "messaged",
@@ -623,7 +586,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
                           await supabase.from("customers")
                             .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
                             .eq("id", c.id);
-                          setColdProspects(prev => prev.filter((_, idx) => idx !== i));
+                          setDismissedProspects(prev => new Set([...prev, c.id]));
                         }}
                         style={{ flex: 2, padding: "8px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
                         💬 WhatsApp
@@ -635,7 +598,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
                       Open
                     </button>
                     <button
-                      onClick={() => setColdProspects(prev => prev.filter((_, idx) => idx !== i))}
+                      onClick={() => setDismissedProspects(prev => new Set([...prev, c.id]))}
                       style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#F1F5F9", color: "#94A3B8", fontSize: 12, border: "none", cursor: "pointer" }}>
                       ✕
                     </button>
