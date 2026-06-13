@@ -117,10 +117,13 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .select("id, name, number, tags, last_activity_at, last_active, notes")
       .order("last_activity_at", { ascending: true, nullsFirst: true });
 
+    console.log("[ColdProspects] all customers fetched:", data?.length, "error:", error);
+
     if (error || !data?.length) return;
 
     // Filter in JS: must have cold_outreach tag
     const coldTagged = data.filter(c => (c.tags || []).includes("cold_outreach"));
+    console.log("[ColdProspects] cold_outreach tagged:", coldTagged.length, coldTagged.map(c => ({ name: c.name, tags: c.tags, last_active: c.last_active })));
     if (!coldTagged.length) return;
 
     // Filter out anyone who has deals
@@ -131,23 +134,19 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .in("customer_id", ids);
 
     const clientsWithDeals = new Set((dealsData || []).map(d => d.customer_id));
+    console.log("[ColdProspects] clients with deals:", [...clientsWithDeals]);
 
     const sevenDaysAgo = Date.now() - 7 * 86400000;
     const prospects = coldTagged
       .filter(c => !clientsWithDeals.has(c.id))
-      // Show if: never contacted (no activity_log entries — last_activity_at null)
-      // OR contacted but 7+ days ago
-      // Newly added clients with last_activity_at = creation time should still show
       .filter(c => {
-        if (!c.last_activity_at) return true; // never contacted
-        // Check if last_activity_at is from tagging/creation vs real contact
-        // We show them unless they were explicitly messaged in last 7 days
-        // Use last_active as the contact signal (only updated on explicit activity log)
-        if (!c.last_active) return true;
-        return new Date(c.last_active).getTime() < sevenDaysAgo;
+        const passes = !c.last_active || new Date(c.last_active).getTime() < sevenDaysAgo;
+        console.log("[ColdProspects] filter check:", c.name, "last_active:", c.last_active, "passes:", passes);
+        return passes;
       })
       .slice(0, 10);
 
+    console.log("[ColdProspects] final prospects:", prospects.length);
     setColdProspects(prospects);
   };
 
