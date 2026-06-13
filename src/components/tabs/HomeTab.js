@@ -135,8 +135,17 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     const sevenDaysAgo = Date.now() - 7 * 86400000;
     const prospects = coldTagged
       .filter(c => !clientsWithDeals.has(c.id))
-      // No contact in 7 days, or never contacted
-      .filter(c => !c.last_activity_at || new Date(c.last_activity_at).getTime() < sevenDaysAgo)
+      // Show if: never contacted (no activity_log entries — last_activity_at null)
+      // OR contacted but 7+ days ago
+      // Newly added clients with last_activity_at = creation time should still show
+      .filter(c => {
+        if (!c.last_activity_at) return true; // never contacted
+        // Check if last_activity_at is from tagging/creation vs real contact
+        // We show them unless they were explicitly messaged in last 7 days
+        // Use last_active as the contact signal (only updated on explicit activity log)
+        if (!c.last_active) return true;
+        return new Date(c.last_active).getTime() < sevenDaysAgo;
+      })
       .slice(0, 10);
 
     setColdProspects(prospects);
