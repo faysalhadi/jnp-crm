@@ -38,7 +38,6 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
 
   useEffect(() => {
     loadLostDealMatches();
-    loadColdProspects();
   }, []); // eslint-disable-line
 
   const loadLostDealMatches = async () => {
@@ -149,6 +148,9 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     console.log("[ColdProspects] final prospects:", prospects.length);
     setColdProspects(prospects);
   };
+
+  // eslint-disable-next-line
+  useEffect(() => { loadColdProspects(); }, []);
 
   const loadWaitingMatches = async () => {
     const { data: availableStock } = await supabase
