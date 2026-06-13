@@ -15,40 +15,21 @@ export function AuthProvider({ children }) {
   const [anthropicKey, setAnthropicKey] = useState(getAnthropicKey);
   const [keyInput, setKeyInput] = useState("");
 
-  // Restore session from localStorage
+  // Use Supabase native session management — no manual localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('jnp_session');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (parsed?.access_token) {
-          // Set session immediately so app doesn't flash login screen
-          setSession(parsed);
-          setAuthLoading(false);
-          // Then try to refresh in background
-          supabase.auth.setSession({
-            access_token: parsed.access_token,
-            refresh_token: parsed.refresh_token || '',
-          }).then(({ data, error }) => {
-            if (error || !data?.session) {
-              // Only clear if truly expired — don't log out on network hiccup
-              if (error?.message?.includes('invalid') || error?.message?.includes('expired')) {
-                localStorage.removeItem('jnp_session');
-                setSession(null);
-              }
-            } else {
-              localStorage.setItem('jnp_session', JSON.stringify(data.session));
-              setSession(data.session);
-            }
-          }).catch(() => {
-            // Network error — keep existing session, don't log out
-          });
-          return;
-        }
-      } catch {}
-    }
-    setSession(null);
-    setAuthLoading(false);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    // Listen for auth changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   async function handleAuth() {
@@ -61,8 +42,6 @@ export function AuthProvider({ children }) {
         });
         if (error) { setAuthError(error.message); setAuthBusy(false); return; }
         if (data?.session) {
-          // Store session in localStorage manually
-          localStorage.setItem('jnp_session', JSON.stringify(data.session));
           setSession(data.session);
         }
       } else {
@@ -81,7 +60,6 @@ export function AuthProvider({ children }) {
   }
 
   async function handleLogout() {
-    localStorage.removeItem('jnp_session');
     await supabase.auth.signOut().catch(() => {});
     setSession(null);
   }
