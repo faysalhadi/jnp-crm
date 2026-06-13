@@ -111,29 +111,35 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   };
 
   const loadColdProspects = async () => {
-    // Clients tagged cold_outreach with no deals and no contact in 7+ days
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-    const { data } = await supabase
+    // Fetch all clients tagged cold_outreach — filter in JS for reliability
+    const { data, error } = await supabase
       .from("customers")
       .select("id, name, number, tags, last_activity_at, last_active, notes")
-      .contains("tags", ["cold_outreach"])
-      .or(`last_activity_at.lt.${sevenDaysAgo.toISOString()},last_activity_at.is.null`)
-      .order("last_activity_at", { ascending: true, nullsFirst: true })
-      .limit(10);
+      .order("last_activity_at", { ascending: true, nullsFirst: true });
 
-    if (!data?.length) return;
+    if (error || !data?.length) return;
 
-    // Filter out anyone who has deals (they're in normal pipeline)
-    const ids = data.map(c => c.id);
+    // Filter in JS: must have cold_outreach tag
+    const coldTagged = data.filter(c => (c.tags || []).includes("cold_outreach"));
+    if (!coldTagged.length) return;
+
+    // Filter out anyone who has deals
+    const ids = coldTagged.map(c => c.id);
     const { data: dealsData } = await supabase
       .from("deals")
       .select("customer_id")
       .in("customer_id", ids);
 
     const clientsWithDeals = new Set((dealsData || []).map(d => d.customer_id));
-    setColdProspects(data.filter(c => !clientsWithDeals.has(c.id)));
+
+    const sevenDaysAgo = Date.now() - 7 * 86400000;
+    const prospects = coldTagged
+      .filter(c => !clientsWithDeals.has(c.id))
+      // No contact in 7 days, or never contacted
+      .filter(c => !c.last_activity_at || new Date(c.last_activity_at).getTime() < sevenDaysAgo)
+      .slice(0, 10);
+
+    setColdProspects(prospects);
   };
 
   const loadWaitingMatches = async () => {
