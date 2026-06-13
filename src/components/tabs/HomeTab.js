@@ -150,7 +150,10 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   };
 
   // eslint-disable-next-line
-  useEffect(() => { loadColdProspects(); }, []);
+  useEffect(() => { 
+    console.log("[ColdProspects] useEffect firing, calling loadColdProspects");
+    loadColdProspects(); 
+  }, []);
 
   const loadWaitingMatches = async () => {
     const { data: availableStock } = await supabase
