@@ -22,25 +22,26 @@ export function AuthProvider({ children }) {
       try {
         const parsed = JSON.parse(stored);
         if (parsed?.access_token) {
-          // Restore session into supabase client
+          // Set session immediately so app doesn't flash login screen
+          setSession(parsed);
+          setAuthLoading(false);
+          // Then try to refresh in background
           supabase.auth.setSession({
             access_token: parsed.access_token,
             refresh_token: parsed.refresh_token || '',
           }).then(({ data, error }) => {
             if (error || !data?.session) {
-              // Token expired or invalid — clear it and force re-login
-              localStorage.removeItem('jnp_session');
-              setSession(null);
+              // Only clear if truly expired — don't log out on network hiccup
+              if (error?.message?.includes('invalid') || error?.message?.includes('expired')) {
+                localStorage.removeItem('jnp_session');
+                setSession(null);
+              }
             } else {
-              // Update stored session with refreshed tokens
               localStorage.setItem('jnp_session', JSON.stringify(data.session));
               setSession(data.session);
             }
-            setAuthLoading(false);
           }).catch(() => {
-            localStorage.removeItem('jnp_session');
-            setSession(null);
-            setAuthLoading(false);
+            // Network error — keep existing session, don't log out
           });
           return;
         }
