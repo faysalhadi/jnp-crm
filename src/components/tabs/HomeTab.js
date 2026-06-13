@@ -60,13 +60,25 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     // 90-day window
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 90);
-    const { data: lostDeals } = await supabase
+    const { data: lostDeals, error: dealsError } = await supabase
       .from("deals")
-      .select("*, customers(id, name, number, contact_type, last_reengaged_at)")
+      .select("*, customers(id, name, number, contact_type)")
       .eq("stage", "lost")
       .gte("updated_at", cutoff.toISOString())
       .not("brand", "is", null);
+    if (dealsError) { console.error("Lost deals query error:", dealsError.message); return; }
     if (!lostDeals?.length) return;
+
+    // Fetch last_reengaged_at separately to avoid join issues
+    const customerIds = [...new Set(lostDeals.map(d => d.customers?.id).filter(Boolean))];
+    let reengagedMap = {};
+    if (customerIds.length) {
+      const { data: reengagedData } = await supabase
+        .from("customers")
+        .select("id, last_reengaged_at")
+        .in("id", customerIds);
+      (reengagedData || []).forEach(c => { reengagedMap[c.id] = c.last_reengaged_at; });
+    }
 
     const { data: availableStockData } = await supabase
       .from("stock")
@@ -84,7 +96,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     for (const deal of lostDeals) {
       if (!deal.brand) continue;
       // Skip if re-engaged in last 7 days (any device)
-      const lastRe = deal.customers?.last_reengaged_at;
+      const lastRe = reengagedMap[deal.customers?.id];
       if (lastRe && new Date(lastRe).getTime() > sevenDaysAgo) continue;
 
       const matchingStock = availableStockData
