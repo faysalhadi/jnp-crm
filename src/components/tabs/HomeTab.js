@@ -26,6 +26,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const [waitingMatchDetails, setWaitingMatchDetails] = useState([]);
   const [showWaitingMatches, setShowWaitingMatches] = useState(false);
   const [lostDealMatches, setLostDealMatches] = useState([]);
+  const [coldProspects, setColdProspects] = useState([]);
 
   useEffect(() => {
     loadFollowUps();
@@ -37,6 +38,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
 
   useEffect(() => {
     loadLostDealMatches();
+    loadColdProspects();
   }, []); // eslint-disable-line
 
   const loadLostDealMatches = async () => {
@@ -106,6 +108,32 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     }).slice(0, 8);
 
     setLostDealMatches(deduped);
+  };
+
+  const loadColdProspects = async () => {
+    // Clients tagged cold_outreach with no deals and no contact in 7+ days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data } = await supabase
+      .from("customers")
+      .select("id, name, number, tags, last_activity_at, last_active, notes")
+      .contains("tags", ["cold_outreach"])
+      .or(`last_activity_at.lt.${sevenDaysAgo.toISOString()},last_activity_at.is.null`)
+      .order("last_activity_at", { ascending: true, nullsFirst: true })
+      .limit(10);
+
+    if (!data?.length) return;
+
+    // Filter out anyone who has deals (they're in normal pipeline)
+    const ids = data.map(c => c.id);
+    const { data: dealsData } = await supabase
+      .from("deals")
+      .select("customer_id")
+      .in("customer_id", ids);
+
+    const clientsWithDeals = new Set((dealsData || []).map(d => d.customer_id));
+    setColdProspects(data.filter(c => !clientsWithDeals.has(c.id)));
   };
 
   const loadWaitingMatches = async () => {
@@ -206,7 +234,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   })();
 
   return (
-    <PullToRefresh onRefresh={async () => { await loadFollowUps(); }}>
+    <PullToRefresh onRefresh={async () => { await loadFollowUps(); await loadLostDealMatches(); await loadColdProspects(); }}>
     <div style={{ padding: isMobile ? "16px 12px 100px" : "24px 32px 40px", display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Greeting */}
       <div>
@@ -526,6 +554,69 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
                           .then(() => {});
                         setLostDealMatches(prev => prev.filter((_, idx) => idx !== i));
                       }}
+                      style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#F1F5F9", color: "#94A3B8", fontSize: 12, border: "none", cursor: "pointer" }}>
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cold Prospects */}
+      {coldProspects.length > 0 && (
+        <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#0EA5E9", marginBottom: 4, letterSpacing: 0.5 }}>🧊 COLD PROSPECTS</div>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 10 }}>No contact in 7+ days — no deal yet</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {coldProspects.map((c, i) => {
+              const number = c.number ? formatWhatsAppNumber(c.number) : null;
+              const daysSilent = c.last_activity_at
+                ? Math.floor((Date.now() - new Date(c.last_activity_at)) / 86400000)
+                : null;
+              return (
+                <div key={c.id} style={{ background: "#F0F9FF", border: "1px solid #BAE6FD", borderLeft: "3px solid #0EA5E9", borderRadius: 12, padding: "11px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{c.name}</div>
+                      <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                        {daysSilent !== null ? `${daysSilent}d no contact` : "Never contacted"}
+                        {c.notes ? ` · ${c.notes.slice(0, 40)}` : ""}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#0EA5E9", background: "#E0F2FE", padding: "2px 8px", borderRadius: 8 }}>
+                      PROSPECT
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {number && (
+                      <a href={`https://wa.me/${number}`} target="_blank" rel="noreferrer"
+                        onClick={async () => {
+                          // Log contact + update last_activity_at
+                          await supabase.from("activity_log").insert({
+                            customer_id: c.id,
+                            activity_type: "messaged",
+                            note: "Cold outreach",
+                            logged_at: new Date().toISOString(),
+                          });
+                          await supabase.from("customers")
+                            .update({ last_active: new Date().toISOString(), last_activity_at: new Date().toISOString() })
+                            .eq("id", c.id);
+                          setColdProspects(prev => prev.filter((_, idx) => idx !== i));
+                        }}
+                        style={{ flex: 2, padding: "8px 0", borderRadius: 8, background: "#25D366", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", textAlign: "center" }}>
+                        💬 WhatsApp
+                      </a>
+                    )}
+                    <button
+                      onClick={() => { setActiveCustomerId(c.id); setView("detail"); setActiveTab("customers"); }}
+                      style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#E0F2FE", color: "#0EA5E9", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
+                      Open
+                    </button>
+                    <button
+                      onClick={() => setColdProspects(prev => prev.filter((_, idx) => idx !== i))}
                       style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#F1F5F9", color: "#94A3B8", fontSize: 12, border: "none", cursor: "pointer" }}>
                       ✕
                     </button>
