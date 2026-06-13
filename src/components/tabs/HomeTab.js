@@ -11,6 +11,7 @@ import { useParts } from "../../context/PartsContext";
 import MorningBrief from "./MorningBrief";
 
 export default function HomeTab({ tasks, sourcingAlerts }) {
+  console.log("HomeTab rendering");
   const { activeTab, setActiveTab, isMobile, setCustomerViewMode } = useUI();
   const {
     customers,
