@@ -30,7 +30,11 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
 
   const sevenDaysAgo = Date.now() - 7 * 86400000;
   const coldProspects = useMemo(() => {
-    return (customers || [])
+    const tagged = (customers || []).filter(c => (c.tags || []).includes("cold_outreach"));
+    console.log("[Cold] total customers:", customers?.length, "tagged cold_outreach:", tagged.length, tagged.map(c => ({ name: c.name, tags: c.tags, deals: c.deals?.length })));
+    return tagged
+      .filter(c => !(c.deals || []).length)
+      .filter(c => !dismissedProspects.has(c.id))
       .filter(c => (c.tags || []).includes("cold_outreach"))
       .filter(c => !(c.deals || []).length)
       .filter(c => !dismissedProspects.has(c.id))
