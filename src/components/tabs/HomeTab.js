@@ -64,7 +64,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .from("deals")
       .select("*, customers(id, name, number, contact_type)")
       .eq("stage", "lost")
-      .gte("updated_at", cutoff.toISOString())
+      .gte("closed_at", cutoff.toISOString())
       .not("brand", "is", null);
     if (dealsError) { console.error("Lost deals query error:", dealsError.message); return; }
     if (!lostDeals?.length) return;
@@ -120,7 +120,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
           deal,
           customer: deal.customers,
           stock: best,
-          daysAgo: Math.floor((Date.now() - new Date(deal.updated_at)) / 86400000),
+          daysAgo: Math.floor((Date.now() - new Date(deal.closed_at)) / 86400000),
           waMsg,
         });
       }
