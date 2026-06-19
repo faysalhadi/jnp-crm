@@ -402,3 +402,66 @@ export function stockMatchesTags(stockItem, tags = []) {
   }
   return false;
 }
+
+// ── Recommendation engine — one-line "what to do" text per queue card ─────
+// No AI, pure template logic from data already on hand.
+// priority: result of getQueuePriority(customer, ...)
+// openDeal: customer's current open deal (if any)
+// fu: pending follow-up row (if any)
+// matchedStock: result of customerStockMatch(customer, stock) (if any)
+// lastNote: most recent activity_log entry of type "note" (if any)
+export function getRecommendation(customer, { priority, openDeal, fu, matchedStock, lastNote } = {}) {
+  if (!priority) return null;
+  const name = customer.name || "Client";
+  const fmtAED = (v) => v ? `AED ${Number(v).toLocaleString()}` : null;
+
+  switch (priority.priority) {
+    case 1: // Urgent
+      return `${name} is flagged urgent — check what's pending before anything else.`;
+
+    case 2: { // Overdue follow-up
+      const days = fu ? Math.floor((Date.now() - new Date(fu.due_at)) / 86400000) : null;
+      const ctx = fu?.note ? fu.note : (openDeal ? [openDeal.brand, openDeal.model].filter(Boolean).join(" ") : null);
+      return `Follow-up ${days > 0 ? `overdue ${days}d` : "is due"}${ctx ? ` — ${ctx}` : ""}. Chase it today.`;
+    }
+
+    case 3: // Due today
+      return `Follow-up due today${fu?.note ? ` — ${fu.note}` : ""}.`;
+
+    case 4: { // Pickup today
+      const val = fmtAED(openDeal?.value || openDeal?.budget);
+      return `Pickup confirmed today${val ? ` for ${val}` : ""}. Confirm timing with ${name}.`;
+    }
+
+    case 5: { // Stock match
+      const item = matchedStock?.stock;
+      const itemDesc = item ? [item.brand, item.model].filter(Boolean).join(" ") : "matching stock";
+      return matchedStock?.source === "deal"
+        ? `You have ${itemDesc} in stock — matches what ${name} asked for. Worth a message.`
+        : `${itemDesc} just came in — matches ${name}'s interest tags. Good moment to reach out.`;
+    }
+
+    case 6: { // Silent 3+ days with open deal
+      const days = Math.floor((Date.now() - new Date(customer.last_activity_at || customer.last_active)) / 86400000);
+      const ctx = openDeal ? [openDeal.brand, openDeal.model].filter(Boolean).join(" ") : "their request";
+      return `${name} has gone quiet for ${days}d with an open deal on ${ctx}. Check in before it goes cold.`;
+    }
+
+    case 7: { // Cooling / re-engage
+      const freqDays = customer.preferences?.order_frequency_days;
+      return freqDays
+        ? `Usually orders every ${freqDays}d — overdue based on pattern. Send current stock to restart the conversation.`
+        : `Account is cooling. A quick "kuch chahiye?" check-in usually restarts these.`;
+    }
+
+    case 8: { // Open request
+      const ctx = openDeal ? [openDeal.brand, openDeal.model].filter(Boolean).join(" ") : null;
+      return ctx
+        ? `Open request for ${ctx} — no stock match yet. Keep an eye out when sourcing.`
+        : `Open request with no specifics yet — worth a follow-up to pin down what they need.`;
+    }
+
+    default:
+      return null;
+  }
+}

@@ -7,7 +7,7 @@ import { useUI } from "../../context/UIContext";
 import { useStock } from "../../context/StockContext";
 import PipelineView from "./PipelineView";
 import { TagStrip } from "../chat/TagEditor";
-import { getTag, customerStockMatch } from "../../constants";
+import { getTag, customerStockMatch, getRecommendation } from "../../constants";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -36,7 +36,7 @@ function fmtFollowUp(due_at) {
   return diffD === 1 ? "Tomorrow" : `In ${diffD} days`;
 }
 
-function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePriority}) {
+function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePriority, stock }) {
   const openDeals  = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
   const latestDeal = openDeals[0] || (c.deals || [])[0];
   const totalValue = (c.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
@@ -57,6 +57,18 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePrior
   const isIncomplete = !(c.deals || []).length && !c.notes && !hasFollowUp;
   const prefs        = c.preferences || {};
   const hasPrefs     = prefs.brands?.length || prefs.budget_max;
+
+  const recommendation = useMemo(() => {
+    if (!queuePriority) return null;
+    const available = (stock || []).filter(s => s.status === "available");
+    return getRecommendation(c, {
+      priority: queuePriority,
+      openDeal: latestDeal,
+      fu,
+      matchedStock: customerStockMatch(c, available),
+      lastNote: lastAct?.activity_type === "note" ? lastAct : null,
+    });
+  }, [c, queuePriority, latestDeal, fu, stock, lastAct]);
 
   return (
     <div onClick={onOpen} style={{
@@ -112,6 +124,16 @@ function ClientCard({ c, onOpen, lastActivityMap, pendingFollowUpMap, queuePrior
       {latestDeal && (
         <div style={{ marginTop: 8, marginLeft: 52 }}>
           <StageBar stageId={latestDeal.stage} />
+        </div>
+      )}
+
+      {recommendation && (
+        <div style={{
+          marginTop: 8, marginLeft: 52, padding: "7px 10px", borderRadius: 10,
+          background: (queuePriority.color || "#6366F1") + "12",
+          fontSize: 11.5, color: "#334155", lineHeight: 1.4,
+        }}>
+          💡 {recommendation}
         </div>
       )}
 
@@ -333,7 +355,7 @@ export default function CustomersTab() {
                 {s.items.map(({ c, priority }) => (
                   <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
                     lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
-                    queuePriority={priority}  />
+                    queuePriority={priority} stock={stock}  />
                 ))}
               </div>
             </div>
@@ -421,7 +443,7 @@ export default function CustomersTab() {
                 <ClientCard key={c.id} c={c} onOpen={() => openClient(c)}
                   lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
                   queuePriority={getQueuePriority(c, pendingFollowUpMap, stockMatchSet)}
-                   />
+                  stock={stock}  />
               ))}
             </div>
           </div>
