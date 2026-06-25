@@ -25,6 +25,7 @@ import AskClaudeTab from "./components/tabs/AskClaudeTab";
 import MarketingTab from "./components/tabs/MarketingTab";
 import PartsCompatibilityTab from "./components/tabs/PartsCompatibilityTab";
 import SalesTab from "./components/tabs/SalesTab";
+import ScreenTallyTab from "./components/tabs/ScreenTallyTab";
 import HomeTab from "./components/tabs/HomeTab";
 import CustomersTab from "./components/tabs/CustomersTab";
 import TradersTab from "./components/tabs/TradersTab";
@@ -357,6 +358,11 @@ export default function App() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <PartsCompatibilityTab />
         </div>
+      )}
+
+      {/* ── SCREEN TALLY (drawer-only utility, full-screen overlay) ── */}
+      {activeTab === "screentally" && (
+        <ScreenTallyTab onClose={() => setActiveTab("home")} />
       )}
 
       {/* ── SOURCING TAB ── */}

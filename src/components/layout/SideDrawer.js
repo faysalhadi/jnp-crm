@@ -25,8 +25,12 @@ export default function SideDrawer({ handleLogout }) {
             🔧 Parts DB
           </button>
           <button onClick={() => { setShowSideDrawer(false); setActiveTab("sales"); }}
-            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
+            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
             💰 Sales History
+          </button>
+          <button onClick={() => { setShowSideDrawer(false); setActiveTab("screentally"); }}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#1C1F26", color: "#10B981", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
+            🧮 Screen Tally
           </button>
           <button onClick={() => { setShowSideDrawer(false); setView("settings"); }}
             style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
