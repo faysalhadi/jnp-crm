@@ -1,160 +1,186 @@
+import React, { useState, useEffect, useMemo } from "react";
+import { useCustomers, getClientHealth, getQueuePriority } from "../../context/CustomerContext";
+import { getTag } from "../../constants";
+import { supabase } from "../../supabase";
+import StageBar from "../ui/StageBar";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
-import { useCustomers, getClientHealth } from "../../context/CustomerContext";
-import { STAGES, getTag } from "../../constants";
- 
-// ── CONSTANTS ─────────────────────────────────────────────────────────────────
- 
+// ── COLOR TOKENS ─────────────────────────────────────────────────────────────────
 const C = {
-  surface:   "#FFFFFF",
-  surface2:  "#F6F4F1",
-  surface3:  "#EEECE9",
-  border:    "#E2DDD8",
-  borderMd:  "#CCC8C2",
-  text:      "#0E0D0C",
-  text2:     "#524F4B",
-  text3:     "#98948F",
-  accent:    "#4D44B5",
-  accentLt:  "#EEEDFC",
-  green:     "#0A9E72",
-  greenLt:   "#E0F5EE",
-  greenDk:   "#076E4F",
-  amber:     "#C97706",
-  amberLt:   "#FEF3C7",
-  red:       "#DC2626",
-  redLt:     "#FEE2E2",
-  blue:      "#2563EB",
-  blueLt:    "#DBEAFE",
-  purple:    "#7C3AED",
-  purpleLt:  "#F5F3FF",
+  surface: "#FFFFFF", surface2: "#F8F8FA", surface3: "#EEEEF2",
+  bg: "#F3F4F6", border: "#E4E4E8",
+  text: "#1A1A28", text2: "#3A405A", text3: "#9A99AA",
+  accent: "#4D44B5", accentLt: "#EEECFA",
+  green: "#10B981", greenLt: "#ECFDF5",
+  amber: "#F59E0B", amberLt: "#FFFBEB",
+  red: "#EF4444", redLt: "#FEF2F2",
+  blue: "#30A5F5", blueLt: "#EFF6FF",
 };
- 
-const STAGE_CFG = {
-  new_inquiry:              { dot: "#6366F1", bg: "#EEF2FF", text: "#3730A3", label: "New Inquiry",    short: "Inquiry",  emoji: "📝" },
-  device_found:             { dot: "#2563EB", bg: "#DBEAFE", text: "#1E40AF", label: "Device Found",   short: "Found",    emoji: "🔍" },
-  negotiation:              { dot: "#7C3AED", bg: "#F5F3FF", text: "#5B21B6", label: "Negotiation",    short: "Negot.",   emoji: "💬" },
-  confirmed_pending_pickup: { dot: "#0A9E72", bg: "#D1FAE5", text: "#065F46", label: "Confirmed Pickup", short: "Pickup", emoji: "📅" },
-  closed:                   { dot: "#10B981", bg: "#ECFDF5", text: "#065F46", label: "Deal Closed",    short: "Closed",   emoji: "✅" },
-  lost:                     { dot: "#94A3B8", bg: "#F1F5F9", text: "#64748B", label: "Lost",           short: "Lost",     emoji: "✕"  },
-};
- 
-const STAGE_PROB = {
-  new_inquiry: 0.20, device_found: 0.40, negotiation: 0.60,
-  confirmed_pending_pickup: 0.90, closed: 1.0, lost: 0,
-};
- 
-const ACTIVE_STAGES = ["new_inquiry", "device_found", "negotiation", "confirmed_pending_pickup"];
- 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
- 
-function getDaysSinceDeal(deal) {
-  const date = deal.updated_at || deal.created_at;
-  if (!date) return 0;
-  return Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+
+function buildWaUrl(number) {
+  const digits = (number || "").replace(/[^\d]+/g, "");
+  if (!digits.length) return null;
+  const norm = digits.startsWith("0")
+    ? "971" + digits.slice(1)
+    : digits.startsWith("971")
+    ? digits
+    : "971" + digits;
+  return `https://wa.me/${norm}`;
 }
- 
-function ageStatus(days, stage) {
-  if (stage === "closed" || stage === "lost") return "closed";
-  if (days <= 2) return "ok";
-  if (days <= 6) return "warn";
-  return "danger";
+
+function getInitials(name) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
- 
-function urgencyColor(status) {
-  if (status === "ok")     return "#A7F3D0";
-  if (status === "warn")   return "#FDE68A";
-  if (status === "danger") return "#FECACA";
-  return "#E0E7FF";
+
+function daysSince(dt) {
+  if (!dt) return 999;
+  return Math.floor((Date.now() - new Date(dt)) / 86400000);
 }
- 
-function ageColor(status) {
-  if (status === "warn")   return C.amber;
-  if (status === "danger") return C.red;
-  return C.text3;
+
+function fmtAgo(dt) {
+  const d = daysSince(dt);
+  if (d === 0) return "today";
+  if (d === 1) return "yesterday";
+  if (d < 30) return `${d}d ago`;
+  return `${Math.floor(d / 30)}mo ago`;
 }
- 
-function fmtValue(v) {
-  if (!v || v === 0) return "–";
-  const n = Number(v);
-  if (n >= 1000) return "AED " + (n / 1000).toFixed(1) + "k";
-  return "AED " + n;
-}
- 
+
 function fmtValueShort(v) {
   const n = Number(v) || 0;
-  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
-  return String(n);
+  if (n >= 1000000) return `${(n \/ 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n \/ 1000).toFixed(1)}K`;
+  return n.toLocaleString();
 }
- 
-function getInitials(name) {
-  return (name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+
+// ── STAGE CONFIG ──────────────────────────────────────────────────────────────
+
+const ACTIVE_STAGES = [
+  "new_inquiry", "device_found", "negotiation",
+  "confirmed_pending_pickup"
+];
+
+const STAGE_PROB = {
+  new_inquiry: 0.1, device_found: 0.35, negotiation: 0.65, confirmed_pending_pickup: 0.94
+};
+
+const STAGE_CFG = {
+  new_inquiry:             { label: "New Inquiry",         short: "New",      dot: "#94A3B8", bg: "#F1F5F9", text: "#64748B",   emoji: "�" },
+  device_found:            { label: "Device Found",        short: "Found",    dot: "#30A5F5", bg: "#EFF6FF", text: "#1D4ED8",   emoji: "🇱" },
+  negotiation:             { label: "Negotiation",         short: "Nego",     dot: "#F59E0B", bg: "#FFFBEB", text: "#B45309",   emoji: "�j" },
+  confirmed_pending_pickup: { label: "Pending Pickup",    short: "Pickup",   dot: "#6366F1", bg: "#EEF2FF", text: "#4338CA",   emoji: "⨒" },
+  closed:                  { label: "Closed",              short: "Closed",   dot: "#10B981", bg: "#ECFDF5", text: "#065F46",   emoji: "✓" },
+  lost:                    { label: "Lost",                short: "Lost",     dot: "#EF4424", bg: "#FEF2F2", text: "#991B1B",   emoji: "❍" },
+};
+
+function getStageColor(stage) {
+  return STAGE_CFG[stage] || { label: stage, short: stage, dot: C.text3, bg: C.surface2, text: C.text2, emoji: "☀" };
 }
- 
-function timeAgo(dateStr) {
-  if (!dateStr) return "";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor(diff / 60000);
-  if (m < 1)   return "just now";
-  if (m < 60)  return m + "m ago";
-  if (h < 24)  return h + "h ago";
-  if (d === 1) return "Yesterday";
-  return d + "d ago";
+
+function getDaysSinceDeal(deal) {
+  const dt = deal.updated_at || deal.created_at;
+  if (!dt) return 0;
+  return Math.floor((Date.now() - new Date(dt)) / 86400000);
 }
- 
-function getStageColor(stageId) {
-  return STAGE_CFG[stageId] || STAGE_CFG.lost;
-}
- 
-// ── DEAL CARD (shared mobile + laptop) ────────────────────────────────────────
- 
-function DealCard({ deal, customer, selected, onSelect, onQuickStage, quickStageOpen, updateDeal, onNavigate, compact }) {
-  const days = getDaysSinceDeal(deal);
-  const status = ageStatus(days, deal.stage);
-  const sc = getStageColor(deal.stage);
-  const budget = Number(deal.budget) || Number(deal.value) || 0;
-  const deviceLabel = [deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD";
-  const isPickup = deal.stage === "confirmed_pending_pickup";
-  const initials = getInitials(customer.name);
- 
-  const cardStyle = {
-    display: "flex",
-    background: isPickup
-      ? "linear-gradient(135deg, #fff 0%, #E0F5EE 100%)"
-      : C.surface,
-    border: selected
-      ? `1.5px solid ${C.accent}`
-      : isPickup
-        ? "1.5px solid #A7F3D0"
-        : `1px solid ${C.border}`,
-    borderRadius: 12,
-    marginBottom: 6,
-    overflow: "hidden",
-    cursor: "pointer",
-    boxShadow: selected ? `0 0 0 3px ${C.accentLt}` : "0 1px 3px rgba(0,0,0,0.05)",
-    transition: "border-color 0.15s, box-shadow 0.15s",
+
+// ── SMALL UI PRIMITIVES ─────────────────────────────────────────────────
+
+function btnStyle(overrides = {}) {
+  return {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+    padding: "5px 11px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer",
+    border: `1.5px solid ${overrides.border || C.border}`,
+    background: overrides.bg || C.surface,
+    color: overrides.color || C.text2,
+    fontFamily: "inherit",
+    ...overrides,
   };
- 
+}
+
+function PreviewSection({ title, children }) {
   return (
-    <div>
-      <div style={cardStyle} onClick={onSelect}>
-        {/* Urgency strip */}
-        <div style={{ width: 4, flexShrink: 0, background: urgencyColor(status) }} />
- 
-        <div style={{ flex: 1, padding: compact ? "8px 10px" : "9px 12px", minWidth: 0 }}>
-          {/* Top row */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-            <div style={{
-              width: compact ? 30 : 34, height: compact ? 30 : 34,
-              borderRadius: 9, background: sc.bg,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: compact ? 10 : 11, fontWeight: 800, color: sc.text, flexShrink: 0,
-            }}>
-              {initials}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: compact ? 12 : 13, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function FieldRow({ label, value, accent, small }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: `1px solid ${C.surface3}` }}>
+      <div style={{ fontSize: small ? 10 : 11, color: C.text3, minWidth: 70 }}>{label}</div>
+      <div style={{ fontSize: small ? 10 : 11, fontWeight: 600, color: accent ? C.accent : C.text, textAlign: "right" }}>{value}</div>
+    </div>
+  );
+}
+
+// ── FUNNEL BAR ──────────────────────────────────────────────────────────────────────
+
+function FunnelBar({ grouped }) {
+  const max = Math.max(...grouped.map(g => g.items.length), 1);
+  return (
+    <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 58, padding: "0 4px", flexShrink: 0 }}>
+      {grouped.map(g => {
+        const sc = getStageColor(g.stageId);
+        const pct = g.items.length / max;
+        const h = Math.max(pct * 46, 6);
+        return (
+          <div key={g.stageId} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: sc.text }}>{g.items.length}</div>
+            <div style={{ width: 16, height: h, background: sc.dot, borderRadius: 4 }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DealCard({ item, onClick, isSelected, pendingFollowUpMap }) {
+  const { deal, customer } = item;
+  const sc = getStageColor(deal.stage);
+  const deviceLabel = [deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD";
+  const budget = Number(deal.budget) || Number(deal.value) || 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: C.surface, border: `1px solid ${isSelected ? "#6D68D1" : C.border}`, borderRadius: 9, marginBottom: 4, cursor: "pointer",
+      background: isSelected ? "#FBFAFF" : C.surface,
+      boxShadow: isSelected ? "0 0px 0 2px #6D68D1" : "0 1px 3px rgba(0,0,0,0.06)" }}
+      onClick={onClick}>
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: sc.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: sc.text, flexShrink: 0 }}>
+        {getInitials(customer.name)}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.2px" }}>{customer.name}</div>
+        <div style={{ fontSize: 10, color: C.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{deviceLabel}</div>
+      </div>
+      {budget > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>AED {Number(budget).toLocaleString()}</div>}
+    </div>
+  );
+}
+
+function LostDealCard({ item, pendingFollowUpMap }) {
+  const { deal, customer } = item;
+  const dotColor = STAGE_CFG.lost.dot;
+
+		return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, marginBottom: 4, opacity: 0.6 }}>
+      <div style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{customer.name}</div>
+        <div style={{ fontSize: 10, color: C.text3 }}>{[deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD"}</div>
+      </div>
+      <div style={{ fontSize: 10, color: C.red, flexShrink: 0 }}>{STAGE_CFG.lost.emoji}</div>
+    </div>
+  );
+}
+
+function PendingPickupCard({ item, pendingFollowUpMap }) {
+	const { deal, customer } = item;
+  const dotColor = STAGE_CFG.confirmed_pending_pickup.dot;
+>
                 {customer.name}
               </div>
               <div style={{ fontSize: 11, color: C.text2, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -172,7 +198,7 @@ function DealCard({ deal, customer, selected, onSelect, onQuickStage, quickStage
               </div>
             </div>
           </div>
- 
+
           {/* Bottom row */}
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
             <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: sc.bg, color: sc.text, textTransform: "uppercase", letterSpacing: "0.2px" }}>
@@ -216,7 +242,7 @@ function DealCard({ deal, customer, selected, onSelect, onQuickStage, quickStage
           </div>
         </div>
       </div>
- 
+
       {/* Inline quick stage picker */}
       {quickStageOpen && (
         <div style={{
@@ -268,9 +294,9 @@ function DealCard({ deal, customer, selected, onSelect, onQuickStage, quickStage
     </div>
   );
 }
- 
+
 // ── FUNNEL BAR ────────────────────────────────────────────────────────────────
- 
+
 function FunnelBar({ grouped, onJump }) {
   const total = grouped.reduce((s, g) => s + g.items.length, 0);
   if (total === 0) return null;
@@ -306,19 +332,19 @@ function FunnelBar({ grouped, onJump }) {
     </div>
   );
 }
- 
+
 // ── DEAL LIST (shared) ────────────────────────────────────────────────────────
- 
+
 function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, compact, sectionRefs, closedDeals, lostDeals, closedOpen, setClosedOpen }) {
   const [quickStageId, setQuickStageId] = useState(null);
   const allDealsCount = grouped.reduce((s, g) => s + g.items.length, 0);
- 
+
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 40px", scrollbarWidth: "thin", scrollbarColor: `${C.border} transparent` }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 4px 2px" }}>
         <span style={{ fontSize: 10, color: C.text3, fontWeight: 600 }}>{allDealsCount} open deal{allDealsCount !== 1 ? "s" : ""}</span>
       </div>
- 
+
       {grouped.map(g => {
         const sc = getStageColor(g.stageId);
         return (
@@ -332,7 +358,7 @@ function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, c
                 {g.items.length} · AED {fmtValueShort(g.totalValue)}
               </div>
             </div>
- 
+
             {g.items.map(({ deal, customer }) => (
               <DealCard
                 key={deal.id}
@@ -350,7 +376,7 @@ function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, c
           </div>
         );
       })}
- 
+
       {/* Closed + Lost */}
       {(closedDeals.length > 0 || lostDeals.length > 0) && (
         <div style={{ marginTop: 4 }}>
@@ -364,7 +390,7 @@ function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, c
             </span>
             <div style={{ flex: 1, height: 1, background: C.border }} />
           </button>
- 
+
           {closedOpen && (
             <div>
               {closedDeals.length > 0 && (
@@ -398,7 +424,7 @@ function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, c
     </div>
   );
 }
- 
+
 function MiniCard({ deal, customer, dotColor }) {
   const deviceLabel = [deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD";
   const budget = Number(deal.budget) || Number(deal.value) || 0;
@@ -413,9 +439,9 @@ function MiniCard({ deal, customer, dotColor }) {
     </div>
   );
 }
- 
+
 // ── DEAL PREVIEW PANEL (laptop right panel) ───────────────────────────────────
- 
+
 function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowUpMap, allDeals }) {
   const { deal, customer } = selected;
   const sc = getStageColor(deal.stage);
@@ -426,29 +452,29 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
   const deviceLabel = [deal.brand, deal.model].filter(Boolean).join(" ") || "Device TBD";
   const [localStage, setLocalStage] = useState(deal.stage);
   const [marking, setMarking] = useState(false);
- 
+
   useEffect(() => { setLocalStage(deal.stage); }, [deal.stage]);
- 
+
   const localSc = getStageColor(localStage);
- 
+
   const allClientDeals = allDeals
     .filter(({ customer: c }) => c.id === customer.id)
     .sort((a, b) => new Date(b.deal.created_at) - new Date(a.deal.created_at))
     .slice(0, 5);
- 
+
   async function moveStage(stageId) {
     setLocalStage(stageId);
     await updateDeal(deal.id, { stage: stageId });
   }
- 
+
   async function markLost() {
     setMarking(true);
     await updateDeal(deal.id, { stage: "lost" });
     onClose();
   }
- 
+
   const tags = customer.tags || [];
- 
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Header */}
@@ -487,13 +513,13 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
           <button onClick={onClose} style={{ ...btnStyle(), width: 32, padding: 0, justifyContent: "center" }}>✕</button>
         </div>
       </div>
- 
+
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px", display: "flex", gap: 14, scrollbarWidth: "thin" }}>
- 
+
         {/* Main column */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
- 
+
           {/* Deal details */}
           <PreviewSection title="Deal Details">
             <FieldRow label="Device"  value={deviceLabel} />
@@ -503,7 +529,7 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
             {deal.payment_method && <FieldRow label="Payment" value={deal.payment_method} />}
             {customer.number && <FieldRow label="Contact" value={customer.number} />}
           </PreviewSection>
- 
+
           {/* Stage mover */}
           <PreviewSection title="Move Stage">
             <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
@@ -541,7 +567,7 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
               Mark as Lost →
             </button>
           </PreviewSection>
- 
+
           {/* Notes / activity placeholder */}
           <PreviewSection title="Notes">
             {deal.notes ? (
@@ -556,10 +582,10 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
             </button>
           </PreviewSection>
         </div>
- 
+
         {/* Sidebar */}
         <div style={{ width: 200, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
- 
+
           {/* Client health */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Client Health</div>
@@ -575,7 +601,7 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
             )}
             <FieldRow label="Closed deals" value={`${(customer.deals || []).filter(d => d.stage === "closed").length}`} small />
           </div>
- 
+
           {/* Follow-up */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Follow-up</div>
@@ -596,7 +622,7 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
               + Set in chat
             </button>
           </div>
- 
+
           {/* All deals */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>All Deals</div>
@@ -620,12 +646,12 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
     </div>
   );
 }
- 
+
 // ── DEFAULT RIGHT PANEL (no deal selected) ─────────────────────────────────────
- 
+
 function DefaultRightPanel({ stats, grouped, allDeals }) {
   const totalOpen = grouped.reduce((s, g) => s + g.items.length, 0);
- 
+
   // Activity feed: last 10 deals by updated_at
   const recentActivity = useMemo(() => {
     return [...allDeals]
@@ -633,13 +659,13 @@ function DefaultRightPanel({ stats, grouped, allDeals }) {
       .sort((a, b) => new Date(b.deal.updated_at || b.deal.created_at) - new Date(a.deal.updated_at || a.deal.created_at))
       .slice(0, 10);
   }, [allDeals]);
- 
+
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
- 
+
       {/* Left: forecast + conversion */}
       <div style={{ flex: 1, overflowY: "auto", padding: 18, display: "flex", flexDirection: "column", gap: 16, scrollbarWidth: "thin" }}>
- 
+
         {/* Weighted forecast */}
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>Weighted Revenue Forecast</div>
@@ -666,7 +692,7 @@ function DefaultRightPanel({ stats, grouped, allDeals }) {
             })}
           </div>
         </div>
- 
+
         {/* Stage conversion */}
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 12 }}>Stage Distribution</div>
@@ -689,7 +715,7 @@ function DefaultRightPanel({ stats, grouped, allDeals }) {
           })}
         </div>
       </div>
- 
+
       {/* Right: activity feed */}
       <div style={{ width: 270, borderLeft: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0 }}>
         <div style={{ padding: "14px 14px 10px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -720,9 +746,9 @@ function DefaultRightPanel({ stats, grouped, allDeals }) {
     </div>
   );
 }
- 
+
 // ── SMALL UI HELPERS ──────────────────────────────────────────────────────────
- 
+
 function PreviewSection({ title, children }) {
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14 }}>
@@ -731,7 +757,7 @@ function PreviewSection({ title, children }) {
     </div>
   );
 }
- 
+
 function FieldRow({ label, value, accent, small }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "5px 0", borderBottom: `1px solid ${C.border}` }}>
@@ -740,7 +766,7 @@ function FieldRow({ label, value, accent, small }) {
     </div>
   );
 }
- 
+
 function btnStyle(opts = {}) {
   return {
     height: 30, padding: "0 11px", borderRadius: 8, fontSize: 11, fontWeight: 700,
@@ -751,9 +777,9 @@ function btnStyle(opts = {}) {
     fontFamily: "inherit", transition: "all 0.15s",
   };
 }
- 
+
 // ── STATS BAR ─────────────────────────────────────────────────────────────────
- 
+
 function StatBar({ stats }) {
   const items = [
     { label: "Open deals",       value: stats.openCount,                         color: C.accent,  sub: "across " + Object.values(ACTIVE_STAGES).length + " stages" },
@@ -775,9 +801,9 @@ function StatBar({ stats }) {
     </div>
   );
 }
- 
+
 // ── TAG FILTER BAR ────────────────────────────────────────────────────────────
- 
+
 const TAG_CHIPS = [
   { id: "all",         label: "All",            bg: null,     color: null },
   { id: "macbook",     label: "💻 MacBook",     bg: C.blueLt, color: C.blue },
@@ -789,7 +815,7 @@ const TAG_CHIPS = [
   { id: "jnp_bldg_1",  label: "📍 JNP Bldg 1", bg: C.greenLt, color: C.greenDk },
   { id: "urgent",      label: "⚡ Urgent",      bg: C.amberLt, color: C.amber },
 ];
- 
+
 function TagFilterBar({ active, onChange }) {
   return (
     <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "7px 18px", display: "flex", gap: 5, alignItems: "center", flexShrink: 0, overflowX: "auto", scrollbarWidth: "none" }}>
@@ -815,16 +841,16 @@ function TagFilterBar({ active, onChange }) {
     </div>
   );
 }
- 
+
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
- 
+
 export default function PipelineView() {
   const {
     customers,
     setActiveCustomerId, setActiveDealId, setView, setPendingSuggestion,
     updateDeal, pendingFollowUpMap,
   } = useCustomers();
- 
+
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [tagFilter, setTagFilter]       = useState("all");
   const [sortBy, setSortBy]             = useState("recent");
@@ -833,13 +859,13 @@ export default function PipelineView() {
   const [closedOpen, setClosedOpen]     = useState(false);
   const sectionRefs = useRef({});
   const sortRef = useRef(null);
- 
+
   useEffect(() => {
     const handler = () => setIsLaptop(window.innerWidth >= 900);
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
   }, []);
- 
+
   // Close sort dropdown on outside click
   useEffect(() => {
     if (!showSort) return;
@@ -847,7 +873,7 @@ export default function PipelineView() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showSort]);
- 
+
   // Build flat deal list
   const allDeals = useMemo(() => {
     const deals = [];
@@ -860,7 +886,7 @@ export default function PipelineView() {
     }
     return deals;
   }, [customers]);
- 
+
   // Stats
   const stats = useMemo(() => {
     const open = allDeals.filter(({ deal }) => deal.stage !== "closed" && deal.stage !== "lost");
@@ -876,7 +902,7 @@ export default function PipelineView() {
     const winRate   = (rClosed + rLost) > 0 ? Math.round(rClosed / (rClosed + rLost) * 100) : null;
     return { openCount: open.length, pipeline, weighted, stale, avgAge, winRate };
   }, [allDeals]);
- 
+
   // Tag filter
   const tagFiltered = useMemo(() => {
     if (tagFilter === "all") return allDeals;
@@ -895,7 +921,7 @@ export default function PipelineView() {
       return true;
     });
   }, [allDeals, tagFilter]);
- 
+
   // Grouped by stage
   const grouped = useMemo(() => {
     return ACTIVE_STAGES.map(stageId => {
@@ -909,27 +935,27 @@ export default function PipelineView() {
       return { stageId, items: sorted, totalValue };
     }).filter(g => g.items.length > 0);
   }, [tagFiltered, sortBy]);
- 
+
   const closedDeals = useMemo(() => tagFiltered.filter(({ deal }) => deal.stage === "closed"), [tagFiltered]);
   const lostDeals   = useMemo(() => tagFiltered.filter(({ deal }) => deal.stage === "lost"),   [tagFiltered]);
- 
+
   function handleNavigate(customer, deal) {
     setActiveCustomerId(customer.id);
     setActiveDealId(deal.id);
     setView("detail");
     setPendingSuggestion(null);
   }
- 
+
   function handleJump(stageId) {
     const el = sectionRefs.current[stageId];
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
- 
+
   // ── MOBILE LAYOUT ──────────────────────────────────────────────────────────
   if (!isLaptop) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F2F1EE" }}>
- 
+
         {/* Mobile stats */}
         <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "10px 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, flexShrink: 0 }}>
           {[
@@ -944,9 +970,9 @@ export default function PipelineView() {
             </div>
           ))}
         </div>
- 
+
         <FunnelBar grouped={grouped} onJump={handleJump} />
- 
+
         <DealList
           grouped={grouped}
           selectedDealId={null}
@@ -963,13 +989,13 @@ export default function PipelineView() {
       </div>
     );
   }
- 
+
   // ── LAPTOP LAYOUT ──────────────────────────────────────────────────────────
   const sortLabels = { recent: "Recent", budget_high: "Budget", oldest: "Oldest" };
- 
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F2F1EE" }}>
- 
+
       {/* Laptop topbar */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, height: 50, padding: "0 18px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1002,16 +1028,16 @@ export default function PipelineView() {
           </div>
         </div>
       </div>
- 
+
       {/* Stats bar */}
       <StatBar stats={stats} />
- 
+
       {/* Tag filter */}
       <TagFilterBar active={tagFilter} onChange={id => { setTagFilter(id); setSelectedDeal(null); }} />
- 
+
       {/* Main body */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
- 
+
         {/* Left panel */}
         <div style={{ width: 390, flexShrink: 0, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <FunnelBar grouped={grouped} onJump={handleJump} />
@@ -1029,7 +1055,7 @@ export default function PipelineView() {
             setClosedOpen={setClosedOpen}
           />
         </div>
- 
+
         {/* Right panel */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {selectedDeal ? (
