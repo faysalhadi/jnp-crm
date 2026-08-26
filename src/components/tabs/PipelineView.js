@@ -4,7 +4,7 @@ import { getTag } from "../../constants";
 import { supabase } from "../../supabase";
 import StageBar from "../ui/StageBar";
 
-// ── COLOR TOKENS ─────────────────────────────────────────────────────────────────
+// â”€â”€ COLOR TOKENS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const C = {
   surface: "#FFFFFF", surface2: "#F8F8FA", surface3: "#EEEEF2",
   bg: "#F3F4F6", border: "#E4E4E8",
@@ -16,7 +16,7 @@ const C = {
   blue: "#30A5F5", blueLt: "#EFF6FF",
 };
 
-// ── HELPERS ──────────────────────────────────────────────────────────────────
+// â”€â”€ HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function buildWaUrl(number) {
   const digits = (number || "").replace(/[^\d]+/g, "");
@@ -51,12 +51,12 @@ function fmtAgo(dt) {
 
 function fmtValueShort(v) {
   const n = Number(v) || 0;
-  if (n >= 1000000) return `${(n \/ 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n \/ 1000).toFixed(1)}K`;
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return n.toLocaleString();
 }
 
-// ── STAGE CONFIG ──────────────────────────────────────────────────────────────
+// â”€â”€ STAGE CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ACTIVE_STAGES = [
   "new_inquiry", "device_found", "negotiation",
@@ -68,16 +68,16 @@ const STAGE_PROB = {
 };
 
 const STAGE_CFG = {
-  new_inquiry:             { label: "New Inquiry",         short: "New",      dot: "#94A3B8", bg: "#F1F5F9", text: "#64748B",   emoji: "�" },
-  device_found:            { label: "Device Found",        short: "Found",    dot: "#30A5F5", bg: "#EFF6FF", text: "#1D4ED8",   emoji: "🇱" },
-  negotiation:             { label: "Negotiation",         short: "Nego",     dot: "#F59E0B", bg: "#FFFBEB", text: "#B45309",   emoji: "�j" },
-  confirmed_pending_pickup: { label: "Pending Pickup",    short: "Pickup",   dot: "#6366F1", bg: "#EEF2FF", text: "#4338CA",   emoji: "⨒" },
-  closed:                  { label: "Closed",              short: "Closed",   dot: "#10B981", bg: "#ECFDF5", text: "#065F46",   emoji: "✓" },
-  lost:                    { label: "Lost",                short: "Lost",     dot: "#EF4424", bg: "#FEF2F2", text: "#991B1B",   emoji: "❍" },
+  new_inquiry:             { label: "New Inquiry",         short: "New",      dot: "#94A3B8", bg: "#F1F5F9", text: "#64748B",   emoji: "ðŸ“" },
+  device_found:            { label: "Device Found",        short: "Found",    dot: "#30A5F5", bg: "#EFF6FF", text: "#1D4ED8",   emoji: "ðŸ‡±" },
+  negotiation:             { label: "Negotiation",         short: "Nego",     dot: "#F59E0B", bg: "#FFFBEB", text: "#B45309",   emoji: "ðŸ“j" },
+  confirmed_pending_pickup: { label: "Pending Pickup",    short: "Pickup",   dot: "#6366F1", bg: "#EEF2FF", text: "#4338CA",   emoji: "â¨’" },
+  closed:                  { label: "Closed",              short: "Closed",   dot: "#10B981", bg: "#ECFDF5", text: "#065F46",   emoji: "âœ“" },
+  lost:                    { label: "Lost",                short: "Lost",     dot: "#EF4424", bg: "#FEF2F2", text: "#991B1B",   emoji: "â" },
 };
 
 function getStageColor(stage) {
-  return STAGE_CFG[stage] || { label: stage, short: stage, dot: C.text3, bg: C.surface2, text: C.text2, emoji: "☀" };
+  return STAGE_CFG[stage] || { label: stage, short: stage, dot: C.text3, bg: C.surface2, text: C.text2, emoji: "â˜€" };
 }
 
 function getDaysSinceDeal(deal) {
@@ -86,7 +86,7 @@ function getDaysSinceDeal(deal) {
   return Math.floor((Date.now() - new Date(dt)) / 86400000);
 }
 
-// ── SMALL UI PRIMITIVES ─────────────────────────────────────────────────
+// â”€â”€ SMALL UI PRIMITIVES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function btnStyle(overrides = {}) {
   return {
@@ -118,7 +118,7 @@ function FieldRow({ label, value, accent, small }) {
   );
 }
 
-// ── FUNNEL BAR ──────────────────────────────────────────────────────────────────────
+// â”€â”€ FUNNEL BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FunnelBar({ grouped }) {
   const max = Math.max(...grouped.map(g => g.items.length), 1);
@@ -206,22 +206,22 @@ function PendingPickupCard({ item, pendingFollowUpMap }) {
             </span>
             {status === "danger" && deal.stage !== "closed" && deal.stage !== "lost" && (
               <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: C.redLt, color: C.red }}>
-                ⚠️ {days}d stale
+                âš ï¸ {days}d stale
               </span>
             )}
             {status === "warn" && (
               <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: C.amberLt, color: C.amber }}>
-                ⏰ Follow up
+                â° Follow up
               </span>
             )}
             {isPickup && (
               <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 6, background: C.greenLt, color: C.greenDk }}>
-                📅 Pickup today
+                ðŸ“… Pickup today
               </span>
             )}
             {days >= 14 && deal.stage === "negotiation" && (
               <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: C.purpleLt, color: C.purple }}>
-                💡 {days}d in negot.
+                ðŸ’¡ {days}d in negot.
               </span>
             )}
             {/* Age bar */}
@@ -237,7 +237,7 @@ function PendingPickupCard({ item, pendingFollowUpMap }) {
                 color: quickStageOpen ? C.accent : C.text3,
                 fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
               }}>
-              ⚡
+              âš¡
             </button>
           </div>
         </div>
@@ -270,7 +270,7 @@ function PendingPickupCard({ item, pendingFollowUpMap }) {
                     color: isCurrent ? "#fff" : C.text2,
                     fontSize: 10, fontWeight: 700, cursor: "pointer",
                   }}>
-                  {isCurrent ? "✓ " : ""}{getStageColor(s.id).label}
+                  {isCurrent ? "âœ“ " : ""}{getStageColor(s.id).label}
                 </button>
               );
             })}
@@ -286,7 +286,7 @@ function PendingPickupCard({ item, pendingFollowUpMap }) {
             <button
               onClick={e => { e.stopPropagation(); onNavigate(); }}
               style={{ padding: "4px 10px", borderRadius: 20, border: `1px solid ${C.border}`, background: "transparent", color: C.accent, fontSize: 10, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
-              Open →
+              Open â†’
             </button>
           </div>
         </div>
@@ -295,7 +295,7 @@ function PendingPickupCard({ item, pendingFollowUpMap }) {
   );
 }
 
-// ── FUNNEL BAR ────────────────────────────────────────────────────────────────
+// â”€â”€ FUNNEL BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FunnelBar({ grouped, onJump }) {
   const total = grouped.reduce((s, g) => s + g.items.length, 0);
@@ -303,7 +303,7 @@ function FunnelBar({ grouped, onJump }) {
   return (
     <div style={{ padding: "10px 14px", background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
       <div style={{ fontSize: 9, fontWeight: 700, color: C.text3, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 7 }}>
-        STAGE FUNNEL — TAP TO JUMP
+        STAGE FUNNEL â€” TAP TO JUMP
       </div>
       <div style={{ display: "flex", gap: 3, height: 40, borderRadius: 10, overflow: "hidden" }}>
         {grouped.map(g => {
@@ -333,7 +333,7 @@ function FunnelBar({ grouped, onJump }) {
   );
 }
 
-// ── DEAL LIST (shared) ────────────────────────────────────────────────────────
+// â”€â”€ DEAL LIST (shared) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, compact, sectionRefs, closedDeals, lostDeals, closedOpen, setClosedOpen }) {
   const [quickStageId, setQuickStageId] = useState(null);
@@ -355,7 +355,7 @@ function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, c
                 {sc.label}
               </div>
               <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                {g.items.length} · AED {fmtValueShort(g.totalValue)}
+                {g.items.length} Â· AED {fmtValueShort(g.totalValue)}
               </div>
             </div>
 
@@ -384,7 +384,7 @@ function DealList({ grouped, selectedDealId, onSelect, updateDeal, onNavigate, c
             onClick={() => setClosedOpen(v => !v)}
             style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 4px", background: "none", border: "none", cursor: "pointer", color: C.text3, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "inherit" }}>
             <div style={{ flex: 1, height: 1, background: C.border }} />
-            <span>{closedOpen ? "▲" : "▼"} Closed &amp; Lost</span>
+            <span>{closedOpen ? "â–²" : "â–¼"} Closed &amp; Lost</span>
             <span style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 20, padding: "1px 7px", fontSize: 9, fontWeight: 700 }}>
               {closedDeals.length + lostDeals.length}
             </span>
@@ -440,7 +440,7 @@ function MiniCard({ deal, customer, dotColor }) {
   );
 }
 
-// ── DEAL PREVIEW PANEL (laptop right panel) ───────────────────────────────────
+// â”€â”€ DEAL PREVIEW PANEL (laptop right panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowUpMap, allDeals }) {
   const { deal, customer } = selected;
@@ -503,14 +503,14 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "flex-start" }}>
-          <button onClick={() => onNavigate(customer, deal)} style={btnStyle()}>💬 Open Chat</button>
+          <button onClick={() => onNavigate(customer, deal)} style={btnStyle()}>ðŸ’¬ Open Chat</button>
           <button
             onClick={markLost}
             disabled={marking}
             style={btnStyle({ bg: C.redLt, color: C.red, border: C.redLt })}>
-            ✕ Mark Lost
+            âœ• Mark Lost
           </button>
-          <button onClick={onClose} style={{ ...btnStyle(), width: 32, padding: 0, justifyContent: "center" }}>✕</button>
+          <button onClick={onClose} style={{ ...btnStyle(), width: 32, padding: 0, justifyContent: "center" }}>âœ•</button>
         </div>
       </div>
 
@@ -523,7 +523,7 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
           {/* Deal details */}
           <PreviewSection title="Deal Details">
             <FieldRow label="Device"  value={deviceLabel} />
-            <FieldRow label="Budget"  value={budget > 0 ? `AED ${Number(budget).toLocaleString()}` : "–"} accent />
+            <FieldRow label="Budget"  value={budget > 0 ? `AED ${Number(budget).toLocaleString()}` : "â€“"} accent />
             <FieldRow label="Stage"   value={<span style={{ fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: localSc.bg, color: localSc.text, textTransform: "uppercase" }}>{localSc.label}</span>} />
             <FieldRow label="In stage" value={days === 0 ? "Opened today" : `${days} day${days !== 1 ? "s" : ""}`} />
             {deal.payment_method && <FieldRow label="Payment" value={deal.payment_method} />}
@@ -557,14 +557,14 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
                       {s.short}
                     </button>
                     {i < ACTIVE_STAGES.length - 1 && (
-                      <div style={{ fontSize: 10, color: C.text3, flexShrink: 0 }}>›</div>
+                      <div style={{ fontSize: 10, color: C.text3, flexShrink: 0 }}>â€º</div>
                     )}
                   </React.Fragment>
                 );
               })}
             </div>
             <button onClick={markLost} style={{ marginTop: 8, background: "none", border: "none", color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-              Mark as Lost →
+              Mark as Lost â†’
             </button>
           </PreviewSection>
 
@@ -574,11 +574,11 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
               <div style={{ fontSize: 11, color: C.text2, lineHeight: 1.6, padding: "4px 0" }}>{deal.notes}</div>
             ) : (
               <div style={{ fontSize: 11, color: C.text3, fontStyle: "italic", padding: "8px 0" }}>
-                No notes — open the chat to add activity.
+                No notes â€” open the chat to add activity.
               </div>
             )}
             <button onClick={() => onNavigate(customer, deal)} style={{ marginTop: 6, ...btnStyle({ color: C.accent, border: C.border }) }}>
-              Open Chat →
+              Open Chat â†’
             </button>
           </PreviewSection>
         </div>
@@ -607,7 +607,7 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
             <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Follow-up</div>
             {fu ? (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "7px 9px", borderRadius: 8, background: C.amberLt }}>
-                <span style={{ fontSize: 16, lineHeight: 1 }}>⏰</span>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>â°</span>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>
                     {new Date(fu.due_at) < new Date() ? "Overdue" : "Scheduled"}
@@ -647,7 +647,7 @@ function DealPreview({ selected, onClose, updateDeal, onNavigate, pendingFollowU
   );
 }
 
-// ── DEFAULT RIGHT PANEL (no deal selected) ─────────────────────────────────────
+// â”€â”€ DEFAULT RIGHT PANEL (no deal selected) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DefaultRightPanel({ stats, grouped, allDeals }) {
   const totalOpen = grouped.reduce((s, g) => s + g.items.length, 0);
@@ -747,7 +747,7 @@ function DefaultRightPanel({ stats, grouped, allDeals }) {
   );
 }
 
-// ── SMALL UI HELPERS ──────────────────────────────────────────────────────────
+// â”€â”€ SMALL UI HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PreviewSection({ title, children }) {
   return (
@@ -778,14 +778,14 @@ function btnStyle(opts = {}) {
   };
 }
 
-// ── STATS BAR ─────────────────────────────────────────────────────────────────
+// â”€â”€ STATS BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function StatBar({ stats }) {
   const items = [
     { label: "Open deals",       value: stats.openCount,                         color: C.accent,  sub: "across " + Object.values(ACTIVE_STAGES).length + " stages" },
     { label: "Gross pipeline",   value: "AED " + fmtValueShort(stats.pipeline),  color: C.accent,  sub: "all open budgets" },
     { label: "Weighted forecast",value: "AED " + fmtValueShort(stats.weighted),  color: C.accent,  sub: "by probability" },
-    { label: "Win rate (30d)",   value: stats.winRate !== null ? stats.winRate + "%" : "–",        color: C.green,  sub: "closed vs lost" },
+    { label: "Win rate (30d)",   value: stats.winRate !== null ? stats.winRate + "%" : "â€“",        color: C.green,  sub: "closed vs lost" },
     { label: "Avg deal age",     value: stats.avgAge.toFixed(1) + "d",            color: C.text,   sub: "open deals" },
     { label: "Stale 7d+",        value: stats.stale,                              color: stats.stale > 0 ? C.red : C.text, sub: stats.stale > 0 ? "needs attention" : "all fresh" },
   ];
@@ -802,18 +802,18 @@ function StatBar({ stats }) {
   );
 }
 
-// ── TAG FILTER BAR ────────────────────────────────────────────────────────────
+// â”€â”€ TAG FILTER BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const TAG_CHIPS = [
   { id: "all",         label: "All",            bg: null,     color: null },
-  { id: "macbook",     label: "💻 MacBook",     bg: C.blueLt, color: C.blue },
-  { id: "windows_biz", label: "🖥 Windows Biz", bg: C.blueLt, color: C.blue },
-  { id: "gaming",      label: "🎮 Gaming",      bg: C.blueLt, color: C.blue },
-  { id: "vip",         label: "⭐ VIP",         bg: C.purpleLt, color: C.purple },
-  { id: "trader",      label: "🤝 Trader",      bg: C.purpleLt, color: C.purple },
-  { id: "corporate",   label: "🏢 Corporate",   bg: C.purpleLt, color: C.purple },
-  { id: "jnp_bldg_1",  label: "📍 JNP Bldg 1", bg: C.greenLt, color: C.greenDk },
-  { id: "urgent",      label: "⚡ Urgent",      bg: C.amberLt, color: C.amber },
+  { id: "macbook",     label: "ðŸ’» MacBook",     bg: C.blueLt, color: C.blue },
+  { id: "windows_biz", label: "ðŸ–¥ Windows Biz", bg: C.blueLt, color: C.blue },
+  { id: "gaming",      label: "ðŸŽ® Gaming",      bg: C.blueLt, color: C.blue },
+  { id: "vip",         label: "â­ VIP",         bg: C.purpleLt, color: C.purple },
+  { id: "trader",      label: "ðŸ¤ Trader",      bg: C.purpleLt, color: C.purple },
+  { id: "corporate",   label: "ðŸ¢ Corporate",   bg: C.purpleLt, color: C.purple },
+  { id: "jnp_bldg_1",  label: "ðŸ“ JNP Bldg 1", bg: C.greenLt, color: C.greenDk },
+  { id: "urgent",      label: "âš¡ Urgent",      bg: C.amberLt, color: C.amber },
 ];
 
 function TagFilterBar({ active, onChange }) {
@@ -842,7 +842,7 @@ function TagFilterBar({ active, onChange }) {
   );
 }
 
-// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
+// â”€â”€ MAIN COMPONENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function PipelineView() {
   const {
@@ -951,7 +951,7 @@ export default function PipelineView() {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // ── MOBILE LAYOUT ──────────────────────────────────────────────────────────
+  // â”€â”€ MOBILE LAYOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (!isLaptop) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F2F1EE" }}>
@@ -962,7 +962,7 @@ export default function PipelineView() {
             { label: "Open deals",  value: stats.openCount,                        color: C.accent },
             { label: "Pipeline",    value: "AED " + fmtValueShort(stats.pipeline), color: C.accent },
             { label: "Stale 7d+",  value: stats.stale,                             color: stats.stale > 0 ? C.red : C.text },
-            { label: "Win rate",    value: stats.winRate !== null ? stats.winRate + "%" : "–", color: C.green },
+            { label: "Win rate",    value: stats.winRate !== null ? stats.winRate + "%" : "â€“", color: C.green },
           ].map((s, i) => (
             <div key={i} style={{ background: C.surface2, borderRadius: 10, padding: "9px 11px" }}>
               <div style={{ fontSize: 9, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.5px" }}>{s.label}</div>
@@ -990,7 +990,7 @@ export default function PipelineView() {
     );
   }
 
-  // ── LAPTOP LAYOUT ──────────────────────────────────────────────────────────
+  // â”€â”€ LAPTOP LAYOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const sortLabels = { recent: "Recent", budget_high: "Budget", oldest: "Oldest" };
 
   return (
@@ -1004,7 +1004,7 @@ export default function PipelineView() {
         </div>
         <div style={{ width: 1, height: 20, background: C.border }} />
         <div style={{ fontSize: 12, color: C.text3, fontWeight: 500 }}>
-          Clients › <span style={{ color: C.text2, fontWeight: 600 }}>Pipeline</span>
+          Clients â€º <span style={{ color: C.text2, fontWeight: 600 }}>Pipeline</span>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
           {/* Sort */}
@@ -1012,7 +1012,7 @@ export default function PipelineView() {
             <button
               onClick={() => setShowSort(v => !v)}
               style={{ height: 32, padding: "0 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit" }}>
-              ↕ {sortLabels[sortBy]}
+              â†• {sortLabels[sortBy]}
             </button>
             {showSort && (
               <div style={{ position: "absolute", right: 0, top: 36, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", zIndex: 50, overflow: "hidden", minWidth: 150 }}>
@@ -1020,7 +1020,7 @@ export default function PipelineView() {
                   <button key={opt.id}
                     onClick={() => { setSortBy(opt.id); setShowSort(false); }}
                     style={{ width: "100%", padding: "9px 14px", border: "none", borderBottom: `1px solid ${C.border}`, background: sortBy === opt.id ? C.accentLt : C.surface, color: sortBy === opt.id ? C.accent : C.text2, fontSize: 12, fontWeight: sortBy === opt.id ? 700 : 400, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
-                    {sortBy === opt.id ? "✓ " : ""}{opt.label}
+                    {sortBy === opt.id ? "âœ“ " : ""}{opt.label}
                   </button>
                 ))}
               </div>
