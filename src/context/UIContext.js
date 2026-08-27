@@ -10,7 +10,7 @@ export function UIProvider({ children }) {
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [activeMarketingTab, setActiveMarketingTab] = useState("today");
-  const [customerViewMode, setCustomerViewMode] = useState("queue");
+  const [customerViewMode, setCustomerViewMode] = useState("queue"); // "pipeline" no longer valid — always coerce to "queue"
   const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {

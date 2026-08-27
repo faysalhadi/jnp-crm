@@ -272,16 +272,16 @@ export default function App() {
   // list view
   return (
     <div style={isMobile
-      ? { minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }
-      : { minHeight: "100vh", background: "#F8FAFC", display: "flex" }}>
+      ? { height: "100dvh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", overflow: "hidden" }
+      : { height: "100dvh", background: "#F8FAFC", display: "flex", overflow: "hidden" }}>
 
       {/* ── Desktop sidebar ── */}
       {!isMobile && <DesktopSidebar NAV_TABS={NAV_TABS} />}
 
       {/* ── Content area ── */}
       <div style={isMobile
-        ? { flex: 1, display: "flex", flexDirection: "column" }
-        : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", overflow: "hidden" }}>
+        ? { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }
+        : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", minHeight: 0 }}>
 
       {/* PWA install banner */}
       {showInstallBanner && (

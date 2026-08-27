@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../supabase";
 import Badge from "../ui/Badge";
-import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory, TRADER_CATEGORIES } from "../../constants";
+import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory, TRADER_CATEGORIES, getRecommendation, customerStockMatch } from "../../constants";
+import { getQueuePriority } from "../../context/CustomerContext";
+import { useStock } from "../../context/StockContext";
 import { daysSince, formatWhatsAppNumber } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
 import { useUI } from "../../context/UIContext";
@@ -30,7 +32,10 @@ export default function ChatHeader() {
     deleteCustomer: _deleteCustomer,
     addDeal: _addDeal,
     showLossReason, setShowLossReason,
+    pendingFollowUpMap,
+    lastActivityMap,
   } = useCustomers();
+  const { stock } = useStock();
   const {
     editingName, setEditingName,
     nameInput, setNameInput,
@@ -120,6 +125,24 @@ export default function ChatHeader() {
   const closedDealValue = (activeCustomer?.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
   const initials = (activeCustomer?.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
   const currentStageLabel = STAGES.find(s => s.id === activeDeal?.stage)?.label || activeDeal?.stage || "";
+
+  const recommendation = useMemo(() => {
+    if (!activeCustomer) return null;
+    const available = (stock || []).filter(s => s.status === "available");
+    const stockMatchSet = new Set();
+    if (customerStockMatch(activeCustomer, available)) stockMatchSet.add(activeCustomer.id);
+    const priority = getQueuePriority(activeCustomer, pendingFollowUpMap, stockMatchSet);
+    if (!priority) return null;
+    const openDeals = (activeCustomer.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+    const openDeal = openDeals[0] || null;
+    const fu = pendingFollowUpMap?.[activeCustomer.id];
+    const lastNote = lastActivityMap?.[activeCustomer.id]?.activity_type === "note" ? lastActivityMap[activeCustomer.id] : null;
+    return getRecommendation(activeCustomer, {
+      priority, openDeal, fu,
+      matchedStock: customerStockMatch(activeCustomer, available),
+      lastNote,
+    });
+  }, [activeCustomer, stock, pendingFollowUpMap, lastActivityMap]);
 
   if (!activeCustomer) return null;
 
@@ -533,6 +556,13 @@ export default function ChatHeader() {
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Recommendation line */}
+              {recommendation && (
+                <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 8, background: "#F8FAFC", fontSize: 12, color: "#334155" }}>
+                  💡 {recommendation}
                 </div>
               )}
 
