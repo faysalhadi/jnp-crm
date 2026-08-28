@@ -8,16 +8,18 @@ import PullToRefresh from "../ui/PullToRefresh";
 
 export default function SalespersonHomeTab() {
   const { isMobile } = useUI();
-  const { customers, setView, setActiveCustomerId, setActiveDealId } = useCustomers();
+  const { customers, loading: customersLoading, setView, setActiveCustomerId, setActiveDealId } = useCustomers();
   const { currentProfile } = useProfile();
 
   const [todayFollowUps, setTodayFollowUps] = useState([]);
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
   const [showTomorrow, setShowTomorrow] = useState(false);
+  const [followUpsLoading, setFollowUpsLoading] = useState(true);
 
-  const loadFollowUps = async () => {
-    if (!customers.length) { setTodayFollowUps([]); setTomorrowFollowUps([]); return; }
-    const ids = customers.map(c => c.id);
+  const loadFollowUps = async (customerList) => {
+    const list = customerList || customers;
+    if (!list.length) { setTodayFollowUps([]); setTomorrowFollowUps([]); setFollowUpsLoading(false); return; }
+    const ids = list.map(c => c.id);
     const now = new Date();
     const endOfTomorrow = new Date(now); endOfTomorrow.setDate(now.getDate() + 1); endOfTomorrow.setHours(23, 59, 59, 999);
     const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
@@ -33,6 +35,7 @@ export default function SalespersonHomeTab() {
     const all = data || [];
     setTodayFollowUps(all.filter(fu => new Date(fu.due_at) <= endOfToday));
     setTomorrowFollowUps(all.filter(fu => new Date(fu.due_at) > endOfToday));
+    setFollowUpsLoading(false);
   };
 
   const markFollowUpDone = async (id) => {
@@ -40,7 +43,10 @@ export default function SalespersonHomeTab() {
     loadFollowUps();
   };
 
-  useEffect(() => { loadFollowUps(); }, [customers]); // eslint-disable-line
+  // Re-run whenever customers loads or changes
+  useEffect(() => {
+    if (!customersLoading) loadFollowUps(customers);
+  }, [customers, customersLoading]); // eslint-disable-line
 
   // Open deals from assigned clients
   const openDeals = customers.flatMap(c =>
@@ -82,8 +88,16 @@ export default function SalespersonHomeTab() {
     confirmed_pending_pickup: "#10B981",
   };
 
+  if (customersLoading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "#94A3B8", fontSize: 13 }}>
+        Loading...
+      </div>
+    );
+  }
+
   return (
-    <PullToRefresh onRefresh={loadFollowUps}>
+    <PullToRefresh onRefresh={() => loadFollowUps(customers)}>
       <div style={{ padding: isMobile ? "16px 12px 100px" : "24px 32px 40px", display: "flex", flexDirection: "column", gap: 16, maxWidth: 600, margin: "0 auto" }}>
 
         {/* Greeting */}
