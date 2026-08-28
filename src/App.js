@@ -114,7 +114,7 @@ export default function App() {
     handleLogout,
   } = useAuth();
 
-  const { profileLoading, profileError, isOwner } = useProfile();
+  const { profileLoading, profileError, isOwner, isSalesperson } = useProfile();
 
 
   // ── sourcing alerts for dashboard ──
@@ -271,8 +271,8 @@ export default function App() {
     </div>
   );
 
-  // api key setup
-  if (!anthropicKey) return <ApiKeySetup />;
+  // api key setup — salespersons don't need the Anthropic key
+  if (!anthropicKey && !isSalesperson) return <ApiKeySetup />;
 
   // settings view
   if (view === "settings") {
