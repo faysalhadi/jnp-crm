@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase, adminSupabase } from '../supabase';
+import { supabase, signupSupabase } from '../supabase';
 import { useAuth } from './AuthContext';
 
 const ProfileContext = createContext();
@@ -53,31 +53,34 @@ export function ProfileProvider({ children }) {
 
   // Create a salesperson account (owner only)
   async function createSalesperson({ name, email, password, whatsapp_number }) {
-    const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
+    // Create auth user using isolated client (doesn't affect Faisal's session)
+    const { data: signUpData, error: signUpError } = await signupSupabase.auth.signUp({
       email,
       password,
-      email_confirm: true,
     });
-    if (authError) throw new Error(authError.message);
 
+    if (signUpError) throw new Error(signUpError.message);
+    if (!signUpData?.user?.id) throw new Error('User creation failed — check email confirmation is disabled in Supabase Auth settings');
+
+    // Insert profile
     const { error: profError } = await supabase.from('profiles').insert({
-      id: authData.user.id,
+      id: signUpData.user.id,
       name,
       role: 'salesperson',
       whatsapp_number: whatsapp_number || null,
     });
-    if (profError) {
-      await adminSupabase.auth.admin.deleteUser(authData.user.id);
-      throw new Error(profError.message);
-    }
+
+    if (profError) throw new Error(profError.message);
 
     await fetchAllProfiles();
   }
 
   // Delete a salesperson (owner only)
   async function deleteSalesperson(profileId) {
-    await supabase.from('profiles').delete().eq('id', profileId);
-    await adminSupabase.auth.admin.deleteUser(profileId);
+    const { error } = await supabase.from('profiles').delete().eq('id', profileId);
+    if (error) throw new Error(error.message);
+    // Also unassign their clients
+    await supabase.from('customers').update({ assigned_to: null }).eq('assigned_to', profileId);
     await fetchAllProfiles();
   }
 
