@@ -1,3 +1,4 @@
+import ownerOnly from "../layout/ownerOnly";
 import React, { useRef, useEffect, useState } from "react";
 import { QUICK_ACTIONS } from "../../constants";
 import { useUI } from "../../context/UIContext";
@@ -5,7 +6,7 @@ import { useAskClaudeContext } from "../../context/AskClaudeContext";
 import { useAskClaude } from "../../hooks/useAskClaude";
 import StockListMode from "./StockListMode";
 
-export default function AskClaudeTab() {
+function AskClaudeTab() {
   const { isMobile } = useUI(); // eslint-disable-line
   const { askMessages, setAskMessages, askInput, setAskInput, askLoading } = useAskClaudeContext();
   const { sendAskMessage } = useAskClaude();
@@ -121,3 +122,5 @@ export default function AskClaudeTab() {
     </div>
   );
 }
+
+export default ownerOnly(AskClaudeTab);

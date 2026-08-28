@@ -1,3 +1,4 @@
+import ownerOnly from "../layout/ownerOnly";
 import React, { useState, useEffect } from "react";
 import Spinner from "../ui/Spinner";
 import Badge from "../ui/Badge";
@@ -10,7 +11,7 @@ import { formatWhatsAppNumber } from "../../utils/helpers";
 import { useCustomers } from "../../context/CustomerContext";
 import { TraderProfileBadges } from "./TraderInventoryProfile";
 
-export default function TradersTab({
+function TradersTab({
   anthropicKey,
   stock,
   activeDeal,
@@ -461,3 +462,5 @@ export default function TradersTab({
     </>
   );
 }
+
+export default ownerOnly(TradersTab);

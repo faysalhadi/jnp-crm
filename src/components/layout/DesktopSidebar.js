@@ -2,12 +2,18 @@ import React from "react";
 import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useProfile } from "../../context/ProfileContext";
+import { ALL_NAV_TABS } from "../../constants/access";
 
-export default function DesktopSidebar({ NAV_TABS }) {
+export default function DesktopSidebar() {
   const { activeTab, setActiveTab, setShowSearch, setShowSideDrawer } = useUI();
   const { setView, setActiveCustomerId, setActiveDealId } = useCustomers();
-  const { isOwner, isViewingAs, currentProfile } = useProfile();
-  const showOwnerItems = isOwner && !isViewingAs;
+  const { currentProfile, access } = useProfile();
+  const visibleTabs = ALL_NAV_TABS.filter(t => access.canTab(t.key));
+  const drawerItems = [
+    { id: "marketing",     icon: "📣", label: "Marketing" },
+    { id: "parts",         icon: "🔧", label: "Parts DB" },
+    { id: "sales_history", icon: "💰", label: "Sales History" },
+  ].filter(item => access.canDrawer(item.id));
 
   return (
     <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRight: "1px solid #F1F5F9", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 40 }}>
@@ -21,7 +27,7 @@ export default function DesktopSidebar({ NAV_TABS }) {
         </div>
       </div>
       <div style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
-        {NAV_TABS.map(t => (
+        {visibleTabs.map(t => (
           <button key={t.key}
             onClick={() => { setActiveTab(t.key); setView("list"); setActiveCustomerId(null); setActiveDealId(null); }}
             style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", width: "100%", fontSize: 14,
@@ -34,14 +40,10 @@ export default function DesktopSidebar({ NAV_TABS }) {
         ))}
 
         {/* Extra nav items only accessible via drawer on mobile */}
-        {showOwnerItems && (
+        {drawerItems.length > 0 && (
           <div style={{ borderTop: "1px solid #F1F5F9", marginTop: 8, paddingTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
-            {[
-              { icon: "📣", label: "Marketing" },
-              { icon: "🔧", label: "Parts DB" },
-              { icon: "💰", label: "Sales History" },
-            ].map(item => (
-              <button key={item.label}
+            {drawerItems.map(item => (
+              <button key={item.id}
                 onClick={() => setShowSideDrawer(true)}
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", width: "100%", fontSize: 14, fontWeight: 500, background: "transparent", color: "#64748B", transition: "all 0.15s" }}>
                 <span style={{ fontSize: 19 }}>{item.icon}</span>

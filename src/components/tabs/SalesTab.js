@@ -1,9 +1,10 @@
+import ownerOnly from "../layout/ownerOnly";
 import React, { useState } from "react";
 import Spinner from "../ui/Spinner";
 import { useUI } from "../../context/UIContext";
 import { useSales } from "../../context/SalesContext";
 
-export default function SalesTab() {
+function SalesTab() {
   const { isMobile } = useUI();
   const {
     salesHistory,
@@ -104,3 +105,5 @@ export default function SalesTab() {
     </div>
   );
 }
+
+export default ownerOnly(SalesTab);

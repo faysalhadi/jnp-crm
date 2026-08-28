@@ -1,214 +1,243 @@
-# REMOVE THE CHAT WINDOW — client view becomes Notes & Activity only
+# FIX — Salesperson can reach owner-only tabs from the client detail view
 
-The in-app message thread duplicates WhatsApp and is never used. Only notes,
-activity logging and follow-ups are used. Remove the chat metaphor and make
-NotesActivityView the single body of the client detail view.
+Symptom: a salesperson opens a client. The owner's side navigation appears and
+they can navigate into Marketing, Parts DB, Sales History, Sourcing, Traders
+and Ask Claude.
 
-Read every file before editing. This is a deletion task — be careful not to
-remove things that other parts of the app still depend on.
+Cause: nav access is currently decided separately in each nav component. The
+client detail view renders a nav that never got the role gate, so the
+restriction is bypassed.
+
+The fix is NOT to add one more conditional to one more file. Access must be
+decided in ONE place, and each restricted tab must also refuse to render for a
+salesperson even if something manages to navigate there. Two layers.
+
+Read every file before editing.
 After all changes: npm run build, fix ESLint errors, git push.
 
 ---
 
-## STEP 0 — Find out what actually depends on the chat pieces
+## STEP 0 — Find the nav that leaks
 
-Before deleting anything, run these and read the output:
+Run these and read the output before writing any code:
 
 ```bash
-grep -rn "MessageList" src/
-grep -rn "InputBar" src/
-grep -rn "messageService" src/
-grep -rn "useChatActions" src/
-grep -rn "ChatContext\|useChat" src/
-grep -rn "from('messages')" src/
+grep -rn "DesktopSidebar\|SideDrawer\|BottomNav\|TopBar" src/
+grep -rn "ChatDetailView" src/
 ```
 
-Keep a note of every hit. Some of these files hold non-message logic
-(selected customer state, tag updates, deal actions) that MUST survive.
-Do not delete a file that still has a live import after this refactor.
+Identify exactly which component renders navigation when a client is open.
+Common causes, confirm which one applies:
+- ChatDetailView renders inside the main layout, and the layout renders the
+  sidebar unconditionally
+- ChatDetailView is a full-screen route that renders its OWN copy of
+  DesktopSidebar or SideDrawer
+- The ☰ TopBar button stays mounted and opens SideDrawer over the detail view
+
+State which one it is in your output before proceeding.
 
 ---
 
-## STEP 1 — src/components/chat/ChatDetailView.js
+## STEP 1 — Single source of truth for nav access
 
-Read the file.
+Create a new file: **src/constants/access.js**
 
-This stays as the client detail screen — do not delete it. Change its body:
+```js
+// Tabs a salesperson may reach. Everything else is owner-only.
+export const SALESPERSON_TABS = ['home', 'customers', 'stock'];
 
-### 1a. Remove the message thread
-- Remove the `<MessageList />` render and its import.
-- Remove the `<InputBar />` render and its import.
-- Remove any message-fetching state and effects (messages array, loading
-  messages, subscriptions to a messages table, scroll-to-bottom refs).
+// Side drawer / sidebar items a salesperson may reach.
+export const SALESPERSON_DRAWER_ITEMS = ['settings', 'signout'];
 
-### 1b. Make NotesActivityView the body
+export function canAccessTab(tabId, { isOwner, isViewingAs }) {
+  if (isOwner && !isViewingAs) return true;
+  return SALESPERSON_TABS.includes(tabId);
+}
 
-`NotesActivityView` should now fill the space the message thread occupied —
-full height, scrollable, directly under `ChatHeader`.
-
-```jsx
-<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-  <ChatHeader customer={customer} ... />
-  <div style={{ flex: 1, overflowY: 'auto' }}>
-    <NotesActivityView customer={customer} ... />
-  </div>
-</div>
-```
-
-### 1c. If there is a tab switcher (Chat / Notes / Preferences)
-
-If ChatDetailView has tabs to switch between the message thread and notes,
-remove the Chat tab entirely. If Notes was the only other tab, remove the
-whole tab switcher — there is nothing left to switch between.
-
-Keep any Preferences / Consignment / Supplier-notes panels that exist as
-separate tabs, but Notes & Activity must be the default landing tab.
-
-### 1d. Keep the not-found guard
-
-```jsx
-if (!customer) {
-  return (
-    <div style={{ padding: 32, textAlign: 'center', color: '#7880A3', fontSize: 13 }}>
-      Client not found. Go back and try again.
-    </div>
-  );
+export function canAccessDrawerItem(itemId, { isOwner, isViewingAs }) {
+  if (isOwner && !isViewingAs) return true;
+  return SALESPERSON_DRAWER_ITEMS.includes(itemId);
 }
 ```
 
----
+Then create a hook in **src/context/ProfileContext.js** (add to the existing
+file, export from the same place):
 
-## STEP 2 — src/components/chat/ChatHeader.js — add the WhatsApp button
+```js
+import { canAccessTab, canAccessDrawerItem } from '../constants/access';
 
-Read the file.
-
-The header must keep everything it has (name, tags section, order frequency,
-quote prompt, loss reason, stage bar, assignment dropdown) and gain a clear
-way to reach the real WhatsApp conversation, since that is now the only place
-messages live.
-
-Add a WhatsApp action button in the header actions row:
-
-```jsx
-import { openWhatsApp } from '../../utils/whatsapp';
-// check the actual export name in src/utils/whatsapp.js first
-
-<button
-  onClick={() => openWhatsApp(customer.number, '', myWhatsApp)}
-  style={{
-    background: '#12301F',
-    border: '1px solid #1E4A31',
-    color: '#2EC97A',
-    borderRadius: 8,
-    padding: '6px 12px',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  }}
->
-  💬 WhatsApp
-</button>
+// inside ProfileProvider, before the return:
+const access = {
+  canTab: (tabId) => canAccessTab(tabId, { isOwner, isViewingAs }),
+  canDrawer: (itemId) => canAccessDrawerItem(itemId, { isOwner, isViewingAs }),
+};
 ```
 
-Hide it when the owner is in read-only view-as mode:
+Add `access` to the context value object.
 
-```jsx
-{!isViewingAs && customer.number && ( ...the button... )}
+Every nav component from here on uses `access.canTab(...)` /
+`access.canDrawer(...)`. No component decides this on its own any more.
+
+---
+
+## STEP 2 — Apply the single check in every nav component
+
+For each of these files: read it, import `useProfile`, pull out `access`, and
+replace whatever ad-hoc `isOwner` / `isViewingAs` logic exists with the shared
+check.
+
+### src/components/layout/BottomNav.js
+```js
+const { access } = useProfile();
+const visibleTabs = tabs.filter(tab => access.canTab(tab.id));
 ```
 
-Match the existing signature of the whatsapp helper — read
-src/utils/whatsapp.js and use whatever it actually expects.
-
----
-
-## STEP 3 — Delete the message-only files
-
-Only delete a file if STEP 0 showed it has no remaining importers after
-steps 1 and 2.
-
-Almost certainly safe to delete:
-```bash
-git rm src/components/chat/MessageList.js
-git rm src/components/chat/InputBar.js
+### src/components/layout/DesktopSidebar.js
+```js
+const { access } = useProfile();
+// filter the tab list with access.canTab(...)
+// filter the drawer-style items with access.canDrawer(...)
 ```
 
-Check before deleting:
-- `src/services/messageService.js` — delete ONLY if nothing else imports it.
-  If BroadcastService, useBroadcast, or the sourcing module import from it,
-  keep the file and remove only the per-client message functions.
-- `src/context/ChatContext.js` — this likely holds `selectedCustomer` and view
-  state, NOT just messages. Do NOT delete it. Remove only the message-specific
-  state and functions (messages array, sendMessage, fetchMessages, realtime
-  subscription) and leave the rest intact.
-- `src/hooks/useChatActions.js` — same. Remove message send/fetch actions,
-  keep deal/stage/tag actions.
-
-Also delete the long-dead file while you are in here:
-```bash
-git rm src/components/chat/FollowUpPanel.js
-```
-(the project notes mark it DEPRECATED — NotesActivityView replaced it
-everywhere). Confirm with `grep -rn "FollowUpPanel" src/` returning nothing
-before removing.
-
----
-
-## STEP 4 — Clean up remaining references
-
-After the deletions, run these again and fix every hit:
-
-```bash
-grep -rn "MessageList\|InputBar\|FollowUpPanel" src/
-grep -rn "sendMessage\|fetchMessages" src/
+### src/components/layout/SideDrawer.js
+```js
+const { access } = useProfile();
+// Marketing, Parts DB, Sales History each wrapped with:
+{access.canDrawer('marketing') && ( ... )}
+{access.canDrawer('parts') && ( ... )}
+{access.canDrawer('sales_history') && ( ... )}
+// Settings and Sign Out always render
 ```
 
-Remove dead imports, dead props being passed down, and any unused state in
-parent components that only existed to feed the message thread.
+### src/components/layout/TopBar.js
+Read it. If the ☰ button opens a drawer that now has only Settings and Sign
+Out for a salesperson, that is fine — keep the button. But confirm the drawer
+it opens is the gated SideDrawer above, not a second copy.
 
 ---
 
-## STEP 5 — NotesActivityView polish
+## STEP 3 — Fix the leak in the client detail view
 
-Read src/components/chat/NotesActivityView.js.
+Based on what STEP 0 found, apply the matching fix:
 
-Now that this is the whole client screen rather than a secondary tab, make
-sure it reads well at full height:
+**If ChatDetailView renders its own nav:** remove it. The detail view should
+not render navigation at all — it is a child of the main layout, which already
+provides nav.
 
-- The activity buttons row (Called, No Answer, Messaged, Met, Note) should be
-  pinned near the top, easy to reach with a thumb — it is the primary action
-  on this screen now.
-- The follow-up section (set / edit / done / delete) comes next.
-- The activity feed fills the rest and scrolls.
-- If the feed is empty, show a short empty state rather than blank space:
-  "No activity yet — log a call or add a note to start."
+**If the detail view is a full-screen overlay and nav is showing through:**
+give the overlay a solid background and a high enough z-index that the
+sidebar is genuinely covered, and make sure the sidebar is not rendered on top
+of it.
 
-Do not change its data logic. This is layout only.
+**If the layout renders the sidebar unconditionally:** that is fine now,
+because STEP 2 makes the sidebar itself role-aware. Verify by reading
+DesktopSidebar and SideDrawer that no item escapes `access`.
 
----
-
-## STEP 6 — Database (do nothing yet)
-
-Leave any `messages` table in Supabase alone. Removing the UI is reversible;
-dropping the table is not. If it is still empty and unused in a month, drop it
-then.
+Whichever case applies, the detail view must have a working back button that
+returns to the Clients list.
 
 ---
 
-## STEP 7 — Build and push
+## STEP 4 — Second layer: tabs refuse to render
+
+Nav filtering is not enough on its own. If a tab id ever gets set some other
+way — a stale state value, a deep link, a stray `setActiveTab` call — the
+restricted tab would still render. Close that.
+
+### src/App.js
+
+Read the file. Find where the active tab is rendered (the switch or map that
+picks which tab component to show).
+
+Wrap it with the access check:
+
+```js
+const { access, profileLoading } = useProfile();
+
+// Never render a tab this user may not access.
+const safeTab = access.canTab(activeTab) ? activeTab : 'home';
+```
+
+Then render based on `safeTab`, not `activeTab`.
+
+Also add a correcting effect so the nav highlight does not sit on a tab that is
+not being shown:
+
+```js
+useEffect(() => {
+  if (!profileLoading && !access.canTab(activeTab)) {
+    setActiveTab('home');
+  }
+}, [profileLoading, activeTab, access]);
+```
+
+Note: `access` is recreated each render. To avoid an infinite loop, either
+wrap `access` in `useMemo` inside ProfileContext (dependencies: `isOwner`,
+`isViewingAs`), or depend on `isOwner, isViewingAs, activeTab` in the effect
+instead of `access`. Do the useMemo — it is cleaner:
+
+```js
+// in ProfileContext:
+const access = useMemo(() => ({
+  canTab: (tabId) => canAccessTab(tabId, { isOwner, isViewingAs }),
+  canDrawer: (itemId) => canAccessDrawerItem(itemId, { isOwner, isViewingAs }),
+}), [isOwner, isViewingAs]);
+```
+
+### Guard the owner-only tab components themselves
+
+At the top of each of these components, return null (or a short message) if
+the user should not be there. This is cheap and makes the restriction
+impossible to bypass from the UI:
+
+- src/components/tabs/MarketingTab.js
+- src/components/tabs/PartsCompatibilityTab.js
+- src/components/tabs/SalesTab.js
+- src/components/tabs/AskClaudeTab.js
+- src/components/tabs/TradersTab.js
+- src/SourcingModule.js
+
+```js
+const { isOwner, isViewingAs } = useProfile();
+if (!isOwner || isViewingAs) return null;
+```
+
+---
+
+## STEP 5 — Check GlobalSearch
+
+Read src/components/layout/GlobalSearch.js.
+
+Global search likely queries stock, traders, sourcing deals and customers. For
+a salesperson it must not surface traders, sourcing deals, or clients that are
+not assigned to them.
+
+```js
+const { isOwner, isSalesperson, currentProfile, isViewingAs } = useProfile();
+
+// skip trader + sourcing result groups entirely when not a full owner
+// scope customer results with .eq('assigned_to', ...) using the same
+// rule as CustomerContext
+```
+
+If GlobalSearch is only rendered for owners, confirm that and skip this step —
+but say so in your output.
+
+---
+
+## STEP 6 — Build and push
 
 ```bash
 npm run build
 ```
 
-Fix all ESLint errors. Expect a lot of "unused variable" warnings from the
-removed imports — clear every one.
+Fix all ESLint errors. Watch for:
+- unused `isOwner` imports in nav components now using `access`
+- exhaustive-deps warnings on the correcting effect in App.js
 
 ```bash
 git add -A
-git commit -m "refactor: remove in-app chat thread — client view is now notes & activity"
+git commit -m "fix: centralize role-based nav access, close leak from client detail view"
 git push
 ```
 
@@ -216,11 +245,18 @@ git push
 
 ## TEST AFTER DEPLOY
 
-1. Open any client — you land straight on Notes & Activity, no message thread
-2. The activity buttons work and log to activity_log
-3. Set a follow-up — it appears on the Home tab
-4. Tap 💬 WhatsApp — opens the real WhatsApp thread with that client
-5. As a salesperson, add a new client and open it — the detail view loads
-   with the client name in the header and an empty activity state
-6. As owner in "view as" mode, the client view is read-only: no activity
-   buttons, no follow-up buttons, no WhatsApp button
+Log in as the salesperson in a private window:
+
+1. Bottom nav shows only Home, Clients, Stock
+2. Open a client — no owner nav appears anywhere on screen
+3. Tap ☰ — only Settings and Sign Out
+4. Back button from the client returns to the Clients list
+5. On desktop width, the sidebar shows only the three allowed tabs
+6. Global search returns only their own clients and stock — no traders,
+   no sourcing deals
+
+Then as owner:
+
+7. All tabs and drawer items present as before
+8. "View CRM" on a salesperson — nav collapses to the three tabs, and
+   restores fully on Exit

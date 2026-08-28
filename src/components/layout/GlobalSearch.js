@@ -4,6 +4,7 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
+import { useProfile } from "../../context/ProfileContext";
 
 export default function GlobalSearch({ onClose }) {
   const [query, setQuery]           = useState("");
@@ -16,6 +17,10 @@ export default function GlobalSearch({ onClose }) {
   const { stock }          = useStock();
   const { setActiveTab }   = useUI();
   const { traderListings } = useTraders();
+  const { isOwner, isViewingAs } = useProfile();
+
+  // Trader listings and the trader/supplier contact book are owner territory.
+  const showTraderResults = isOwner && !isViewingAs;
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -25,18 +30,24 @@ export default function GlobalSearch({ onClose }) {
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
       setSearching(true);
-      const { data } = await supabase
+      let noteQuery = supabase
         .from("activity_log")
         .select("customer_id, note, logged_at")
         .ilike("note", `%${query}%`)
         .eq("activity_type", "note")
         .order("logged_at", { ascending: false })
         .limit(5);
+      // This searched every client's notes regardless of role. Restricted
+      // viewers only ever see notes on the clients assigned to them.
+      if (!showTraderResults) {
+        noteQuery = noteQuery.in("customer_id", customers.map(c => c.id));
+      }
+      const { data } = await noteQuery;
       setNoteResults(data || []);
       setSearching(false);
     }, 300);
     return () => clearTimeout(timerRef.current);
-  }, [query]);
+  }, [query, showTraderResults, customers]); // eslint-disable-line
 
   const q = query.toLowerCase().trim();
 
@@ -45,7 +56,7 @@ export default function GlobalSearch({ onClose }) {
     .filter(c => c.name?.toLowerCase().includes(q) || (c.number || "").includes(q))
     .slice(0, 5);
 
-  const contactResults = q.length < 2 ? [] : customers
+  const contactResults = (q.length < 2 || !showTraderResults) ? [] : customers
     .filter(c => c.contact_type === "trader" || c.contact_type === "supplier")
     .filter(c => c.name?.toLowerCase().includes(q) || (c.number || "").includes(q))
     .slice(0, 4);
@@ -70,7 +81,7 @@ export default function GlobalSearch({ onClose }) {
     )
     .slice(0, 5);
 
-  const traderResults = q.length < 2 ? [] : traderListings
+  const traderResults = (q.length < 2 || !showTraderResults) ? [] : traderListings
     .filter(t =>
       (t.brand || "").toLowerCase().includes(q) ||
       (t.model || "").toLowerCase().includes(q) ||

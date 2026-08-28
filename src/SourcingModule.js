@@ -1,3 +1,4 @@
+import ownerOnly from "./components/layout/ownerOnly";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import DealDetail from "./components/sourcing/DealDetail";
@@ -13,7 +14,7 @@ import {
 import { hoursUntil } from "./components/sourcing/SourcingHelpers";
 
 // ══════════════════════════════════════════════════════════════════════════════
-export default function SourcingModule({ anthropicKey, onAddToStock }) {
+function SourcingModule({ anthropicKey, onAddToStock }) {
   const [deals,       setDeals]       = useState([]);
   const [suppliers,   setSuppliers]   = useState([]);
   const [loading,     setLoading]     = useState(false);
@@ -152,3 +153,5 @@ export function useSourcingAlerts() {
   }, []);
   return alerts;
 }
+
+export default ownerOnly(SourcingModule);

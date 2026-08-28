@@ -1,3 +1,4 @@
+import ownerOnly from "../layout/ownerOnly";
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../supabase";
 
@@ -17,7 +18,7 @@ const PART_TYPES = [
 
 const BRANDS = ["All", "Dell", "HP", "Lenovo", "Apple", "Microsoft"];
 
-export default function PartsCompatibilityTab() {
+function PartsCompatibilityTab() {
   const [models, setModels]               = useState([]);
   const [partsMap, setPartsMap]           = useState({});
   const [selectedModel, setSelectedModel] = useState(null);
@@ -489,3 +490,5 @@ export default function PartsCompatibilityTab() {
     </div>
   );
 }
+
+export default ownerOnly(PartsCompatibilityTab);

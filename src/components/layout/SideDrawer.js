@@ -6,8 +6,7 @@ import { useProfile } from "../../context/ProfileContext";
 export default function SideDrawer({ handleLogout }) {
   const { showSideDrawer, setShowSideDrawer, setActiveTab } = useUI();
   const { setView } = useCustomers();
-  const { isOwner, isViewingAs } = useProfile();
-  const showOwnerItems = isOwner && !isViewingAs;
+  const { access } = useProfile();
   if (!showSideDrawer) return null;
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
@@ -19,28 +18,30 @@ export default function SideDrawer({ handleLogout }) {
           <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>Laptop for Less</div>
         </div>
         <div style={{ flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {showOwnerItems && (
+          {access.canDrawer("marketing") && (
             <button onClick={() => { setShowSideDrawer(false); setActiveTab("marketing"); }}
               style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#FFF7ED", color: "#D97706", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
               📣 Marketing
             </button>
           )}
-          {showOwnerItems && (
+          {access.canDrawer("parts") && (
             <button onClick={() => { setShowSideDrawer(false); setActiveTab("parts"); }}
               style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#F0FDF4", color: "#16A34A", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
               🔧 Parts DB
             </button>
           )}
-          {showOwnerItems && (
+          {access.canDrawer("sales_history") && (
             <button onClick={() => { setShowSideDrawer(false); setActiveTab("sales"); }}
               style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 8 }}>
               💰 Sales History
             </button>
           )}
-          <button onClick={() => { setShowSideDrawer(false); setActiveTab("screentally"); }}
-            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#1C1F26", color: "#10B981", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
-            🧮 Screen Tally
-          </button>
+          {access.canDrawer("screentally") && (
+            <button onClick={() => { setShowSideDrawer(false); setActiveTab("screentally"); }}
+              style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: "#1C1F26", color: "#10B981", fontWeight: 800, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
+              🧮 Screen Tally
+            </button>
+          )}
           <button onClick={() => { setShowSideDrawer(false); setView("settings"); }}
             style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 14, cursor: "pointer", textAlign: "left" }}>
             ⚙️ Settings

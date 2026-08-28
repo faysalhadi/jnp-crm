@@ -115,7 +115,7 @@ export default function App() {
     handleLogout,
   } = useAuth();
 
-  const { profileLoading, profileError, isOwner, isSalesperson, isViewingAs, viewingAs, clearViewingAs } = useProfile();
+  const { profileLoading, profileError, isOwner, isSalesperson, isViewingAs, viewingAs, clearViewingAs, access } = useProfile();
 
 
   // ── sourcing alerts for dashboard ──
@@ -225,26 +225,18 @@ export default function App() {
 
 
 
-  // ── nav tabs ──
-  const ALL_NAV_TABS = [
-    { key: "home",      icon: "🏠", label: "Home" },
-    { key: "customers", icon: "👥", label: "Clients" },
-    { key: "stock",     icon: "📦", label: "Stock" },
-    { key: "sourcing",  icon: "🌍", label: "Sourcing" },
-    { key: "traders",   icon: "🏪", label: "Traders" },
-    { key: "ask",       icon: "🤖", label: "Ask Claude" },
-  ];
-  const SALESPERSON_TABS = ["home", "customers", "stock"];
-  const NAV_TABS = (isOwner && !isViewingAs)
-    ? ALL_NAV_TABS
-    : ALL_NAV_TABS.filter(t => SALESPERSON_TABS.includes(t.key));
+  // ── nav access ──
+  // Nav components filter themselves from constants/access.js, so App only
+  // needs the second layer: never render a tab this user may not reach, even
+  // if a stale state value or a stray setActiveTab call points at one.
+  const safeTab = access.canTab(activeTab) ? activeTab : "home";
 
-  // When entering viewingAs mode, switch to an allowed tab
+  // Keep the nav highlight on the tab that is actually showing.
   useEffect(() => {
-    if (isViewingAs && !SALESPERSON_TABS.includes(activeTab)) {
-      setActiveTab('home');
+    if (!profileLoading && !access.canTab(activeTab)) {
+      setActiveTab("home");
     }
-  }, [isViewingAs]); // eslint-disable-line
+  }, [profileLoading, activeTab, access]); // eslint-disable-line
 
   // ── screens ──────────────────────────────────────────────────────────────────
 
@@ -333,7 +325,7 @@ export default function App() {
       )}
 
       {/* ── Desktop sidebar ── */}
-      {!isMobile && <DesktopSidebar NAV_TABS={NAV_TABS} />}
+      {!isMobile && <DesktopSidebar />}
 
       {/* ── Content area ── */}
       <div style={isMobile
@@ -372,22 +364,22 @@ export default function App() {
       {/* top bar — contacts/traders header */}
       <TopBar />
       {/* ── HOME / DASHBOARD TAB ── */}
-      {activeTab === "home" && (
+      {safeTab === "home" && (
         (isSalesperson || isViewingAs)
           ? <SalespersonHomeTab />
           : <HomeTab tasks={tasks} sourcingAlerts={sourcingAlerts} />
       )}
 
       {/* ── CUSTOMERS TAB ── */}
-      {activeTab === "customers" && <CustomersTab />}
+      {safeTab === "customers" && <CustomersTab />}
 
       {/* ── STOCK TAB ── */}
-      {activeTab === "stock" && (
+      {safeTab === "stock" && (
         <StockTab openBroadcast={openBroadcast} handleUpgradeApply={handleUpgradeApply} />
       )}
 
       {/* ── TRADERS TAB ── */}
-      {activeTab === "traders" && (
+      {safeTab === "traders" && (
         <TradersTab
           anthropicKey={anthropicKey}
           stock={stock}
@@ -396,36 +388,36 @@ export default function App() {
       )}
 
       {/* ── ASK CLAUDE TAB ── */}
-      {activeTab === "ask" && (
+      {safeTab === "ask" && (
         <AskClaudeTab />
       )}
 
       {/* ── SALES HISTORY TAB ── */}
-      {activeTab === "sales" && (
+      {safeTab === "sales" && (
         <SalesTab />
       )}
 
       {/* ── MARKETING TAB ── */}
-      {activeTab === "marketing" && (
+      {safeTab === "marketing" && (
         <MarketingTab
           stock={stock}
         />
       )}
 
       {/* ── PARTS DB TAB ── */}
-      {activeTab === "parts" && (
+      {safeTab === "parts" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <PartsCompatibilityTab />
         </div>
       )}
 
       {/* ── SCREEN TALLY (drawer-only utility, full-screen overlay) ── */}
-      {activeTab === "screentally" && (
+      {safeTab === "screentally" && (
         <ScreenTallyTab onClose={() => setActiveTab("home")} />
       )}
 
       {/* ── SOURCING TAB ── */}
-      {activeTab === "sourcing" && (
+      {safeTab === "sourcing" && (
         <SourcingModule anthropicKey={anthropicKey} onAddToStock={() => { loadStock(); refreshCachedStock(); }} />
       )}
 
@@ -536,7 +528,7 @@ export default function App() {
       <BroadcastModal />
 
       {/* bottom tab bar — mobile only */}
-      <BottomNav NAV_TABS={NAV_TABS} sourcingAlerts={sourcingAlerts} />
+      <BottomNav sourcingAlerts={sourcingAlerts} />
       </div>{/* end content area */}
       </div>
   );

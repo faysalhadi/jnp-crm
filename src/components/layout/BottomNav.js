@@ -3,24 +3,20 @@ import { useUI } from "../../context/UIContext";
 import { useStock } from "../../context/StockContext";
 import { useProfile } from "../../context/ProfileContext";
 import { useCustomers } from "../../context/CustomerContext";
+import { ALL_NAV_TABS } from "../../constants/access";
 
-export default function BottomNav({ NAV_TABS, sourcingAlerts }) {
+export default function BottomNav({ sourcingAlerts }) {
   const { isMobile, activeTab, setActiveTab } = useUI();
   const { stock } = useStock();
-  const { isOwner, isViewingAs } = useProfile();
+  const { access } = useProfile();
   const { setView, setActiveCustomerId, setActiveDealId } = useCustomers();
   if (!isMobile) return null;
 
-  const SALESPERSON_TABS = ["home", "customers", "stock"];
-  const allTabs = [
-    { key: "home", icon: "🏠", label: "Home" },
-    { key: "customers", icon: "👥", label: "Clients" },
-    { key: "stock", icon: "📦", label: "Stock", badge: stock.filter(s => s.status === "available").length || 0 },
-    { key: "sourcing", icon: "🌍", label: "Sourcing" },
-    { key: "traders", icon: "🏪", label: "Traders" },
-    { key: "ask", icon: "🤖", label: "Ask" },
-  ];
-  const visibleTabs = allTabs.filter(t => (isOwner && !isViewingAs) || SALESPERSON_TABS.includes(t.key));
+  const visibleTabs = ALL_NAV_TABS
+    .filter(t => access.canTab(t.key))
+    .map(t => t.key === "stock"
+      ? { ...t, badge: stock.filter(s => s.status === "available").length || 0 }
+      : t);
 
   return (
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>
@@ -31,7 +27,7 @@ export default function BottomNav({ NAV_TABS, sourcingAlerts }) {
             <div style={{ position: "absolute", top: 6, right: "25%", width: 16, height: 16, borderRadius: "50%", background: "#EF4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{t.badge}</div>
           )}
           <span style={{ fontSize: 18 }}>{t.icon}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.label}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === t.key ? "#6366F1" : "#94A3B8" }}>{t.short || t.label}</span>
           {activeTab === t.key && <div style={{ position: "absolute", bottom: 0, width: 28, height: 3, background: "#6366F1", borderRadius: "3px 3px 0 0" }} />}
         </button>
       ))}

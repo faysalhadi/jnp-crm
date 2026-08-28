@@ -1,7 +1,8 @@
+import ownerOnly from "../layout/ownerOnly";
 import React, { useState, useMemo, useRef } from "react";
 import { useUI } from "../../context/UIContext";
 
-export default function ScreenTallyTab({ onClose }) {
+function ScreenTallyTab({ onClose }) {
   const { showToast } = useUI();
   const [codes, setCodes] = useState([]); // [{ code, count }]
   const [input, setInput] = useState("");
@@ -231,3 +232,5 @@ export default function ScreenTallyTab({ onClose }) {
     </div>
   );
 }
+
+export default ownerOnly(ScreenTallyTab);

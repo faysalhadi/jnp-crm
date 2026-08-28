@@ -1,3 +1,4 @@
+import ownerOnly from "../layout/ownerOnly";
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { useUI } from "../../context/UIContext";
@@ -251,7 +252,7 @@ function PlatformCard({ platformId, label, emoji, color, bg, post, generating, c
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function MarketingTab({ stock }) {
+function MarketingTab({ stock }) {
   const { isMobile, activeMarketingTab, setActiveMarketingTab } = useUI();
   const { anthropicKey } = useAuth();
   const { customers } = useCustomers();
@@ -1004,3 +1005,5 @@ export default function MarketingTab({ stock }) {
     </div>
   );
 }
+
+export default ownerOnly(MarketingTab);

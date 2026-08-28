@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { supabase, signupSupabase } from '../supabase';
+import { canAccessTab, canAccessDrawerItem } from '../constants/access';
 import { useAuth } from './AuthContext';
 
 const ProfileContext = createContext();
@@ -112,6 +113,13 @@ export function ProfileProvider({ children }) {
   const effectiveId = viewingAs ? viewingAs.id : currentProfile?.id;
   const showCostFields = isOwner && !isViewingAs;
 
+  // Memoised so consumers can safely put `access` in an effect dependency
+  // array — a fresh object each render would loop forever.
+  const access = useMemo(() => ({
+    canTab: (tabId) => canAccessTab(tabId, { isOwner, isViewingAs }),
+    canDrawer: (itemId) => canAccessDrawerItem(itemId, { isOwner, isViewingAs }),
+  }), [isOwner, isViewingAs]);
+
   return (
     <ProfileContext.Provider value={{
       currentProfile,
@@ -125,6 +133,7 @@ export function ProfileProvider({ children }) {
       isViewingAs,
       effectiveId,
       showCostFields,
+      access,
       createSalesperson,
       deleteSalesperson,
       assignClient,
