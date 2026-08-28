@@ -23,25 +23,30 @@ export function ProfileProvider({ children }) {
 
   async function fetchCurrentProfile() {
     setProfileLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
-    if (error || !data) {
-      setProfileError('Account not set up. Contact Faisal to configure your profile.');
+      if (error || !data) {
+        setProfileError('Account not set up. Contact Faisal to configure your profile.');
+        return;
+      }
+
+      setCurrentProfile(data);
+      setProfileError(null);
+
+      if (data.role === 'owner') {
+        fetchAllProfiles();
+      }
+    } catch (err) {
+      setProfileError('Could not load your profile. Check your connection and try again.');
+    } finally {
+      // Always clear the flag — a stuck profileLoading blocks every data fetch
       setProfileLoading(false);
-      return;
     }
-
-    setCurrentProfile(data);
-    setProfileError(null);
-
-    if (data.role === 'owner') {
-      fetchAllProfiles();
-    }
-    setProfileLoading(false);
   }
 
   async function fetchAllProfiles() {

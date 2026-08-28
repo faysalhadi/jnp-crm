@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { supabase } from "../../supabase";
+import { useProfile } from "../../context/ProfileContext";
 import { parseGB, labelGB } from "../../utils/helpers";
 
 export default function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
+  const { currentProfile, isSalesperson } = useProfile();
   const [step,           setStep]           = useState(prefill?.item ? 3 : 1);
   const [search,         setSearch]         = useState("");
   const [selected,       setSelected]       = useState(prefill?.item ? [prefill.item] : []);
@@ -74,6 +76,8 @@ export default function QuickSaleModal({ stock, onClose, onComplete, prefill = n
           const { data: cust } = await supabase.from("customers").insert({
             name: customerName, number: number.trim() || null,
             tier: "cold", urgent: false, contact_type: "client",
+            // Keep walk-ins with the salesperson who rang up the sale.
+            assigned_to: isSalesperson && currentProfile?.id ? currentProfile.id : null,
           }).select().single();
           if (cust?.id) {
             for (const item of selected) {

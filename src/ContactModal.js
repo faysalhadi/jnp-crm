@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "./supabase";
+import { useProfile } from "./context/ProfileContext";
 import { TRADER_CATEGORIES, DEFAULT_TAGS } from "./constants";
 
 const INTEREST_TAGS = DEFAULT_TAGS.filter(t => t.group === "interest");
@@ -68,6 +69,7 @@ const EMPTY_FORM = {
 
 // ── main component ────────────────────────────────────────────────────────────
 export default function ContactModal({ defaultType, onClose, onCreated }) {
+  const { currentProfile, isSalesperson } = useProfile();
   const [step,    setStep]    = useState(defaultType ? 2 : 1);
   const [type,    setType]    = useState(defaultType || null);
   const [form,    setForm]    = useState(EMPTY_FORM);
@@ -98,6 +100,10 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
       stall_number: type === "trader" ? (form.stall_number || null) : null,
       categories:   type === "trader" ? (form.categories?.length ? form.categories : null) : null,
       tags:         (form.tags || []).length ? form.tags : null,
+      // A salesperson always owns the contacts they create — without this the
+      // row lands unassigned and is filtered straight back out of their list.
+      // The owner creates unassigned contacts and assigns them from the header.
+      assigned_to:  isSalesperson && currentProfile?.id ? currentProfile.id : null,
     };
 
     if (type === "trader") {

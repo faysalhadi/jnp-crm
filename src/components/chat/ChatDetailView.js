@@ -37,6 +37,23 @@ export default function ChatDetailView() {
   const { stock, loadStock, refreshCachedStock } = useStock();
   const { loadTodaySales } = useSales();
 
+  // A missing customer used to render an empty shell with no explanation.
+  // Say so, and give a way back instead of a blank screen.
+  if (activeCustomerId && !activeCustomer) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center", gap: 14, padding: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 32 }}>🔍</div>
+        <div style={{ color: "#7880A3", fontSize: 13 }}>Client not found. Go back and try again.</div>
+        <button onClick={() => { setView("list"); setActiveCustomerId(null); setActiveDealId(null); }}
+          style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "#6366F1",
+                   color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          ← Back to Clients
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={isMobile
       ? { minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }

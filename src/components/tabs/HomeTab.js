@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../supabase";
 import { STAGES, EMPTY_STOCK } from "../../constants";
 import PullToRefresh from "../ui/PullToRefresh";
+import Spinner from "../ui/Spinner";
 import { daysSince, timeAgo, getGreeting, formatWhatsAppNumber } from "../../utils/helpers";
 import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -14,12 +15,23 @@ import MorningBrief from "./MorningBrief";
 export default function HomeTab({ tasks, sourcingAlerts }) {
   const { activeTab, setActiveTab, isMobile, setCustomerViewMode } = useUI();
   const {
-    customers,
+    customers, loading: customersLoading,
     setView, setActiveCustomerId, setActiveDealId, setPendingSuggestion,
     setFilter, setSearch,
     openDeals, closedDeals, revenue,
   } = useCustomers();
-  const { isSalesperson } = useProfile();
+  const { isSalesperson, isViewingAs, profileLoading } = useProfile();
+
+  // Ids of the customers this user is actually allowed to see. CustomerContext
+  // has already applied the assigned_to filter, so this list is authoritative.
+  const visibleIds = useMemo(() => (customers || []).map(c => c.id), [customers]);
+  const visibleKey = visibleIds.join(",");
+
+  // The owner sees everything, so their queries stay unrestricted (an .in()
+  // holding every customer id would blow the request URL length). Restricted
+  // viewers get every customer-scoped query narrowed to their own ids.
+  const restrictToVisible = isSalesperson || isViewingAs;
+  const dataReady = !profileLoading && !customersLoading;
 
   const [todayFollowUps, setTodayFollowUps] = useState([]);
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
@@ -44,29 +56,52 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .slice(0, 10);
   }, [customers, dismissedProspects]); // eslint-disable-line
 
+  // Every fetch below waits for the profile AND the scoped customer list.
+  // Firing on mount would run them while isSalesperson is still false and
+  // customers is still empty — which is exactly how the owner's follow-ups
+  // leaked onto a salesperson's home screen.
   useEffect(() => {
+    if (!dataReady) return;
+    if (restrictToVisible && !visibleIds.length) {
+      setTodayFollowUps([]);
+      setTomorrowFollowUps([]);
+      return;
+    }
     loadFollowUps();
-  }, []);
+  }, [dataReady, restrictToVisible, visibleKey]); // eslint-disable-line
 
   useEffect(() => {
+    if (!dataReady) return;
+    if (restrictToVisible && !visibleIds.length) {
+      setWaitingMatchCount(0);
+      setWaitingMatchDetails([]);
+      return;
+    }
     loadWaitingMatches();
-  }, []); // eslint-disable-line
+  }, [dataReady, restrictToVisible, visibleKey]); // eslint-disable-line
 
   useEffect(() => {
+    if (!dataReady) return;
+    if (restrictToVisible && !visibleIds.length) {
+      setLostDealMatches([]);
+      return;
+    }
     loadLostDealMatches();
-  }, []); // eslint-disable-line
+  }, [dataReady, restrictToVisible, visibleKey]); // eslint-disable-line
 
   const loadLostDealMatches = async () => {
     // 90-day window
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 90);
-    const { data: lostDeals, error: dealsError } = await supabase
+    let lostQuery = supabase
       .from("deals")
       .select("*, customers(id, name, number, contact_type)")
       .eq("stage", "lost")
       .not("brand", "is", null)
       .order("id", { ascending: false })
       .limit(200);
+    if (restrictToVisible) lostQuery = lostQuery.in("customer_id", visibleIds);
+    const { data: lostDeals, error: dealsError } = await lostQuery;
     if (dealsError) { console.error("Lost deals query error:", dealsError.message); return; }
     if (!lostDeals?.length) return;
 
@@ -150,10 +185,12 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .from("stock")
       .select("id,brand,model,processor,ram,ssd,condition,max_price,status")
       .eq("status", "available");
-    const { data: waitingDeals } = await supabase
+    let dealQuery = supabase
       .from("deals")
       .select("id,brand,model,budget,customer_id,customers(id,name,number)")
       .eq("stage", "new_inquiry");
+    if (restrictToVisible) dealQuery = dealQuery.in("customer_id", visibleIds);
+    const { data: waitingDeals } = await dealQuery;
     if (!availableStock?.length || !waitingDeals?.length) return;
     const { matchStockToClients } = await import("../../constants");
     const details = [];
@@ -181,15 +218,8 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       .lte("due_at", endOfTomorrow.toISOString())
       .order("due_at", { ascending: true });
 
-    // Salesperson: only load follow-ups for their assigned clients
-    if (isSalesperson && customers.length > 0) {
-      const ids = customers.map(c => c.id);
-      query = query.in("customer_id", ids);
-    } else if (isSalesperson && customers.length === 0) {
-      setTodayFollowUps([]);
-      setTomorrowFollowUps([]);
-      return;
-    }
+    // Restricted viewers only ever see follow-ups for their own clients.
+    if (restrictToVisible) query = query.in("customer_id", visibleIds);
 
     const { data } = await query;
     const all = data || [];
@@ -252,6 +282,10 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     }));
     return items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 5);
   })();
+
+  // Show a spinner rather than a flash of unscoped data while we work out who
+  // the viewer is and which clients belong to them.
+  if (!dataReady) return <Spinner />;
 
   return (
     <PullToRefresh onRefresh={async () => { await loadFollowUps(); await loadLostDealMatches(); }}>

@@ -1,640 +1,330 @@
-# SALESPERSON FEATURE — Full Implementation
+# FIX 3 SALESPERSON BUGS
 
-Read every file listed before touching it. New files go in their own paths. After all code changes: `npm run build`, fix all ESLint errors, then `git add` the changed files and `git push`.
-
----
-
-## BEFORE WRITING ANY CODE — Manual steps Faisal must do first
-
-### A. Supabase SQL Editor — run this migration
-
-```sql
--- 1. Create profiles table
-CREATE TABLE IF NOT EXISTS profiles (
-  id uuid PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
-  name text NOT NULL,
-  role text NOT NULL DEFAULT 'salesperson' CHECK (role IN ('owner', 'salesperson')),
-  whatsapp_number text,
-  created_at timestamptz DEFAULT now()
-);
-
--- 2. Add assigned_to column to customers
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS assigned_to uuid REFERENCES profiles(id);
-
--- 3. Insert Faisal's owner profile
--- Go to Supabase → Authentication → Users → find faisalhadi181@gmail.com → copy the UUID
--- Then run:
--- INSERT INTO profiles (id, name, role, whatsapp_number)
--- VALUES ('PASTE-UUID-HERE', 'Faisal', 'owner', '+971509423162')
--- ON CONFLICT (id) DO NOTHING;
-```
-
-### B. Vercel Environment Variable
-
-In Vercel dashboard → Project → Settings → Environment Variables, add:
-- Name: `REACT_APP_SUPABASE_SERVICE_KEY`
-- Value: Supabase project's service role key (from Supabase → Project Settings → API → service_role secret)
+Three bugs in the salesperson role system. Read every file before editing.
+After all changes: npm run build, fix ESLint errors, git push.
 
 ---
 
-## STEP 1 — src/supabase.js
+## BUG 1 — Salesperson sees the OWNER's data on first load
 
-Read the file first. Add a second admin client at the bottom:
+Symptom: logging in as a salesperson, the Home tab first shows the owner's
+overdue follow-ups / tasks. Clicking a client then going back to Home fixes it.
+
+Cause: data fetching starts BEFORE the profile has loaded. At that moment
+`isSalesperson` is false and `currentProfile` is null, so no `assigned_to`
+filter is applied and the query returns everyone's data. When the profile
+finishes loading a re-render happens, but some already-fetched state is never
+cleared until navigation forces a re-fetch.
+
+### 1a. src/context/ProfileContext.js
+
+Make sure the provider exposes a loading flag. Read the file — if there is no
+`profileLoading` state, add it:
 
 ```js
-import { createClient } from '@supabase/supabase-js';
-
-// existing supabase client stays as-is
-export const supabase = createClient(
-  process.env.REACT_APP_SUPABASE_URL,
-  process.env.REACT_APP_SUPABASE_ANON_KEY
-);
-
-// Admin client — only used for creating auth users from Settings → Team
-export const adminSupabase = createClient(
-  process.env.REACT_APP_SUPABASE_URL,
-  process.env.REACT_APP_SUPABASE_SERVICE_KEY
-);
+const [profileLoading, setProfileLoading] = useState(true);
 ```
 
-Make sure the existing export names are preserved exactly as they are. Only add the adminSupabase export.
+Set it to `true` at the start of the profile fetch and `false` in a `finally`
+block (both on success and on error). Export `profileLoading` in the context
+value.
 
----
+### 1b. src/context/CustomerContext.js — gate the fetch
 
-## STEP 2 — Create src/context/ProfileContext.js (new file)
+Read the file. Find the useEffect that triggers the customers fetch.
+
+Pull `profileLoading` out of `useProfile()` and refuse to fetch until the
+profile is known:
 
 ```js
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase, adminSupabase } from '../supabase';
-import { useAuth } from './AuthContext';
-
-const ProfileContext = createContext();
-
-export function ProfileProvider({ children }) {
-  const { user } = useAuth();
-  const [currentProfile, setCurrentProfile] = useState(null);
-  const [profiles, setProfiles] = useState([]); // all profiles — owner only
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [profileError, setProfileError] = useState(null);
-
-  useEffect(() => {
-    if (!user) {
-      setCurrentProfile(null);
-      setProfileLoading(false);
-      return;
-    }
-    fetchCurrentProfile();
-  }, [user]);
-
-  async function fetchCurrentProfile() {
-    setProfileLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (error || !data) {
-      setProfileError('Account not set up. Contact Faisal to configure your profile.');
-      setProfileLoading(false);
-      return;
-    }
-
-    setCurrentProfile(data);
-    setProfileError(null);
-
-    if (data.role === 'owner') {
-      fetchAllProfiles();
-    }
-    setProfileLoading(false);
-  }
-
-  async function fetchAllProfiles() {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('name');
-    setProfiles(data || []);
-  }
-
-  // Create a salesperson account (owner only)
-  async function createSalesperson({ name, email, password, whatsapp_number }) {
-    // Create the auth user
-    const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-    });
-    if (authError) throw new Error(authError.message);
-
-    // Insert their profile
-    const { error: profError } = await supabase.from('profiles').insert({
-      id: authData.user.id,
-      name,
-      role: 'salesperson',
-      whatsapp_number: whatsapp_number || null,
-    });
-    if (profError) {
-      // rollback: delete the auth user if profile insert fails
-      await adminSupabase.auth.admin.deleteUser(authData.user.id);
-      throw new Error(profError.message);
-    }
-
-    await fetchAllProfiles();
-  }
-
-  // Delete a salesperson (owner only) — removes profile and auth user
-  async function deleteSalesperson(profileId) {
-    await supabase.from('profiles').delete().eq('id', profileId);
-    await adminSupabase.auth.admin.deleteUser(profileId);
-    await fetchAllProfiles();
-  }
-
-  // Assign a customer to a salesperson (or null to unassign)
-  async function assignClient(customerId, profileId) {
-    const { error } = await supabase
-      .from('customers')
-      .update({ assigned_to: profileId })
-      .eq('id', customerId);
-    if (error) throw new Error(error.message);
-  }
-
-  const isOwner = currentProfile?.role === 'owner';
-  const isSalesperson = currentProfile?.role === 'salesperson';
-
-  // WhatsApp number for the current user — falls back to Faisal's if not set
-  const myWhatsApp = currentProfile?.whatsapp_number || '+971509423162';
-
-  return (
-    <ProfileContext.Provider value={{
-      currentProfile,
-      profiles,
-      profileLoading,
-      profileError,
-      isOwner,
-      isSalesperson,
-      myWhatsApp,
-      createSalesperson,
-      deleteSalesperson,
-      assignClient,
-      fetchAllProfiles,
-    }}>
-      {children}
-    </ProfileContext.Provider>
-  );
-}
-
-export const useProfile = () => useContext(ProfileContext);
+const {
+  isOwner, isSalesperson, currentProfile,
+  viewingAs, isViewingAs, profileLoading,
+} = useProfile();
 ```
 
----
-
-## STEP 3 — src/context/AuthContext.js
-
-Read the file first. The existing AuthContext manages Supabase auth state. No changes needed to AuthContext itself — ProfileContext reads from it. Just confirm that `useAuth` exports `user` (the Supabase auth user object). If it doesn't export `user`, expose it.
-
----
-
-## STEP 4 — src/context/CustomerContext.js
-
-Read the file first. Find the main customers fetch (likely a `supabase.from('customers').select(...)` query).
-
-After the query is built but before `.order()` or `.execute()`, add role-based filtering:
+At the very top of the fetch function:
 
 ```js
-// Import useProfile at the top of CustomerContext
-import { useProfile } from './ProfileContext';
+async function fetchCustomers() {
+  // Do not fetch until we know who the user is — otherwise the
+  // assigned_to filter is missing and we leak the owner's data.
+  if (profileLoading) return;
+  if (!currentProfile?.id) return;
 
-// Inside CustomerProvider, get role info:
-const { isOwner, isSalesperson, currentProfile } = useProfile();
-
-// In the fetch function, before executing the query, add:
-if (isSalesperson && currentProfile?.id) {
-  query = query.eq('assigned_to', currentProfile.id);
+  setLoading(true);
+  ...
 }
 ```
 
-Important: ProfileContext must be above CustomerContext in the provider tree (see App.js step).
-
-Also add `assigned_to` to the select fields so it comes back from the query.
-
----
-
-## STEP 5 — src/App.js
-
-Read the file first.
-
-### 5a. Import and wrap with ProfileProvider
-
-Add `import { ProfileProvider } from './context/ProfileContext';` at the top.
-
-In the provider tree, add `<ProfileProvider>` ABOVE `<CustomerProvider>` (ProfileContext must be ready before CustomerContext runs):
-
-```jsx
-<AuthProvider>
-  <ProfileProvider>
-    <CustomerProvider>
-      ... rest of providers ...
-    </CustomerProvider>
-  </ProfileProvider>
-</AuthProvider>
-```
-
-### 5b. Profile error screen
-
-After the auth loading check but before the main app renders, add a profile error check. Read the existing loading/auth guard pattern and follow it:
-
-```jsx
-import { useProfile } from './context/ProfileContext';
-
-// Inside main App component:
-const { profileLoading, profileError, isOwner, isSalesperson } = useProfile();
-
-if (profileLoading) return <LoadingSpinner />; // use existing spinner component
-
-if (profileError) return (
-  <div style={{
-    height: '100vh', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center', padding: 24,
-    background: '#0B0D18', color: '#E6E9F5', fontFamily: 'Inter, sans-serif',
-    textAlign: 'center', gap: 12
-  }}>
-    <div style={{ fontSize: 32 }}>🔒</div>
-    <div style={{ fontWeight: 600, fontSize: 16 }}>Account not configured</div>
-    <div style={{ color: '#7880A3', fontSize: 14 }}>{profileError}</div>
-  </div>
-);
-```
-
-### 5c. Tab visibility for salesperson
-
-Find where tabs are defined or rendered. Salesperson ONLY gets: home, customers (clients), stock.
-
-Wherever the tab list or routes are defined, wrap the restricted ones:
-
-```jsx
-// Tabs to HIDE from salesperson: sourcing, traders, askClaude
-// Keep visible for salesperson: home, customers, stock
-// isOwner shows everything
-```
-
-Do not remove the tabs from the component tree — just don't render their nav items and redirect if they somehow reach the URL.
-
----
-
-## STEP 6 — src/components/layout/BottomNav.js
-
-Read the file first. Find the tab definitions array (each tab has an id, icon, label).
-
-Import `useProfile`:
-```js
-import { useProfile } from '../../context/ProfileContext';
-const { isOwner } = useProfile();
-```
-
-Filter the tabs array so salesperson only sees home, customers, stock:
-```js
-const SALESPERSON_TABS = ['home', 'customers', 'stock'];
-const visibleTabs = tabs.filter(tab => isOwner || SALESPERSON_TABS.includes(tab.id));
-```
-
-Use `visibleTabs` for rendering instead of the full `tabs` array. Do not change the tab IDs — keep them exactly as they are.
-
----
-
-## STEP 7 — src/components/layout/SideDrawer.js
-
-Read the file first. The drawer contains: Marketing, Parts DB, Sales History, Settings, Sign Out.
-
-Import `useProfile` and hide Marketing, Parts DB, Sales History from salesperson:
+And add `profileLoading` to the useEffect dependency array alongside
+`currentProfile`, `isSalesperson`, `viewingAs`:
 
 ```js
-import { useProfile } from '../../context/ProfileContext';
-const { isOwner } = useProfile();
-
-// Wrap these three items with: {isOwner && (...)}
-// - Marketing (📣)
-// - Parts DB (🔧)
-// - Sales History (💰)
-// Settings and Sign Out stay visible for everyone
+useEffect(() => {
+  fetchCustomers();
+}, [profileLoading, currentProfile?.id, isSalesperson, viewingAs?.id]);
 ```
 
----
+Also: when `profileLoading` is true, `loading` in CustomerContext should be
+`true` (not false with an empty/stale list). Initialise `const [loading,
+setLoading] = useState(true);` if it isn't already.
 
-## STEP 8 — src/components/layout/DesktopSidebar.js
+### 1c. src/components/tabs/HomeTab.js — scope ALL derived data
 
-Read the file first. Apply the same role-based tab visibility as BottomNav (Step 6) and the same drawer-item hiding as SideDrawer (Step 7). Follow whatever pattern the file uses for rendering nav items.
+Read the file carefully. HomeTab builds the morning brief, follow-ups, alerts,
+re-engage and waiting-matches sections.
 
----
+Check every data source in this file:
 
-## STEP 9 — Hide cost fields from salesperson in Stock
+- If HomeTab queries Supabase directly (e.g. `supabase.from('follow_ups')`,
+  `supabase.from('deals')`, `supabase.from('activity_log')`), those queries are
+  NOT role-filtered. That is the real leak.
+- Fix: derive everything from the customers already in `CustomerContext`
+  (which IS filtered), not from unfiltered direct queries.
 
-### src/components/stock/DevicesView.js
+Concretely, for any direct query in HomeTab, add a customer-id restriction:
 
-Read the file. Find where `cost_price`, `min_price`, `allocated_lot_cost`, `refurb_cost` are rendered. Wrap each of those display elements with `{isOwner && (...)}`.
-
-Import at top:
 ```js
-import { useProfile } from '../../context/ProfileContext';
-const { isOwner } = useProfile();
+const { customers, loading: customersLoading } = useCustomers();
+
+// ids of customers this user is actually allowed to see
+const visibleIds = useMemo(() => customers.map(c => c.id), [customers]);
+
+// then every direct query gets:
+//   .in('customer_id', visibleIds)
+// and must not run while visibleIds is empty + still loading
 ```
 
-### src/components/tabs/StockListMode.js
+Guard the whole fetch:
 
-Read the file. Same as above — find and wrap cost fields with `{isOwner && (...)}`.
-
-### src/components/stock/LotsView.js
-
-Read the file. If it shows cost data (total_cost, allocated_lot_cost), wrap those fields with `{isOwner && (...)}`.
-
----
-
-## STEP 10 — WhatsApp number — use profile number everywhere
-
-Search the codebase for all occurrences of the hardcoded number `+971509423162` and the WA link pattern `wa.me/971509423162` or similar.
-
-In each file where it appears:
-1. Import `useProfile` (or receive `myWhatsApp` as a prop if it's a non-hook context)
-2. Replace the hardcoded number with `myWhatsApp` from `useProfile()`
-
-The `myWhatsApp` value in ProfileContext already falls back to `+971509423162` if the profile has no number set, so Faisal's experience is unchanged.
-
-Also check `src/utils/whatsapp.js` — if it has a hardcoded number, update it to accept the number as a parameter instead of hardcoding it, and update all callers to pass `myWhatsApp`.
-
----
-
-## STEP 11 — Client assignment UI in chat/profile header
-
-### src/components/chat/ChatHeader.js
-
-Read the file first. This is the header shown when viewing a client's chat/profile.
-
-Import:
 ```js
-import { useProfile } from '../../context/ProfileContext';
-const { isOwner, profiles, assignClient, currentProfile } = useProfile();
-```
-
-Add an assignment row below the existing header content, visible only to owner:
-
-```jsx
-{isOwner && (
-  <div style={{
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '8px 16px', borderTop: '1px solid rgba(255,255,255,0.08)',
-    fontSize: 12, color: '#7880A3'
-  }}>
-    <span>Assigned to:</span>
-    <select
-      value={customer.assigned_to || ''}
-      onChange={async (e) => {
-        const val = e.target.value || null;
-        await assignClient(customer.id, val);
-        // trigger a refresh of the customer — call whatever refresh function is available
-      }}
-      style={{
-        background: 'transparent', border: '1px solid rgba(255,255,255,0.15)',
-        borderRadius: 6, color: '#E6E9F5', fontSize: 12, padding: '3px 8px',
-        cursor: 'pointer'
-      }}
-    >
-      <option value="">Unassigned</option>
-      {profiles
-        .filter(p => p.role === 'salesperson')
-        .map(p => (
-          <option key={p.id} value={p.id}>{p.name}</option>
-        ))
-      }
-    </select>
-  </div>
-)}
-```
-
-After `assignClient` succeeds, the customer needs to be refreshed. Look at how other mutation operations in ChatHeader or ChatDetailView trigger a customer refresh and follow the same pattern (e.g., calling a `loadCustomer` or `refreshCustomers` function from context).
-
-### Customer cards — show assigned salesperson badge
-
-In `src/components/tabs/CustomersTab.js`, read the file and find the customer card rendering.
-
-Import `useProfile` and `profiles`. On each card, if `customer.assigned_to` is set and `isOwner`, show a small initials badge:
-
-```jsx
-{isOwner && customer.assigned_to && (() => {
-  const sp = profiles.find(p => p.id === customer.assigned_to);
-  if (!sp) return null;
-  const initials = sp.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      width: 20, height: 20, borderRadius: '50%',
-      background: '#112B1E', color: '#2EC97A',
-      fontSize: 9, fontWeight: 700, flexShrink: 0
-    }}>
-      {initials}
-    </span>
-  );
-})()}
-```
-
-Place it near the client name or alongside existing badge elements — wherever it fits visually without breaking the card layout.
-
----
-
-## STEP 12 — Settings → Team section
-
-### src/components/tabs/SettingsTab.js
-
-Read the file first. Find where sections are rendered and add a "Team" section at the top of the page (before other settings), visible only to owner.
-
-```jsx
-import { useProfile } from '../../context/ProfileContext';
-
-const { isOwner, profiles, createSalesperson, deleteSalesperson } = useProfile();
-
-// State for the add form
-const [showAddForm, setShowAddForm] = useState(false);
-const [formData, setFormData] = useState({ name: '', email: '', password: '', whatsapp_number: '' });
-const [formError, setFormError] = useState('');
-const [formLoading, setFormLoading] = useState(false);
-
-async function handleCreate(e) {
-  e.preventDefault();
-  if (!formData.name || !formData.email || !formData.password) {
-    setFormError('Name, email and password are required');
+useEffect(() => {
+  if (customersLoading) return;
+  if (!visibleIds.length) {
+    setFollowUps([]);
+    setAlerts([]);
     return;
   }
-  setFormLoading(true);
-  setFormError('');
-  try {
-    await createSalesperson(formData);
-    setShowAddForm(false);
-    setFormData({ name: '', email: '', password: '', whatsapp_number: '' });
-  } catch (err) {
-    setFormError(err.message);
-  } finally {
-    setFormLoading(false);
-  }
-}
+  loadHomeData();
+}, [customersLoading, visibleIds.join(',')]);
 ```
 
-Render the Team section (owner only):
+Note: `.in('customer_id', [])` with an empty array returns nothing in Supabase,
+which is correct — but make sure the code does not skip the filter entirely
+when the array is empty.
 
-```jsx
-{isOwner && (
-  <div style={{ padding: '16px 16px 0' }}>
-    {/* Section header */}
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      marginBottom: 12
-    }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>Team</div>
-      <button
-        onClick={() => setShowAddForm(v => !v)}
-        style={{
-          background: '#2EC97A', color: '#fff', border: 'none',
-          borderRadius: 8, padding: '6px 14px', fontSize: 12,
-          fontWeight: 600, cursor: 'pointer'
-        }}
-      >
-        + Add Person
-      </button>
-    </div>
+### 1d. Show a loading state instead of stale data
 
-    {/* Add form */}
-    {showAddForm && (
-      <form onSubmit={handleCreate} style={{
-        background: '#1A1E33', borderRadius: 10, padding: 16,
-        marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10
-      }}>
-        {['name', 'email', 'password', 'whatsapp_number'].map(field => (
-          <input
-            key={field}
-            placeholder={
-              field === 'name' ? 'Full name' :
-              field === 'email' ? 'Email address' :
-              field === 'password' ? 'Password (you choose)' :
-              'Company WhatsApp number (e.g. +971...)'
-            }
-            type={field === 'password' ? 'password' : 'text'}
-            value={formData[field]}
-            onChange={e => setFormData(p => ({ ...p, [field]: e.target.value }))}
-            style={{
-              background: '#0B0D18', border: '1px solid #242842',
-              borderRadius: 8, padding: '10px 12px',
-              color: '#E6E9F5', fontSize: 13, outline: 'none'
-            }}
-          />
-        ))}
-        {formError && <div style={{ color: '#F07070', fontSize: 12 }}>{formError}</div>}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="submit" disabled={formLoading} style={{
-            flex: 1, background: '#2EC97A', color: '#fff', border: 'none',
-            borderRadius: 8, padding: '10px 0', fontWeight: 600, cursor: 'pointer'
-          }}>
-            {formLoading ? 'Creating...' : 'Create Account'}
-          </button>
-          <button type="button" onClick={() => setShowAddForm(false)} style={{
-            background: '#242842', color: '#7880A3', border: 'none',
-            borderRadius: 8, padding: '10px 16px', cursor: 'pointer'
-          }}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    )}
+In HomeTab, while `profileLoading || customersLoading` is true, render a
+spinner instead of the sections. This prevents the flash of owner data.
 
-    {/* Salesperson list */}
-    {profiles.filter(p => p.role === 'salesperson').length === 0 && !showAddForm && (
-      <div style={{ color: '#7880A3', fontSize: 13, padding: '8px 0 16px' }}>
-        No salespeople yet. Tap + Add Person to create an account.
-      </div>
-    )}
-
-    {profiles.filter(p => p.role === 'salesperson').map(sp => (
-      <div key={sp.id} style={{
-        background: '#131627', border: '1px solid #242842', borderRadius: 10,
-        padding: '12px 14px', marginBottom: 8,
-        display: 'flex', alignItems: 'center', gap: 12
-      }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: '50%',
-          background: '#112B1E', color: '#2EC97A',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 700, fontSize: 13, flexShrink: 0
-        }}>
-          {sp.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{sp.name}</div>
-          {sp.whatsapp_number && (
-            <div style={{ color: '#7880A3', fontSize: 11, marginTop: 2 }}>
-              {sp.whatsapp_number}
-            </div>
-          )}
-        </div>
-        <button
-          onClick={async () => {
-            if (window.confirm(`Remove ${sp.name}? This deletes their account.`)) {
-              await deleteSalesperson(sp.id);
-            }
-          }}
-          style={{
-            background: 'none', border: 'none', color: '#F07070',
-            cursor: 'pointer', fontSize: 12, padding: '4px 8px'
-          }}
-        >
-          Remove
-        </button>
-      </div>
-    ))}
-
-    <div style={{ height: 16 }} />
-  </div>
-)}
+```js
+const { profileLoading } = useProfile();
+if (profileLoading || customersLoading) {
+  return <Spinner />;  // use the existing src/components/ui/Spinner.js
+}
 ```
 
 ---
 
-## STEP 13 — Build, fix, push
+## BUG 2 — Client saved by a salesperson is assigned to the OWNER
+
+Symptom: salesperson adds a client, the client does not appear in their list —
+it appears in the owner's list instead (unassigned).
+
+Cause: the customer INSERT never sets `assigned_to`, so it lands as NULL and is
+only visible to the owner.
+
+### 2a. src/ContactModal.js
+
+Read the file. Find the Supabase insert into `customers`.
+
+Import the profile context:
+
+```js
+import { useProfile } from './context/ProfileContext';
+// (check the actual relative path from src/ContactModal.js)
+
+const { currentProfile, isSalesperson } = useProfile();
+```
+
+Add `assigned_to` to the inserted row:
+
+```js
+const payload = {
+  name,
+  number,
+  contact_type: contactType,
+  tags,
+  // ...existing fields...
+
+  // A salesperson always owns the clients they create.
+  // The owner creates unassigned clients (assigned_to stays null)
+  // and assigns them later from the client header.
+  assigned_to: isSalesperson ? currentProfile?.id : null,
+};
+```
+
+Do NOT set assigned_to when the owner is in `viewingAs` mode — that mode is
+read-only and ContactModal should not even be reachable there.
+
+### 2b. src/context/CustomerContext.js — any other create path
+
+Search the file for `.insert(` on the `customers` table (there may be an
+`addCustomer` / `createCustomer` helper, and possibly a walk-in or quick-add
+path). Apply the same `assigned_to` rule to every one of them.
+
+Also search the whole codebase for other customer inserts:
+
+```bash
+grep -rn "from('customers')" src/ | grep -i insert
+```
+
+Fix each hit the same way.
+
+### 2c. Any other insert path that needs it
+
+Check these files for customer creation and apply the same rule if found:
+- src/components/modals/QuickSaleModal.js  (walk-in creation)
+- src/hooks/useChatActions.js
+- src/components/tabs/CustomersTab.js
+
+---
+
+## BUG 3 — "Open chat" on a newly saved client shows nothing
+
+Symptom: salesperson saves a client, taps open chat, the chat view is empty.
+
+Cause: two things, both downstream of Bug 2.
+1. The new customer has `assigned_to = null`, so after the refetch it is
+   filtered OUT of the salesperson's `customers` array. The chat view looks the
+   customer up by id in that array, finds nothing, and renders blank.
+2. Even with 2a fixed, the local state may not include the new row before the
+   navigation happens.
+
+### 3a. Return the inserted row and add it to local state
+
+In whichever function does the insert (ContactModal.js and/or
+CustomerContext), use `.select().single()` so the created row comes back, then
+push it into the customers array immediately:
+
+```js
+const { data, error } = await supabase
+  .from('customers')
+  .insert(payload)
+  .select()
+  .single();
+
+if (error) throw error;
+
+// optimistic — the row is already correctly scoped because
+// assigned_to was set at insert time
+setCustomers(prev => [data, ...prev]);
+
+return data;   // the caller needs the id to open the chat
+```
+
+Make sure `assigned_to` is in the `.select()` field list wherever customers are
+selected (including the main fetch query) — otherwise the filter logic
+downstream has nothing to compare against.
+
+### 3b. Navigate using the returned row, not a stale lookup
+
+Find where "open chat" happens after saving. It probably does something like
+`setSelectedCustomer(someId)` and then the chat view looks the id up in the
+customers array.
+
+Change it to pass the returned customer object directly:
+
+```js
+const created = await addCustomer(payload);
+if (created) {
+  setSelectedCustomer(created);   // the full object, not just an id
+  setActiveTab('customers');
+}
+```
+
+If `selectedCustomer` is stored as an id elsewhere in the codebase, keep that
+shape but make sure the array update in 3a has already run before navigating
+(await it).
+
+### 3c. Defensive guard in ChatDetailView
+
+Read src/components/chat/ChatDetailView.js. If the customer lookup returns
+undefined, it currently renders blank. Add an explicit fallback so this failure
+mode is visible rather than silent:
+
+```js
+if (!customer) {
+  return (
+    <div style={{
+      padding: 32, textAlign: 'center',
+      color: '#7880A3', fontSize: 13,
+    }}>
+      Client not found. Go back and try again.
+    </div>
+  );
+}
+```
+
+---
+
+## SQL — fix the clients already created wrong
+
+Run this in the Supabase SQL Editor AFTER deploying, to check for orphans:
+
+```sql
+-- see unassigned clients created recently
+SELECT id, name, number, created_at, assigned_to
+FROM customers
+WHERE assigned_to IS NULL
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+Then assign the ones that belong to a salesperson (replace both UUIDs):
+
+```sql
+UPDATE customers
+SET assigned_to = '<salesperson-profile-uuid>'
+WHERE id IN ('<customer-uuid-1>', '<customer-uuid-2>');
+```
+
+Get the salesperson UUID with:
+
+```sql
+SELECT id, name, role FROM profiles;
+```
+
+---
+
+## BUILD AND PUSH
 
 ```bash
 npm run build
 ```
 
-Fix every ESLint error and warning that appears. Common ones:
-- Unused imports
-- Missing dependencies in useEffect hooks
-- useProfile() called outside provider (ensure all components are children of ProfileProvider in App.js)
-
-Once build succeeds with no errors:
+Fix all ESLint errors. Watch for:
+- `useMemo` / `useEffect` dependency array warnings in HomeTab
+- unused `isOwner` imports after the changes
+- `visibleIds.join(',')` in a dep array will warn — either accept it or wrap
+  the ids in a useMemo and depend on that
 
 ```bash
-git add src/supabase.js \
-  src/context/ProfileContext.js \
-  src/context/AuthContext.js \
-  src/context/CustomerContext.js \
-  src/App.js \
-  src/components/layout/BottomNav.js \
-  src/components/layout/SideDrawer.js \
-  src/components/layout/DesktopSidebar.js \
-  src/components/stock/DevicesView.js \
-  src/components/tabs/StockListMode.js \
-  src/components/stock/LotsView.js \
-  src/components/chat/ChatHeader.js \
-  src/components/tabs/CustomersTab.js \
-  src/components/tabs/SettingsTab.js \
-  src/utils/whatsapp.js
-
-git commit -m "feat: salesperson role — assigned clients, restricted tabs, team management"
+git add -A
+git commit -m "fix: salesperson data scoping — profile load race, assigned_to on create, chat navigation"
 git push
 ```
 
 ---
 
-## NOTES
+## TEST AFTER DEPLOY
 
-- `assigned_to = null` means unassigned — only Faisal (owner) sees unassigned clients
-- All existing customers start as null/unassigned — they stay visible only to Faisal until manually assigned
-- Faisal's profile MUST be inserted into the profiles table via SQL before deploying (Step A above) — otherwise he will see the "Account not configured" error on login
-- The REACT_APP_SUPABASE_SERVICE_KEY env var MUST be added to Vercel before the Team → Add Person feature will work
-- If any file listed above does not import useProfile yet, add the import at the top — do not skip files
+1. Log in as the salesperson on a fresh browser / private window
+2. Home tab should show a spinner then THEIR follow-ups — never the owner's
+3. Add a new client as the salesperson
+4. The client appears immediately in their Clients list
+5. Tap open chat — the chat view loads with the client's name in the header
+6. Log in as owner — the same client shows, with the salesperson in the
+   assignment dropdown

@@ -66,7 +66,9 @@ const CustomerContext = createContext(null);
 export function CustomerProvider({ children }) {
   const { isSalesperson, currentProfile, profileLoading, viewingAs, isViewingAs } = useProfile();
   const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // Starts true — until the profile resolves we do not know whose data to load,
+  // and consumers must show a spinner rather than an empty/unscoped list.
+  const [loading, setLoading] = useState(true);
   const [lastActivityMap, setLastActivityMap] = useState({});
   const [pendingFollowUpMap, setPendingFollowUpMap] = useState({});
   const [activeCustomerId, setActiveCustomerId] = useState(null);
@@ -89,8 +91,18 @@ export function CustomerProvider({ children }) {
   const [showLossReason, setShowLossReason] = useState(false);
 
   const loadCustomers = useCallback(async () => {
-    // Don't fetch until we know the role — avoids salesperson briefly seeing all customers
+    // Do not fetch until we know who the user is — otherwise the assigned_to
+    // filter is missing and the query returns the owner's data to everyone.
     if (profileLoading) return;
+    if (!currentProfile?.id) {
+      // Signed out, or the profile failed to load — drop whatever the previous
+      // account left behind so it cannot show up under the next one.
+      setCustomers([]);
+      setLastActivityMap({});
+      setPendingFollowUpMap({});
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     let query = supabase
