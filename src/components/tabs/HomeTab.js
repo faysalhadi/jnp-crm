@@ -8,6 +8,7 @@ import { useCustomers } from "../../context/CustomerContext";
 import { useStock } from "../../context/StockContext";
 import { useSales } from "../../context/SalesContext";
 import { useParts } from "../../context/PartsContext";
+import { useProfile } from "../../context/ProfileContext";
 import MorningBrief from "./MorningBrief";
 
 export default function HomeTab({ tasks, sourcingAlerts }) {
@@ -18,6 +19,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     setFilter, setSearch,
     openDeals, closedDeals, revenue,
   } = useCustomers();
+  const { isSalesperson } = useProfile();
 
   const [todayFollowUps, setTodayFollowUps] = useState([]);
   const [tomorrowFollowUps, setTomorrowFollowUps] = useState([]);
@@ -172,13 +174,24 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
     endOfTomorrow.setHours(23, 59, 59, 999);
 
-    const { data } = await supabase
+    let query = supabase
       .from("follow_ups")
       .select("*, customers(id, name, number)")
       .eq("status", "pending")
       .lte("due_at", endOfTomorrow.toISOString())
       .order("due_at", { ascending: true });
 
+    // Salesperson: only load follow-ups for their assigned clients
+    if (isSalesperson && customers.length > 0) {
+      const ids = customers.map(c => c.id);
+      query = query.in("customer_id", ids);
+    } else if (isSalesperson && customers.length === 0) {
+      setTodayFollowUps([]);
+      setTomorrowFollowUps([]);
+      return;
+    }
+
+    const { data } = await query;
     const all = data || [];
     setTodayFollowUps(all.filter(fu => new Date(fu.due_at) <= endOfToday));
     setTomorrowFollowUps(all.filter(fu => new Date(fu.due_at) > endOfToday));

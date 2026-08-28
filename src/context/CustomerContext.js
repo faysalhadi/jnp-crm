@@ -89,6 +89,9 @@ export function CustomerProvider({ children }) {
   const [showLossReason, setShowLossReason] = useState(false);
 
   const loadCustomers = useCallback(async () => {
+    // Don't fetch until we know the role — avoids salesperson briefly seeing all customers
+    if (profileLoading) return;
+
     setLoading(true);
     let query = supabase
       .from("customers")
@@ -127,7 +130,7 @@ export function CustomerProvider({ children }) {
     const fuMap = {};
     (followUps || []).forEach(fu => { if (!fuMap[fu.customer_id]) fuMap[fu.customer_id] = fu; });
     setPendingFollowUpMap(fuMap);
-  }, [isSalesperson, currentProfile?.id]); // eslint-disable-line
+  }, [isSalesperson, currentProfile?.id, profileLoading]); // eslint-disable-line
 
   // Re-fetch when profile finishes loading to apply correct role-based filter
   useEffect(() => {
@@ -170,6 +173,8 @@ export function CustomerProvider({ children }) {
         notes: newCustomer.notes.trim(),
         tier: "cold",
         urgent: false,
+        // Auto-assign to salesperson so owner can see it under their profile
+        assigned_to: isSalesperson && currentProfile?.id ? currentProfile.id : null,
       })
       .select()
       .single();
