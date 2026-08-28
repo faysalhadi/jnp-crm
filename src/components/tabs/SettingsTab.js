@@ -4,6 +4,7 @@ import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useProfile } from "../../context/ProfileContext";
 import { saveAnthropicKey } from "../../utils/helpers";
+import SalespersonDetailView from "./SalespersonDetailView";
 
 export default function SettingsTab({ exportData, handleLogoutWithUI }) {
   const { anthropicKey, setAnthropicKey, keyInput, setKeyInput, session } = useAuth();
@@ -11,11 +12,12 @@ export default function SettingsTab({ exportData, handleLogoutWithUI }) {
   const { setView } = useCustomers();
   const { isOwner, profiles, createSalesperson, deleteSalesperson } = useProfile();
 
-  const [showAddForm, setShowAddForm]   = useState(false);
-  const [formData, setFormData]         = useState({ name: "", email: "", password: "", whatsapp_number: "" });
-  const [formError, setFormError]       = useState("");
-  const [formLoading, setFormLoading]   = useState(false);
-  const [deletingId, setDeletingId]     = useState(null);
+  const [showAddForm, setShowAddForm]       = useState(false);
+  const [formData, setFormData]             = useState({ name: "", email: "", password: "", whatsapp_number: "" });
+  const [formError, setFormError]           = useState("");
+  const [formLoading, setFormLoading]       = useState(false);
+  const [deletingId, setDeletingId]         = useState(null);
+  const [selectedSalesperson, setSelectedSalesperson] = useState(null);
 
   async function handleCreate() {
     setFormError("");
@@ -41,6 +43,12 @@ export default function SettingsTab({ exportData, handleLogoutWithUI }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", padding: 20 }}>
+      {selectedSalesperson && (
+        <SalespersonDetailView
+          salesperson={selectedSalesperson}
+          onClose={() => setSelectedSalesperson(null)}
+        />
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
         <button onClick={() => setView("list")} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.08)", cursor: "pointer", fontSize: 18 }}>←</button>
         <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>Settings</span>
@@ -91,7 +99,8 @@ export default function SettingsTab({ exportData, handleLogoutWithUI }) {
             )}
 
             {salespersons.map(sp => (
-              <div key={sp.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #F1F5F9" }}>
+              <div key={sp.id} onClick={() => setSelectedSalesperson(sp)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #F1F5F9", cursor: "pointer" }}>
                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
                   {(sp.name || "?")[0].toUpperCase()}
                 </div>
@@ -99,7 +108,12 @@ export default function SettingsTab({ exportData, handleLogoutWithUI }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{sp.name}</div>
                   <div style={{ fontSize: 11, color: "#94A3B8" }}>{sp.email || ""}{sp.whatsapp_number ? ` · ${sp.whatsapp_number}` : ""}</div>
                 </div>
-                <button onClick={() => handleDelete(sp.id)} disabled={deletingId === sp.id}
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (window.confirm(`Remove ${sp.name}? This deletes their account.`)) handleDelete(sp.id);
+                  }}
+                  disabled={deletingId === sp.id}
                   style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
                   {deletingId === sp.id ? "..." : "Remove"}
                 </button>
