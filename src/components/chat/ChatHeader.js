@@ -304,14 +304,22 @@ export default function ChatHeader() {
                 {activeCustomer.number ? `📱 ${activeCustomer.number}` : '+ Add number'}
               </span>
             )}
-            {activeCustomer.number && !editingNumber && (
-              <a href={`https://wa.me/${activeCustomer.number.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
-                style={{ fontSize: 11, color: "#25D366", fontWeight: 700, textDecoration: "none" }}>WA</a>
-            )}
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 5 }}>
+          {/* WhatsApp is where the conversation actually lives now that the
+              in-app thread is gone, so give it a real button. Hidden in
+              read-only view-as mode. */}
+          {!isViewingAs && activeCustomer.number && (
+            <a href={`https://wa.me/${formatWhatsAppNumber(activeCustomer.number)}`}
+              target="_blank" rel="noreferrer" title="Open WhatsApp chat"
+              style={{ height: 30, borderRadius: 8, border: "none", background: "#25D366", color: "#fff",
+                       fontSize: 12, fontWeight: 700, textDecoration: "none", padding: "0 10px",
+                       display: "flex", alignItems: "center", gap: 4 }}>
+              💬 WhatsApp
+            </a>
+          )}
           <button onClick={() => setShowAddDeal(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#6366F1" }}>+</button>
           <button onClick={() => setShowSideDrawer(true)}

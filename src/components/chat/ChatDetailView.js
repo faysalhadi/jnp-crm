@@ -56,8 +56,8 @@ export default function ChatDetailView() {
 
   return (
     <div style={isMobile
-      ? { minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }
-      : { minHeight: "100vh", background: "#F8FAFC", display: "flex" }}>
+      ? { height: "100vh", overflow: "hidden", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column" }
+      : { height: "100vh", overflow: "hidden", background: "#F8FAFC", display: "flex" }}>
       {/* Desktop sidebar in detail view */}
       {!isMobile && (
         <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRight: "1px solid #F1F5F9", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 40 }}>
@@ -96,16 +96,27 @@ export default function ChatDetailView() {
         </div>
       )}
       {/* detail content */}
-      <div style={isMobile ? { flex: 1, display: "flex", flexDirection: "column" } : { marginLeft: 280, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", maxWidth: "calc(100vw - 280px)" }}>
-        <ChatHeader />
-        {activeCustomer?.contact_type === "supplier" ? <SupplierNotesView /> : (
-          <>
-            {activeCustomer?.contact_type === "trader" && activeCustomer?.name && (
-              <TraderProfilePanel traderName={activeCustomer.name} />
-            )}
-            <NotesActivityView />
-          </>
-        )}
+      <div style={isMobile
+        ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
+        : { marginLeft: 280, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", height: "100vh", maxWidth: "calc(100vw - 280px)" }}>
+        {/* Header stays pinned. It can grow tall (stage bar, deal tabs, expanding
+            panels), so it scrolls within its own capped area rather than pushing
+            the activity feed off screen. */}
+        <div style={{ flexShrink: 0, maxHeight: "70%", overflowY: "auto" }}>
+          <ChatHeader />
+        </div>
+        {/* Notes & Activity is the body of the client view now that the message
+            thread is gone — it takes the remaining height and scrolls itself. */}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {activeCustomer?.contact_type === "supplier" ? <SupplierNotesView /> : (
+            <>
+              {activeCustomer?.contact_type === "trader" && activeCustomer?.name && (
+                <TraderProfilePanel traderName={activeCustomer.name} />
+              )}
+              <NotesActivityView />
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── LINK STOCK MODAL (inside detail view so it renders when chat is open) ── */}

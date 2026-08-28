@@ -632,7 +632,8 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
         {activityLog.length === 0 && (
           <div style={{ textAlign: "center", color: "#CBD5E1", fontSize: 13, marginTop: 48, lineHeight: 1.8 }}>
-            No notes yet.<br />Add your first note above.
+            No activity yet.
+            {!isViewingAs && <><br />Log a call or add a note to start.</>}
           </div>
         )}
 
