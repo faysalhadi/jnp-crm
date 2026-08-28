@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { scoreMatch } from "../../constants";
-
-const WHATSAPP = "+971509423162";
+import { useProfile } from "../../context/ProfileContext";
 
 function fmtAED(price, currency) {
   if (!price) return "—";
@@ -27,6 +26,7 @@ function budgetOk(budget, price, currency, tolerance = 1.15) {
 }
 
 export default function TraderMatchesPanel() {
+  const { myWhatsApp } = useProfile();
   const [loading, setLoading]       = useState(true);
   const [sellMatches, setSellMatches] = useState([]); // your stock → trader buying
   const [sourceMatches, setSourceMatches] = useState([]); // trader selling → client waiting

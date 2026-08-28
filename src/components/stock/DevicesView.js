@@ -2,6 +2,7 @@ import React from "react";
 import WaitingClientsPanel from "./WaitingClientsPanel";
 import { supabase } from "../../supabase";
 import { useStock } from "../../context/StockContext";
+import { useProfile } from "../../context/ProfileContext";
 import { useReservations } from "../../context/ReservationsContext";
 import { useSales } from "../../context/SalesContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -57,6 +58,7 @@ export default function DevicesView({
     loadCustomers,
   } = useCustomers();
   const { showToast } = useUI();
+  const { isOwner } = useProfile();
   const { partsSold, partsSoldLoading } = useParts();
   const {
     showEditReservation, setShowEditReservation,
@@ -181,7 +183,7 @@ export default function DevicesView({
                 · Revenue AED {totalRev.toLocaleString()}
               </span>
             )}
-            {avgProfit !== 0 && (
+            {isOwner && avgProfit !== 0 && (
               <span style={{ fontSize: 12, fontWeight: 700, color: avgProfit >= 0 ? "#10B981" : "#EF4444" }}>
                 · Avg profit AED {avgProfit.toLocaleString()}
               </span>
@@ -310,8 +312,8 @@ export default function DevicesView({
               {/* Prices */}
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
                 {item.max_price && <span style={{ fontSize: 14, fontWeight: 800, color: "#6366F1" }}>AED {Number(item.max_price).toLocaleString()}</span>}
-                {item.min_price && <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, alignSelf: "center" }}>min AED {Number(item.min_price).toLocaleString()}</span>}
-                {item.cost_price && <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, alignSelf: "center" }}>cost AED {Number(item.cost_price).toLocaleString()}</span>}
+                {isOwner && item.min_price && <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, alignSelf: "center" }}>min AED {Number(item.min_price).toLocaleString()}</span>}
+                {isOwner && item.cost_price && <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, alignSelf: "center" }}>cost AED {Number(item.cost_price).toLocaleString()}</span>}
               </div>
 
               {/* Badges */}
@@ -344,8 +346,8 @@ export default function DevicesView({
                 { label: "SOLD TO",    value: soldToName,                                         bold: false },
                 soldDateStr && { label: "SOLD DATE",  value: soldDateStr,                         bold: false },
                 soldPrice   && { label: "SOLD PRICE", value: `AED ${soldPrice.toLocaleString()}`, bold: true,  color: "#6366F1" },
-                costPrice   && { label: "COST",       value: `AED ${costPrice.toLocaleString()}`, bold: false },
-                (soldPrice && costPrice) && { label: "PROFIT", value: `AED ${profit.toLocaleString()} (${marginPct}%)`, bold: true, color: profit >= 0 ? "#10B981" : "#EF4444" },
+                isOwner && costPrice   && { label: "COST",       value: `AED ${costPrice.toLocaleString()}`, bold: false },
+                isOwner && (soldPrice && costPrice) && { label: "PROFIT", value: `AED ${profit.toLocaleString()} (${marginPct}%)`, bold: true, color: profit >= 0 ? "#10B981" : "#EF4444" },
               ].filter(Boolean);
               return (
                 <div style={{ borderTop: "1px solid #F1F5F9", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6, background: "#FAFBFF" }}>

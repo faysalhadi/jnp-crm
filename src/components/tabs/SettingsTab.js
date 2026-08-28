@@ -1,13 +1,43 @@
-import React from "react";
+import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
+import { useProfile } from "../../context/ProfileContext";
 import { saveAnthropicKey } from "../../utils/helpers";
 
 export default function SettingsTab({ exportData, handleLogoutWithUI }) {
   const { anthropicKey, setAnthropicKey, keyInput, setKeyInput, session } = useAuth();
   const { isMobile } = useUI(); // eslint-disable-line
   const { setView } = useCustomers();
+  const { isOwner, profiles, createSalesperson, deleteSalesperson } = useProfile();
+
+  const [showAddForm, setShowAddForm]   = useState(false);
+  const [formData, setFormData]         = useState({ name: "", email: "", password: "", whatsapp_number: "" });
+  const [formError, setFormError]       = useState("");
+  const [formLoading, setFormLoading]   = useState(false);
+  const [deletingId, setDeletingId]     = useState(null);
+
+  async function handleCreate() {
+    setFormError("");
+    if (!formData.name || !formData.email || !formData.password) {
+      setFormError("Name, email and password are required.");
+      return;
+    }
+    setFormLoading(true);
+    const err = await createSalesperson(formData);
+    setFormLoading(false);
+    if (err) { setFormError(err); return; }
+    setFormData({ name: "", email: "", password: "", whatsapp_number: "" });
+    setShowAddForm(false);
+  }
+
+  async function handleDelete(id) {
+    setDeletingId(id);
+    await deleteSalesperson(id);
+    setDeletingId(null);
+  }
+
+  const salespersons = (profiles || []).filter(p => p.role === "salesperson");
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", padding: 20 }}>
@@ -17,6 +47,66 @@ export default function SettingsTab({ exportData, handleLogoutWithUI }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+        {/* Team — owner only */}
+        {isOwner && (
+          <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5 }}>👥 TEAM</div>
+              <button onClick={() => { setShowAddForm(v => !v); setFormError(""); }}
+                style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#EEF2FF", color: "#6366F1", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                {showAddForm ? "Cancel" : "+ Add Person"}
+              </button>
+            </div>
+
+            {showAddForm && (
+              <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 14, marginBottom: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { key: "name", label: "Full name", placeholder: "e.g. Ahmad" },
+                  { key: "email", label: "Email", placeholder: "ahmad@example.com", type: "email" },
+                  { key: "password", label: "Password", placeholder: "Min 6 characters", type: "password" },
+                  { key: "whatsapp_number", label: "WhatsApp (optional)", placeholder: "+971..." },
+                ].map(f => (
+                  <div key={f.key}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 3, letterSpacing: 0.5 }}>{f.label.toUpperCase()}</div>
+                    <input
+                      type={f.type || "text"}
+                      value={formData[f.key]}
+                      onChange={e => setFormData(p => ({ ...p, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+                    />
+                  </div>
+                ))}
+                {formError && <div style={{ fontSize: 12, color: "#EF4444", fontWeight: 600 }}>{formError}</div>}
+                <button onClick={handleCreate} disabled={formLoading}
+                  style={{ padding: "9px 0", borderRadius: 10, border: "none", background: formLoading ? "#E2E8F0" : "#10B981", color: formLoading ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                  {formLoading ? "Creating..." : "Create Salesperson"}
+                </button>
+              </div>
+            )}
+
+            {salespersons.length === 0 && !showAddForm && (
+              <div style={{ fontSize: 13, color: "#94A3B8", textAlign: "center", padding: "10px 0" }}>No salespeople yet</div>
+            )}
+
+            {salespersons.map(sp => (
+              <div key={sp.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #F1F5F9" }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#6366F1" }}>
+                  {(sp.name || "?")[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{sp.name}</div>
+                  <div style={{ fontSize: 11, color: "#94A3B8" }}>{sp.email || ""}{sp.whatsapp_number ? ` · ${sp.whatsapp_number}` : ""}</div>
+                </div>
+                <button onClick={() => handleDelete(sp.id)} disabled={deletingId === sp.id}
+                  style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+                  {deletingId === sp.id ? "..." : "Remove"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* API Key */}
         <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>

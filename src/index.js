@@ -13,12 +13,14 @@ import { ChatProvider } from './context/ChatContext';
 import { ImportProvider } from './context/ImportContext';
 import { AskClaudeProvider } from './context/AskClaudeContext';
 import { BroadcastProvider } from './context/BroadcastContext';
+import { ProfileProvider } from './context/ProfileContext';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <AuthProvider>
+      <ProfileProvider>
       <UIProvider>
         <BroadcastProvider>
         <SalesProvider>
@@ -42,6 +44,7 @@ root.render(
         </SalesProvider>
         </BroadcastProvider>
       </UIProvider>
+      </ProfileProvider>
     </AuthProvider>
   </React.StrictMode>
 );

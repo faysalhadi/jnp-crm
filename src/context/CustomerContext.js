@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { supabase } from "../supabase";
 import { daysSince, monthRevenue } from "../utils/helpers";
+import { useProfile } from "./ProfileContext";
 
 
 // ── Client health calculation ─────────────────────────────────────────────────
@@ -63,6 +64,7 @@ export function getQueuePriority(customer, pendingFollowUpMap, stockMatchSet) {
 const CustomerContext = createContext(null);
 
 export function CustomerProvider({ children }) {
+  const { isSalesperson, currentProfile, profileLoading } = useProfile();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastActivityMap, setLastActivityMap] = useState({});
@@ -88,10 +90,16 @@ export function CustomerProvider({ children }) {
 
   const loadCustomers = useCallback(async () => {
     setLoading(true);
-    const { data: custs } = await supabase
+    let query = supabase
       .from("customers")
       .select("*, deals(*)")
       .order("last_active", { ascending: false });
+
+    if (isSalesperson && currentProfile?.id) {
+      query = query.eq('assigned_to', currentProfile.id);
+    }
+
+    const { data: custs } = await query;
     // Only update if we got data — never wipe existing customers during reload
     if (custs) setCustomers(custs);
     setLoading(false);
@@ -119,7 +127,12 @@ export function CustomerProvider({ children }) {
     const fuMap = {};
     (followUps || []).forEach(fu => { if (!fuMap[fu.customer_id]) fuMap[fu.customer_id] = fu; });
     setPendingFollowUpMap(fuMap);
-  }, []);
+  }, [isSalesperson, currentProfile?.id]); // eslint-disable-line
+
+  // Re-fetch when profile finishes loading to apply correct role-based filter
+  useEffect(() => {
+    if (!profileLoading) loadCustomers();
+  }, [profileLoading, loadCustomers]); // eslint-disable-line
 
   const activeCustomer = customers.find(c => c.id === activeCustomerId);
   const activeDeal = activeCustomer?.deals?.find(d => d.id === activeDealId);

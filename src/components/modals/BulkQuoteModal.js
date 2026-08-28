@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useStock } from "../../context/StockContext";
 import { useCustomers } from "../../context/CustomerContext";
+import { useProfile } from "../../context/ProfileContext";
 
 // Checks if a stock item matches generation requirement
 function matchesSpec(item, specText) {
@@ -52,6 +53,7 @@ function fmtAED(n) { return "AED " + Number(Math.round(n)).toLocaleString(); }
 export default function BulkQuoteModal({ onClose }) {
   const { stock } = useStock();
   const { activeCustomer } = useCustomers();
+  const { myWhatsApp } = useProfile();
 
   const [qty, setQty]             = useState("");
   const [spec, setSpec]           = useState("");
@@ -104,7 +106,7 @@ Per device:  ${fmtAED(perDevice)}
 Total (${useDevices.length} units):  *${fmtAED(clientTotal)}*
 
 📍 Sharjah, UAE
-📱 +971509423162`;
+📱 ${myWhatsApp}`;
   }
 
   function copyQuote() {

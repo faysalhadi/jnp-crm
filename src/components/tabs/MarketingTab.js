@@ -5,11 +5,9 @@ import { useAuth } from "../../context/AuthContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useSales } from "../../context/SalesContext";
 import { useMarketingSettings } from "../../hooks/useMarketingSettings";
+import { useProfile } from "../../context/ProfileContext";
 import GroupsTab from "./GroupsTab";
 import FacebookPostingTab from "./FacebookPostingTab";
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-const WHATSAPP_NUMBER = "+971509423162";
 const CHANNEL_LINK    = "https://whatsapp.com/channel/0029Vb818z5GufIwfVtYoB0z";
 const CHANNEL_NAME    = "Vertex Tech Trading | Wholesale Deals";
 const FB_PAGE_LINK    = "https://www.facebook.com/share/1C3UKfNAfs/";
@@ -258,6 +256,8 @@ export default function MarketingTab({ stock }) {
   const { anthropicKey } = useAuth();
   const { customers } = useCustomers();
   const { salesHistory } = useSales();
+  const { myWhatsApp } = useProfile();
+  const WHATSAPP_NUMBER = myWhatsApp;
 
   const today    = new Date();
   const todayKey = today.toISOString().split("T")[0];

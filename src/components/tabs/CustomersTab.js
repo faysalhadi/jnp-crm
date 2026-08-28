@@ -9,6 +9,7 @@ import { getTag, customerStockMatch } from "../../constants";
 import { getReasonLine, getQuickMessage } from "../../utils/reasonLine";
 import { logWhatsAppContact } from "../../services/quickContactService";
 import ClientPreviewPanel from "./ClientPreviewPanel";
+import { useProfile } from "../../context/ProfileContext";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -74,6 +75,9 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
   const reason = getReasonLine(c, ctx);
 
   const { loadCustomers } = useCustomers();
+  const { isOwner, profiles } = useProfile();
+  const assignedSP = isOwner && c.assigned_to ? (profiles || []).find(p => p.id === c.assigned_to) : null;
+  const spInitials = assignedSP ? assignedSP.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() : null;
 
   const noNumber = !c.number;
 
@@ -102,6 +106,11 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
           </div>
           {isIncomplete && (
             <div style={{ position: "absolute", bottom: 0, right: 0, width: 10, height: 10, borderRadius: "50%", background: "#F97316", border: "2px solid #fff" }} />
+          )}
+          {spInitials && (
+            <div style={{ position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: "50%", background: "#10B981", border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 800, color: "#fff" }}>
+              {spInitials}
+            </div>
           )}
         </div>
 

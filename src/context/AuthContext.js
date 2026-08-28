@@ -67,6 +67,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       session, setSession,
+      user: session?.user || null,
       authLoading,
       authMode, setAuthMode,
       authEmail, setAuthEmail,

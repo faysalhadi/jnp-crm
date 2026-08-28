@@ -6,6 +6,7 @@ import ContactModalWrapper from "./components/modals/ContactModalWrapper";
 import { daysSince } from "./utils/helpers";
 
 import { useAuth } from "./context/AuthContext";
+import { useProfile } from "./context/ProfileContext";
 import { useCustomers } from "./context/CustomerContext";
 import { useStock } from "./context/StockContext";
 import { useUI } from "./context/UIContext";
@@ -112,6 +113,8 @@ export default function App() {
     anthropicKey,
     handleLogout,
   } = useAuth();
+
+  const { profileLoading, profileError, isOwner } = useProfile();
 
 
   // ── sourcing alerts for dashboard ──
@@ -222,7 +225,7 @@ export default function App() {
 
 
   // ── nav tabs ──
-  const NAV_TABS = [
+  const ALL_NAV_TABS = [
     { key: "home",      icon: "🏠", label: "Home" },
     { key: "customers", icon: "👥", label: "Clients" },
     { key: "stock",     icon: "📦", label: "Stock" },
@@ -230,6 +233,10 @@ export default function App() {
     { key: "traders",   icon: "🏪", label: "Traders" },
     { key: "ask",       icon: "🤖", label: "Ask Claude" },
   ];
+  const SALESPERSON_TABS = ["home", "customers", "stock"];
+  const NAV_TABS = isOwner
+    ? ALL_NAV_TABS
+    : ALL_NAV_TABS.filter(t => SALESPERSON_TABS.includes(t.key));
 
   // ── screens ──────────────────────────────────────────────────────────────────
 
@@ -242,6 +249,27 @@ export default function App() {
 
   // auth screen
   if (!session) return <AuthScreen />;
+
+  // profile loading
+  if (profileLoading) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F8FAFC" }}>
+      <Spinner />
+    </div>
+  );
+
+  // profile error screen
+  if (profileError) return (
+    <div style={{
+      height: "100vh", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", padding: 24,
+      background: "#0B0D18", color: "#E6E9F5", fontFamily: "Inter, sans-serif",
+      textAlign: "center", gap: 12
+    }}>
+      <div style={{ fontSize: 32 }}>🔒</div>
+      <div style={{ fontWeight: 600, fontSize: 16 }}>Account not configured</div>
+      <div style={{ color: "#7880A3", fontSize: 14 }}>{profileError}</div>
+    </div>
+  );
 
   // api key setup
   if (!anthropicKey) return <ApiKeySetup />;

@@ -13,9 +13,11 @@ import TagEditor, { TagPill } from "./TagEditor";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
+import { useProfile } from "../../context/ProfileContext";
 
 export default function ChatHeader() {
   const { setShowSideDrawer } = useUI();
+  const { isOwner, profiles, assignClient } = useProfile();
   const {
     activeCustomer,
     activeDeal,
@@ -419,6 +421,26 @@ export default function ChatHeader() {
           </>
         )}
       </div>
+
+      {/* ASSIGN TO SALESPERSON — owner only */}
+      {isOwner && (
+        <div style={{ padding: "0 14px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, flexShrink: 0 }}>Assigned to</span>
+          <select
+            value={activeCustomer.assigned_to || ""}
+            onChange={async e => {
+              const val = e.target.value || null;
+              await assignClient(activeCustomer.id, val);
+              await loadCustomers();
+            }}
+            style={{ flex: 1, padding: "5px 8px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, color: "#0F172A", background: "#F8FAFC", fontWeight: 600, outline: "none" }}>
+            <option value="">— Unassigned —</option>
+            {(profiles || []).filter(p => p.role === "salesperson").map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* SUPPLIER ACTIONS */}
       {activeCustomer.contact_type === "supplier" && (

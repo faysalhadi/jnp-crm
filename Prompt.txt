@@ -1,412 +1,640 @@
-Read these files first:
-- src/components/tabs/TradersTab.js
-- src/context/TradersContext.js
+# SALESPERSON FEATURE — Full Implementation
 
-Make these changes to support batch importing multiple WhatsApp group chat files at once with aggressive pre-filtering, gaming laptop support, and cross-group deduplication.
+Read every file listed before touching it. New files go in their own paths. After all code changes: `npm run build`, fix all ESLint errors, then `git add` the changed files and `git push`.
 
-═══════════════════════════════════════
-CHANGE 1: TradersTab.js — Multi-file upload UI
-═══════════════════════════════════════
+---
 
-In the Import modal, find the SOURCE GROUP section. Replace the entire import modal content with this new version that supports multiple file uploads:
+## BEFORE WRITING ANY CODE — Manual steps Faisal must do first
 
-The key UI changes:
-1. Replace the single group name input + textarea with a multi-file upload zone
-2. Auto-detect group name from filename
-3. Show per-file processing status
-4. Show combined preview with group labels
+### A. Supabase SQL Editor — run this migration
 
-Find the import modal div (starts with {showImportTrader && (...)})
+```sql
+-- 1. Create profiles table
+CREATE TABLE IF NOT EXISTS profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
+  name text NOT NULL,
+  role text NOT NULL DEFAULT 'salesperson' CHECK (role IN ('owner', 'salesperson')),
+  whatsapp_number text,
+  created_at timestamptz DEFAULT now()
+);
 
-Replace the modal content inside the white card div with:
+-- 2. Add assigned_to column to customers
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS assigned_to uuid REFERENCES profiles(id);
 
-<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-  <span style={{ fontWeight: 800, fontSize: 18, color: "#0F172A" }}>Import Group Chats</span>
-  <button onClick={() => { setShowImportTrader(false); setTraderImportPreview(null); setTraderImportResult(null); setTraderChatText(""); setBatchFiles([]); }}
-    style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
-</div>
+-- 3. Insert Faisal's owner profile
+-- Go to Supabase → Authentication → Users → find faisalhadi181@gmail.com → copy the UUID
+-- Then run:
+-- INSERT INTO profiles (id, name, role, whatsapp_number)
+-- VALUES ('PASTE-UUID-HERE', 'Faisal', 'owner', '+971509423162')
+-- ON CONFLICT (id) DO NOTHING;
+```
 
-{/* Multi-file upload zone */}
-<div
-  onClick={() => document.getElementById('batch-file-input').click()}
-  style={{ border: "2px dashed #E2E8F0", borderRadius: 12, padding: 20, textAlign: "center", background: "#F8FAFC", cursor: "pointer", marginBottom: 12 }}>
-  <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
-  <div style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>
-    {batchFiles.length > 0 ? `${batchFiles.length} file${batchFiles.length > 1 ? 's' : ''} selected` : 'Tap to select group chat files'}
-  </div>
-  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>Select multiple .txt or .zip files at once</div>
-  <input
-    id="batch-file-input"
-    type="file"
-    multiple
-    accept=".txt,.zip"
-    style={{ display: "none" }}
-    onChange={e => setBatchFiles(Array.from(e.target.files))}
-  />
-</div>
+### B. Vercel Environment Variable
 
-{/* File list with auto-detected names */}
-{batchFiles.length > 0 && (
-  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-    {batchFiles.map((f, i) => {
-      const groupName = detectGroupName(f.name);
-      return (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, background: "#F1F5F9" }}>
-          <span style={{ fontSize: 14 }}>📋</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{groupName}</div>
-            <div style={{ fontSize: 10, color: "#94A3B8" }}>{f.name}</div>
-          </div>
-          <button onClick={e => { e.stopPropagation(); setBatchFiles(prev => prev.filter((_, j) => j !== i)); }}
-            style={{ width: 20, height: 20, borderRadius: 4, border: "none", background: "#E2E8F0", cursor: "pointer", fontSize: 11 }}>✕</button>
-        </div>
-      );
-    })}
-  </div>
-)}
+In Vercel dashboard → Project → Settings → Environment Variables, add:
+- Name: `REACT_APP_SUPABASE_SERVICE_KEY`
+- Value: Supabase project's service role key (from Supabase → Project Settings → API → service_role secret)
 
-{/* Extract button */}
-{batchFiles.length > 0 && !traderImportPreview && (
-  <button
-    onClick={extractBatchListings}
-    disabled={traderImportLoading}
-    style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: traderImportLoading ? "#E2E8F0" : "#6366F1", color: traderImportLoading ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: traderImportLoading ? "not-allowed" : "pointer", marginBottom: 12 }}>
-    {traderImportLoading ? "⏳ Processing..." : `Extract from ${batchFiles.length} group${batchFiles.length > 1 ? 's' : ''}`}
-  </button>
-)}
+---
 
-{/* Status message */}
-{traderImportResult && !traderImportResult.success && (
-  <div style={{ padding: "10px 14px", borderRadius: 10, background: "#F8FAFC", fontSize: 12, color: "#475569", marginBottom: 12, whiteSpace: "pre-line" }}>
-    {traderImportResult.message}
-  </div>
-)}
+## STEP 1 — src/supabase.js
 
-{/* Preview */}
-{traderImportPreview && traderImportPreview.length > 0 && (
-  <div>
-    <div style={{ fontSize: 12, fontWeight: 700, color: "#10B981", marginBottom: 10 }}>
-      ✅ Found {traderImportPreview.length} listings across {batchFiles.length} groups
-    </div>
-    <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-      {traderImportPreview.slice(0, 20).map((l, i) => (
-        <div key={i} style={{ padding: "8px 12px", borderRadius: 8, background: l.type === "buying" ? "#EEF2FF" : "#F0FDF4", border: `1px solid ${l.type === "buying" ? "#C7D2FE" : "#BBF7D0"}` }}>
-          <div style={{ display: "flex", justify: "space-between", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: l.type === "buying" ? "#6366F1" : "#10B981" }}>
-              {l.type === "buying" ? "🔵 WTB" : "🟢 WTS"}
-            </span>
-            <span style={{ fontSize: 10, color: "#94A3B8" }}>{l.source_group}</span>
-          </div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#0F172A", marginTop: 2 }}>
-            {[l.brand, l.model, l.processor, l.ram, l.storage].filter(Boolean).join(" · ")}
-          </div>
-          <div style={{ fontSize: 11, color: "#64748B" }}>👤 {l.trader_name}</div>
-        </div>
-      ))}
-      {traderImportPreview.length > 20 && (
-        <div style={{ textAlign: "center", fontSize: 12, color: "#94A3B8", padding: 8 }}>
-          +{traderImportPreview.length - 20} more listings
-        </div>
-      )}
-    </div>
-    <button onClick={saveTraderListings} disabled={savingTraderListings}
-      style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: savingTraderListings ? "#E2E8F0" : "#10B981", color: savingTraderListings ? "#94A3B8" : "#fff", fontWeight: 800, fontSize: 14, cursor: savingTraderListings ? "not-allowed" : "pointer" }}>
-      {savingTraderListings ? "Saving..." : `Save ${traderImportPreview.length} listings`}
-    </button>
-  </div>
-)}
+Read the file first. Add a second admin client at the bottom:
 
-{traderImportResult?.success && (
-  <div style={{ textAlign: "center", padding: 20 }}>
-    <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
-    <div style={{ fontSize: 16, fontWeight: 800, color: "#10B981" }}>Saved {traderImportResult.count} listings</div>
-  </div>
-)}
+```js
+import { createClient } from '@supabase/supabase-js';
 
+// existing supabase client stays as-is
+export const supabase = createClient(
+  process.env.REACT_APP_SUPABASE_URL,
+  process.env.REACT_APP_SUPABASE_ANON_KEY
+);
 
-═══════════════════════════════════════
-CHANGE 2: TradersTab.js — Add state and helper functions
-═══════════════════════════════════════
+// Admin client — only used for creating auth users from Settings → Team
+export const adminSupabase = createClient(
+  process.env.REACT_APP_SUPABASE_URL,
+  process.env.REACT_APP_SUPABASE_SERVICE_KEY
+);
+```
 
-Add these imports at the top of TradersTab.js:
-import { useState } from "react";
+Make sure the existing export names are preserved exactly as they are. Only add the adminSupabase export.
 
-Add these state variables inside TradersTab component after existing destructuring:
-const [batchFiles, setBatchFiles] = useState([]);
+---
 
-Add this helper function inside TradersTab component:
+## STEP 2 — Create src/context/ProfileContext.js (new file)
 
-function detectGroupName(filename) {
-  // WhatsApp exports: "WhatsApp Chat with GroupName.txt" or "_chat.txt" inside zip
-  const cleaned = filename
-    .replace(/\.zip$|\.txt$/i, '')
-    .replace(/^WhatsApp.?Chat.?with.?/i, '')
-    .replace(/^WhatsApp.?Chat.?-?/i, '')
-    .replace(/_chat$/i, '')
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned || filename;
-}
+```js
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase, adminSupabase } from '../supabase';
+import { useAuth } from './AuthContext';
 
-Add this function inside TradersTab component:
+const ProfileContext = createContext();
 
-async function extractBatchListings() {
-  if (batchFiles.length === 0) return;
-  setTraderImportLoading(true);
-  setTraderImportResult(null);
-  setTraderImportPreview(null);
+export function ProfileProvider({ children }) {
+  const { user } = useAuth();
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [profiles, setProfiles] = useState([]); // all profiles — owner only
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState(null);
 
-  const allFiles = [];
+  useEffect(() => {
+    if (!user) {
+      setCurrentProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+    fetchCurrentProfile();
+  }, [user]);
 
-  // Read all files (handle both .txt and .zip)
-  for (const file of batchFiles) {
-    const groupName = detectGroupName(file.name);
-    let text = "";
+  async function fetchCurrentProfile() {
+    setProfileLoading(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
 
-    if (file.name.endsWith('.zip')) {
-      // Use JSZip to extract .txt from zip
-      try {
-        const JSZip = (await import('jszip')).default;
-        const zip = await JSZip.loadAsync(file);
-        const txtFile = Object.values(zip.files).find(f => f.name.endsWith('.txt'));
-        if (txtFile) {
-          text = await txtFile.async('string');
-        }
-      } catch {
-        // If JSZip not available, skip this file
-        setTraderImportResult({ success: false, message: `⚠️ Could not read ${file.name} — try exporting as .txt instead of .zip` });
-        continue;
-      }
-    } else {
-      text = await file.text();
+    if (error || !data) {
+      setProfileError('Account not set up. Contact Faisal to configure your profile.');
+      setProfileLoading(false);
+      return;
     }
 
-    if (text) {
-      allFiles.push({ groupName, text });
+    setCurrentProfile(data);
+    setProfileError(null);
+
+    if (data.role === 'owner') {
+      fetchAllProfiles();
     }
+    setProfileLoading(false);
   }
 
-  if (allFiles.length === 0) {
-    setTraderImportResult({ success: false, message: "No readable files found." });
-    setTraderImportLoading(false);
+  async function fetchAllProfiles() {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('name');
+    setProfiles(data || []);
+  }
+
+  // Create a salesperson account (owner only)
+  async function createSalesperson({ name, email, password, whatsapp_number }) {
+    // Create the auth user
+    const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (authError) throw new Error(authError.message);
+
+    // Insert their profile
+    const { error: profError } = await supabase.from('profiles').insert({
+      id: authData.user.id,
+      name,
+      role: 'salesperson',
+      whatsapp_number: whatsapp_number || null,
+    });
+    if (profError) {
+      // rollback: delete the auth user if profile insert fails
+      await adminSupabase.auth.admin.deleteUser(authData.user.id);
+      throw new Error(profError.message);
+    }
+
+    await fetchAllProfiles();
+  }
+
+  // Delete a salesperson (owner only) — removes profile and auth user
+  async function deleteSalesperson(profileId) {
+    await supabase.from('profiles').delete().eq('id', profileId);
+    await adminSupabase.auth.admin.deleteUser(profileId);
+    await fetchAllProfiles();
+  }
+
+  // Assign a customer to a salesperson (or null to unassign)
+  async function assignClient(customerId, profileId) {
+    const { error } = await supabase
+      .from('customers')
+      .update({ assigned_to: profileId })
+      .eq('id', customerId);
+    if (error) throw new Error(error.message);
+  }
+
+  const isOwner = currentProfile?.role === 'owner';
+  const isSalesperson = currentProfile?.role === 'salesperson';
+
+  // WhatsApp number for the current user — falls back to Faisal's if not set
+  const myWhatsApp = currentProfile?.whatsapp_number || '+971509423162';
+
+  return (
+    <ProfileContext.Provider value={{
+      currentProfile,
+      profiles,
+      profileLoading,
+      profileError,
+      isOwner,
+      isSalesperson,
+      myWhatsApp,
+      createSalesperson,
+      deleteSalesperson,
+      assignClient,
+      fetchAllProfiles,
+    }}>
+      {children}
+    </ProfileContext.Provider>
+  );
+}
+
+export const useProfile = () => useContext(ProfileContext);
+```
+
+---
+
+## STEP 3 — src/context/AuthContext.js
+
+Read the file first. The existing AuthContext manages Supabase auth state. No changes needed to AuthContext itself — ProfileContext reads from it. Just confirm that `useAuth` exports `user` (the Supabase auth user object). If it doesn't export `user`, expose it.
+
+---
+
+## STEP 4 — src/context/CustomerContext.js
+
+Read the file first. Find the main customers fetch (likely a `supabase.from('customers').select(...)` query).
+
+After the query is built but before `.order()` or `.execute()`, add role-based filtering:
+
+```js
+// Import useProfile at the top of CustomerContext
+import { useProfile } from './ProfileContext';
+
+// Inside CustomerProvider, get role info:
+const { isOwner, isSalesperson, currentProfile } = useProfile();
+
+// In the fetch function, before executing the query, add:
+if (isSalesperson && currentProfile?.id) {
+  query = query.eq('assigned_to', currentProfile.id);
+}
+```
+
+Important: ProfileContext must be above CustomerContext in the provider tree (see App.js step).
+
+Also add `assigned_to` to the select fields so it comes back from the query.
+
+---
+
+## STEP 5 — src/App.js
+
+Read the file first.
+
+### 5a. Import and wrap with ProfileProvider
+
+Add `import { ProfileProvider } from './context/ProfileContext';` at the top.
+
+In the provider tree, add `<ProfileProvider>` ABOVE `<CustomerProvider>` (ProfileContext must be ready before CustomerContext runs):
+
+```jsx
+<AuthProvider>
+  <ProfileProvider>
+    <CustomerProvider>
+      ... rest of providers ...
+    </CustomerProvider>
+  </ProfileProvider>
+</AuthProvider>
+```
+
+### 5b. Profile error screen
+
+After the auth loading check but before the main app renders, add a profile error check. Read the existing loading/auth guard pattern and follow it:
+
+```jsx
+import { useProfile } from './context/ProfileContext';
+
+// Inside main App component:
+const { profileLoading, profileError, isOwner, isSalesperson } = useProfile();
+
+if (profileLoading) return <LoadingSpinner />; // use existing spinner component
+
+if (profileError) return (
+  <div style={{
+    height: '100vh', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+    background: '#0B0D18', color: '#E6E9F5', fontFamily: 'Inter, sans-serif',
+    textAlign: 'center', gap: 12
+  }}>
+    <div style={{ fontSize: 32 }}>🔒</div>
+    <div style={{ fontWeight: 600, fontSize: 16 }}>Account not configured</div>
+    <div style={{ color: '#7880A3', fontSize: 14 }}>{profileError}</div>
+  </div>
+);
+```
+
+### 5c. Tab visibility for salesperson
+
+Find where tabs are defined or rendered. Salesperson ONLY gets: home, customers (clients), stock.
+
+Wherever the tab list or routes are defined, wrap the restricted ones:
+
+```jsx
+// Tabs to HIDE from salesperson: sourcing, traders, askClaude
+// Keep visible for salesperson: home, customers, stock
+// isOwner shows everything
+```
+
+Do not remove the tabs from the component tree — just don't render their nav items and redirect if they somehow reach the URL.
+
+---
+
+## STEP 6 — src/components/layout/BottomNav.js
+
+Read the file first. Find the tab definitions array (each tab has an id, icon, label).
+
+Import `useProfile`:
+```js
+import { useProfile } from '../../context/ProfileContext';
+const { isOwner } = useProfile();
+```
+
+Filter the tabs array so salesperson only sees home, customers, stock:
+```js
+const SALESPERSON_TABS = ['home', 'customers', 'stock'];
+const visibleTabs = tabs.filter(tab => isOwner || SALESPERSON_TABS.includes(tab.id));
+```
+
+Use `visibleTabs` for rendering instead of the full `tabs` array. Do not change the tab IDs — keep them exactly as they are.
+
+---
+
+## STEP 7 — src/components/layout/SideDrawer.js
+
+Read the file first. The drawer contains: Marketing, Parts DB, Sales History, Settings, Sign Out.
+
+Import `useProfile` and hide Marketing, Parts DB, Sales History from salesperson:
+
+```js
+import { useProfile } from '../../context/ProfileContext';
+const { isOwner } = useProfile();
+
+// Wrap these three items with: {isOwner && (...)}
+// - Marketing (📣)
+// - Parts DB (🔧)
+// - Sales History (💰)
+// Settings and Sign Out stay visible for everyone
+```
+
+---
+
+## STEP 8 — src/components/layout/DesktopSidebar.js
+
+Read the file first. Apply the same role-based tab visibility as BottomNav (Step 6) and the same drawer-item hiding as SideDrawer (Step 7). Follow whatever pattern the file uses for rendering nav items.
+
+---
+
+## STEP 9 — Hide cost fields from salesperson in Stock
+
+### src/components/stock/DevicesView.js
+
+Read the file. Find where `cost_price`, `min_price`, `allocated_lot_cost`, `refurb_cost` are rendered. Wrap each of those display elements with `{isOwner && (...)}`.
+
+Import at top:
+```js
+import { useProfile } from '../../context/ProfileContext';
+const { isOwner } = useProfile();
+```
+
+### src/components/tabs/StockListMode.js
+
+Read the file. Same as above — find and wrap cost fields with `{isOwner && (...)}`.
+
+### src/components/stock/LotsView.js
+
+Read the file. If it shows cost data (total_cost, allocated_lot_cost), wrap those fields with `{isOwner && (...)}`.
+
+---
+
+## STEP 10 — WhatsApp number — use profile number everywhere
+
+Search the codebase for all occurrences of the hardcoded number `+971509423162` and the WA link pattern `wa.me/971509423162` or similar.
+
+In each file where it appears:
+1. Import `useProfile` (or receive `myWhatsApp` as a prop if it's a non-hook context)
+2. Replace the hardcoded number with `myWhatsApp` from `useProfile()`
+
+The `myWhatsApp` value in ProfileContext already falls back to `+971509423162` if the profile has no number set, so Faisal's experience is unchanged.
+
+Also check `src/utils/whatsapp.js` — if it has a hardcoded number, update it to accept the number as a parameter instead of hardcoding it, and update all callers to pass `myWhatsApp`.
+
+---
+
+## STEP 11 — Client assignment UI in chat/profile header
+
+### src/components/chat/ChatHeader.js
+
+Read the file first. This is the header shown when viewing a client's chat/profile.
+
+Import:
+```js
+import { useProfile } from '../../context/ProfileContext';
+const { isOwner, profiles, assignClient, currentProfile } = useProfile();
+```
+
+Add an assignment row below the existing header content, visible only to owner:
+
+```jsx
+{isOwner && (
+  <div style={{
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '8px 16px', borderTop: '1px solid rgba(255,255,255,0.08)',
+    fontSize: 12, color: '#7880A3'
+  }}>
+    <span>Assigned to:</span>
+    <select
+      value={customer.assigned_to || ''}
+      onChange={async (e) => {
+        const val = e.target.value || null;
+        await assignClient(customer.id, val);
+        // trigger a refresh of the customer — call whatever refresh function is available
+      }}
+      style={{
+        background: 'transparent', border: '1px solid rgba(255,255,255,0.15)',
+        borderRadius: 6, color: '#E6E9F5', fontSize: 12, padding: '3px 8px',
+        cursor: 'pointer'
+      }}
+    >
+      <option value="">Unassigned</option>
+      {profiles
+        .filter(p => p.role === 'salesperson')
+        .map(p => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))
+      }
+    </select>
+  </div>
+)}
+```
+
+After `assignClient` succeeds, the customer needs to be refreshed. Look at how other mutation operations in ChatHeader or ChatDetailView trigger a customer refresh and follow the same pattern (e.g., calling a `loadCustomer` or `refreshCustomers` function from context).
+
+### Customer cards — show assigned salesperson badge
+
+In `src/components/tabs/CustomersTab.js`, read the file and find the customer card rendering.
+
+Import `useProfile` and `profiles`. On each card, if `customer.assigned_to` is set and `isOwner`, show a small initials badge:
+
+```jsx
+{isOwner && customer.assigned_to && (() => {
+  const sp = profiles.find(p => p.id === customer.assigned_to);
+  if (!sp) return null;
+  const initials = sp.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 20, height: 20, borderRadius: '50%',
+      background: '#112B1E', color: '#2EC97A',
+      fontSize: 9, fontWeight: 700, flexShrink: 0
+    }}>
+      {initials}
+    </span>
+  );
+})()}
+```
+
+Place it near the client name or alongside existing badge elements — wherever it fits visually without breaking the card layout.
+
+---
+
+## STEP 12 — Settings → Team section
+
+### src/components/tabs/SettingsTab.js
+
+Read the file first. Find where sections are rendered and add a "Team" section at the top of the page (before other settings), visible only to owner.
+
+```jsx
+import { useProfile } from '../../context/ProfileContext';
+
+const { isOwner, profiles, createSalesperson, deleteSalesperson } = useProfile();
+
+// State for the add form
+const [showAddForm, setShowAddForm] = useState(false);
+const [formData, setFormData] = useState({ name: '', email: '', password: '', whatsapp_number: '' });
+const [formError, setFormError] = useState('');
+const [formLoading, setFormLoading] = useState(false);
+
+async function handleCreate(e) {
+  e.preventDefault();
+  if (!formData.name || !formData.email || !formData.password) {
+    setFormError('Name, email and password are required');
     return;
   }
-
-  // Process all files through extractTraderListings with batch support
-  setTraderImportResult({ success: false, message: `Processing ${allFiles.length} group${allFiles.length > 1 ? 's' : ''}...` });
-  await extractBatchFiles(allFiles);
-  setTraderImportLoading(false);
-}
-
-
-═══════════════════════════════════════
-CHANGE 3: TradersContext.js — Add extractBatchFiles function
-═══════════════════════════════════════
-
-Add this new function inside TradersProvider, after the existing extractTraderListings function:
-
-async function extractBatchFiles(files) {
-  // files = [{groupName, text}]
-  const allListings = [];
-
-  for (let fileIdx = 0; fileIdx < files.length; fileIdx++) {
-    const { groupName, text } = files[fileIdx];
-    setTraderImportResult({ success: false, message: `⏳ Processing group ${fileIdx + 1}/${files.length}: ${groupName}` });
-
-    // Clean text
-    const cleanedText = cleanText(text);
-    const lineRegex = /^\[(\d{1,2}\/\d{1,2}\/\d{4}),\s*([\d:]+\s*(?:AM|PM|am|pm))\]/;
-    const rawLines = cleanedText.split('\n');
-    const mergedLines = [];
-    for (const line of rawLines) {
-      if (lineRegex.test(line.trim())) {
-        mergedLines.push(line);
-      } else if (line.trim() && mergedLines.length > 0) {
-        mergedLines[mergedLines.length - 1] += ' | ' + line.trim();
-      }
-    }
-
-    // AGGRESSIVE pre-filter
-    const skipContent = [
-      'end-to-end encrypted', 'added you', 'created this group', 'omitted',
-      'sticker', 'document omitted', 'changed their phone', 'changed this group',
-      'disappearing messages', 'waiting for this message', 'you were added',
-      'missed voice call', 'missed video call', 'added ~', 'added +',
-      'left', 'removed', 'joined using', 'security code changed',
-      'changed the subject', 'pinned a message', 'turned on', 'turned off',
-      'no longer', 'new number', 'tap to message', 'image omitted',
-      'video omitted', 'audio omitted', 'gif omitted', 'contact card omitted',
-      'location omitted', 'this message was deleted', 'null',
-    ];
-    const skipSenders = ['JNP', 'JNP Laptop Market', 'JNP With'];
-    const sellSignals = ['wts', 'want to sale', 'want to sell', 'available',
-      'shipment', 'w.t.sal', 'for sale', 'selling', 'i want to sale',
-      'i want to sell', 'w t s'];
-    const buySignals = ['wtb', 'want to buy', 'looking for', 'need', 'chahiye',
-      'koi hai', 'kisi ke pass', 'required', 'buying', 'anyone have',
-      'any one have', 'mil sakta', 'chahie', 'lena hai', 'i need', 'w t b',
-      'wanted', 'needed'];
-    const laptopBrands = ['dell', 'hp', 'lenovo', 'thinkpad', 'elitebook',
-      'latitude', 'surface', 'macbook', '840', '850', '5420', '7420', '640',
-      '830', '845', '835', 'probook', 'zbook', 'pavilion', 'inspiron', 'vostro',
-      'xps', 'precision', 'ideapad', 'thinkbook', 'yoga', 'omen', 'spectre',
-      'envy', 'carbon', 'firefly', '7490', '7400', '7390', '5400', '5410',
-      '5430', '5500', '5520', '830', '840', '1040', '1030'];
-    const gamingBrands = ['asus', 'rog', 'alienware', 'msi', 'razer',
-      'gigabyte', 'aorus', 'legion', 'g15', 'g16', 'g14', 'g7', 'g5'];
-    const allBrands = [...laptopBrands, ...gamingBrands];
-    const specSignals = ['i3', 'i5', 'i7', 'i9', 'gen', 'gb', 'ssd', 'ram',
-      'core', 'ryzen', 'celeron', 'm1', 'm2', 'm3', '8gb', '16gb', '256', '512',
-      '1tb', 'pcs', 'qty', 'units', 'available'];
-    const priceSignals = ['aed', 'price', 'offer', 'rate'];
-
-    const relevantLines = mergedLines.filter(line => {
-      const lower = line.toLowerCase();
-      if (skipContent.some(s => lower.includes(s))) return false;
-      if (skipSenders.some(s =>
-        line.includes('] ' + s + ':') || line.includes('] ~' + s + ':'))) return false;
-      const hasBrand = allBrands.some(b => lower.includes(b));
-      if (!hasBrand) return false;
-      const hasSell = sellSignals.some(s => lower.includes(s));
-      const hasBuy = buySignals.some(s => lower.includes(s));
-      const hasSpec = specSignals.some(s => lower.includes(s));
-      const hasPrice = priceSignals.some(s => lower.includes(s));
-      return hasSell || hasBuy || hasSpec || hasPrice;
-    });
-
-    if (relevantLines.length === 0) continue;
-
-    // Send to Claude in chunks
-    const chunkSize = 30;
-    const totalChunks = Math.ceil(relevantLines.length / chunkSize);
-
-    const extractionPrompt = (chunkText) =>
-      `Extract laptop listings and buying requests from this WhatsApp group chat.
-Return ONLY a JSON array, no markdown.
-
-SELLING signals: WTS, Want to Sell, Available, New Shipment, For Sale
-BUYING signals: WTB, Want to Buy, Looking for, Need, Chahiye, Koi hai, Required
-
-Return format:
-[{"type":"selling","category":"laptop","brand":"HP","model":"EliteBook 840 G8",
-"processor":"Core i7 11th Gen","ram":"8GB","storage":"256GB","condition":"Used",
-"quantity":null,"price":null,"currency":"AED","charger":"unknown","notes":"",
-"trader_name":"sender name","trader_number":""},
-{"type":"buying","category":"laptop","brand":"MacBook","model":"Air M2",
-"processor":"Apple M2","ram":"8GB","storage":"256GB","condition":"any",
-"quantity":1,"price":null,"currency":"AED","charger":"unknown","notes":"urgent",
-"trader_name":"sender name","trader_number":""}]
-
-RULES:
-- SELLING: trader has stock for sale
-- BUYING: trader wants to purchase
-- Include gaming laptops (Asus ROG, Alienware, MSI, Legion gaming models)
-- SKIP: RAM/SSD only, phones, desktops, monitors, batteries, keyboards, greetings
-- If no listings found return []
-
-Chat:
-${chunkText}`;
-
-    for (let i = 0; i < totalChunks; i++) {
-      const chunk = relevantLines.slice(i * chunkSize, (i + 1) * chunkSize);
-      setTraderImportResult({
-        success: false,
-        message: `⏳ Group ${fileIdx + 1}/${files.length}: ${groupName}\nChunk ${i + 1}/${totalChunks}...`
-      });
-
-      try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 8000,
-            system: "You extract laptop inventory listings from WhatsApp group chats. Return only valid JSON arrays.",
-            messages: [{ role: "user", content: extractionPrompt(chunk.join('\n')) }],
-          }),
-        });
-        const data = await res.json();
-        if (data.error) continue;
-        const raw = data?.content?.[0]?.text || "[]";
-        const jsonMatch = raw.match(/\[[\s\S]*\]/);
-        const clean = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g, "").trim();
-        let chunkListings = [];
-        try { chunkListings = JSON.parse(clean); } catch {}
-        if (Array.isArray(chunkListings)) {
-          // Tag each listing with source group
-          chunkListings.forEach(l => { l.source_group = groupName; });
-          allListings.push(...chunkListings);
-        }
-      } catch { continue; }
-    }
-  }
-
-  // Cross-group deduplication
-  const seen = new Set();
-  const deduped = allListings.filter(l => {
-    const key = `${l.trader_name}|${l.brand}|${l.model}|${l.ram}|${l.storage}|${l.type}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  setTraderImportPreview(deduped);
-  if (deduped.length === 0) {
-    setTraderImportResult({ success: false, message: "No laptop listings found in any of the files." });
-  } else {
-    const savedCount = allListings.length - deduped.length;
-    setTraderImportResult({
-      success: false,
-      message: `✅ Found ${deduped.length} listings${savedCount > 0 ? ` (${savedCount} duplicates removed)` : ''}. Confirm to save.`
-    });
+  setFormLoading(true);
+  setFormError('');
+  try {
+    await createSalesperson(formData);
+    setShowAddForm(false);
+    setFormData({ name: '', email: '', password: '', whatsapp_number: '' });
+  } catch (err) {
+    setFormError(err.message);
+  } finally {
+    setFormLoading(false);
   }
 }
+```
 
-Also add extractBatchFiles to the context Provider value object:
-extractBatchFiles,
+Render the Team section (owner only):
 
-Also update saveTraderListings to handle multiple groups — it should delete old listings per group before inserting new ones. Find the saveTraderListings function and update the delete query to handle multiple groups:
+```jsx
+{isOwner && (
+  <div style={{ padding: '16px 16px 0' }}>
+    {/* Section header */}
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      marginBottom: 12
+    }}>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>Team</div>
+      <button
+        onClick={() => setShowAddForm(v => !v)}
+        style={{
+          background: '#2EC97A', color: '#fff', border: 'none',
+          borderRadius: 8, padding: '6px 14px', fontSize: 12,
+          fontWeight: 600, cursor: 'pointer'
+        }}
+      >
+        + Add Person
+      </button>
+    </div>
 
-Replace:
-const group = traderGroup || "Other";
-const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-await supabase.from("trader_inventory").delete().eq("source_group", group).lt("created_at", oneHourAgo);
+    {/* Add form */}
+    {showAddForm && (
+      <form onSubmit={handleCreate} style={{
+        background: '#1A1E33', borderRadius: 10, padding: 16,
+        marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10
+      }}>
+        {['name', 'email', 'password', 'whatsapp_number'].map(field => (
+          <input
+            key={field}
+            placeholder={
+              field === 'name' ? 'Full name' :
+              field === 'email' ? 'Email address' :
+              field === 'password' ? 'Password (you choose)' :
+              'Company WhatsApp number (e.g. +971...)'
+            }
+            type={field === 'password' ? 'password' : 'text'}
+            value={formData[field]}
+            onChange={e => setFormData(p => ({ ...p, [field]: e.target.value }))}
+            style={{
+              background: '#0B0D18', border: '1px solid #242842',
+              borderRadius: 8, padding: '10px 12px',
+              color: '#E6E9F5', fontSize: 13, outline: 'none'
+            }}
+          />
+        ))}
+        {formError && <div style={{ color: '#F07070', fontSize: 12 }}>{formError}</div>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="submit" disabled={formLoading} style={{
+            flex: 1, background: '#2EC97A', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '10px 0', fontWeight: 600, cursor: 'pointer'
+          }}>
+            {formLoading ? 'Creating...' : 'Create Account'}
+          </button>
+          <button type="button" onClick={() => setShowAddForm(false)} style={{
+            background: '#242842', color: '#7880A3', border: 'none',
+            borderRadius: 8, padding: '10px 16px', cursor: 'pointer'
+          }}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    )}
 
-With:
-const groups = [...new Set((traderImportPreview || []).map(l => l.source_group).filter(Boolean))];
-const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-for (const group of groups) {
-  await supabase.from("trader_inventory").delete().eq("source_group", group).lt("created_at", oneHourAgo);
-}
+    {/* Salesperson list */}
+    {profiles.filter(p => p.role === 'salesperson').length === 0 && !showAddForm && (
+      <div style={{ color: '#7880A3', fontSize: 13, padding: '8px 0 16px' }}>
+        No salespeople yet. Tap + Add Person to create an account.
+      </div>
+    )}
 
+    {profiles.filter(p => p.role === 'salesperson').map(sp => (
+      <div key={sp.id} style={{
+        background: '#131627', border: '1px solid #242842', borderRadius: 10,
+        padding: '12px 14px', marginBottom: 8,
+        display: 'flex', alignItems: 'center', gap: 12
+      }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: '#112B1E', color: '#2EC97A',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 700, fontSize: 13, flexShrink: 0
+        }}>
+          {sp.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{sp.name}</div>
+          {sp.whatsapp_number && (
+            <div style={{ color: '#7880A3', fontSize: 11, marginTop: 2 }}>
+              {sp.whatsapp_number}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={async () => {
+            if (window.confirm(`Remove ${sp.name}? This deletes their account.`)) {
+              await deleteSalesperson(sp.id);
+            }
+          }}
+          style={{
+            background: 'none', border: 'none', color: '#F07070',
+            cursor: 'pointer', fontSize: 12, padding: '4px 8px'
+          }}
+        >
+          Remove
+        </button>
+      </div>
+    ))}
 
-═══════════════════════════════════════
-CHANGE 4: Install jszip for zip file handling
-═══════════════════════════════════════
+    <div style={{ height: 16 }} />
+  </div>
+)}
+```
 
-Run this command first:
-npm install jszip
+---
 
-Then make the code change above.
+## STEP 13 — Build, fix, push
 
+```bash
+npm run build
+```
 
-═══════════════════════════════════════
-Also add extractBatchFiles to TradersTab.js destructuring from useTraders():
-extractBatchFiles,
+Fix every ESLint error and warning that appears. Common ones:
+- Unused imports
+- Missing dependencies in useEffect hooks
+- useProfile() called outside provider (ensure all components are children of ProfileProvider in App.js)
 
-And pass it to the extractBatchListings function in TradersTab:
-async function extractBatchListings() {
-  ...
-  await extractBatchFiles(allFiles);
-  ...
-}
-═══════════════════════════════════════
+Once build succeeds with no errors:
 
-After all changes run:
-npm run build && git add -A && git commit -m "Batch import multiple group chats with aggressive filter and cross-group dedup" && git push
+```bash
+git add src/supabase.js \
+  src/context/ProfileContext.js \
+  src/context/AuthContext.js \
+  src/context/CustomerContext.js \
+  src/App.js \
+  src/components/layout/BottomNav.js \
+  src/components/layout/SideDrawer.js \
+  src/components/layout/DesktopSidebar.js \
+  src/components/stock/DevicesView.js \
+  src/components/tabs/StockListMode.js \
+  src/components/stock/LotsView.js \
+  src/components/chat/ChatHeader.js \
+  src/components/tabs/CustomersTab.js \
+  src/components/tabs/SettingsTab.js \
+  src/utils/whatsapp.js
+
+git commit -m "feat: salesperson role — assigned clients, restricted tabs, team management"
+git push
+```
+
+---
+
+## NOTES
+
+- `assigned_to = null` means unassigned — only Faisal (owner) sees unassigned clients
+- All existing customers start as null/unassigned — they stay visible only to Faisal until manually assigned
+- Faisal's profile MUST be inserted into the profiles table via SQL before deploying (Step A above) — otherwise he will see the "Account not configured" error on login
+- The REACT_APP_SUPABASE_SERVICE_KEY env var MUST be added to Vercel before the Team → Add Person feature will work
+- If any file listed above does not import useProfile yet, add the import at the top — do not skip files

@@ -3,8 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { FACEBOOK_GROUPS } from "../../constants/facebookGroups";
 import { saveKey } from "../../hooks/useMarketingSettings";
-
-const WHATSAPP  = "+971509423162";
+import { useProfile } from "../../context/ProfileContext";
 const CHANNEL   = "https://whatsapp.com/channel/0029Vb818z5GufIwfVtYoB0z";
 const CHAN_NAME  = "Vertex Tech Trading | Wholesale Deals";
 const BIZ      = "Laptop for Less";
@@ -110,6 +109,8 @@ function buildStockSummary(stock) {
 export default function FacebookPostingTab({ manualInput = null, strategyNotes = "" }) {
   const { anthropicKey } = useAuth();
   const { stock }        = useStock();
+  const { myWhatsApp }   = useProfile();
+  const WHATSAPP         = myWhatsApp;
 
   const todayKey              = new Date().toISOString().split("T")[0];
   const { slice: todayCGroups, byRegion, dayIdx } = getTodayBatchC();

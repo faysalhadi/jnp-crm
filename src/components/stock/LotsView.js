@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../supabase";
 import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
+import { useProfile } from "../../context/ProfileContext";
 import * as XLSX from "xlsx";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -26,6 +27,7 @@ function fmtAED(n) {
 export default function LotsView() {
   const { anthropicKey } = useAuth();
   const { stock, loadStock } = useStock();
+  const { isOwner } = useProfile();
 
   const [lots, setLots]           = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -319,7 +321,7 @@ export default function LotsView() {
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#6366F1" }}>AED {(d.max_price || 0).toLocaleString()}</div>
-                    <div style={{ fontSize: 10, color: "#94A3B8" }}>cost {(d.cost_price || 0).toLocaleString()}</div>
+                    {isOwner && <div style={{ fontSize: 10, color: "#94A3B8" }}>cost {(d.cost_price || 0).toLocaleString()}</div>}
                   </div>
                 </div>
               );
@@ -361,31 +363,35 @@ export default function LotsView() {
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: i < chunkResult.devices.length - 1 ? "1px solid #F8FAFC" : "none" }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{d.brand} {d.model}</div>
-                    <div style={{ fontSize: 10, color: "#94A3B8" }}>Cost AED {(d.cost_price || 0).toLocaleString()}</div>
+                    {isOwner && <div style={{ fontSize: 10, color: "#94A3B8" }}>Cost AED {(d.cost_price || 0).toLocaleString()}</div>}
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>AED {d.allocatedPrice.toLocaleString()}</div>
-                    <div style={{ fontSize: 10, color: d.profit > 0 ? "#10B981" : "#EF4444", fontWeight: 700 }}>
-                      +{d.profit.toLocaleString()} ({d.margin.toFixed(1)}%)
-                    </div>
+                    {isOwner && (
+                      <div style={{ fontSize: 10, color: d.profit > 0 ? "#10B981" : "#EF4444", fontWeight: 700 }}>
+                        +{d.profit.toLocaleString()} ({d.margin.toFixed(1)}%)
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
 
             {/* Summary */}
-            <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #F1F5F9" }}>
-              {[
-                { label: "Your total cost", val: `AED ${chunkResult.totalCost.toLocaleString()}`, color: "#64748B" },
-                { label: "Trader offers", val: `AED ${chunkResult.offer.toLocaleString()}`, color: "#0F172A" },
-                { label: "Your profit", val: `AED ${chunkResult.totalProfit.toLocaleString()} (${chunkResult.totalMargin.toFixed(1)}%)`, color: chunkResult.totalProfit > 0 ? "#10B981" : "#EF4444" },
-              ].map((row, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 2 ? "1px solid #F8FAFC" : "none" }}>
-                  <span style={{ fontSize: 12, color: "#64748B" }}>{row.label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: row.color }}>{row.val}</span>
-                </div>
-              ))}
-            </div>
+            {isOwner && (
+              <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #F1F5F9" }}>
+                {[
+                  { label: "Your total cost", val: `AED ${chunkResult.totalCost.toLocaleString()}`, color: "#64748B" },
+                  { label: "Trader offers", val: `AED ${chunkResult.offer.toLocaleString()}`, color: "#0F172A" },
+                  { label: "Your profit", val: `AED ${chunkResult.totalProfit.toLocaleString()} (${chunkResult.totalMargin.toFixed(1)}%)`, color: chunkResult.totalProfit > 0 ? "#10B981" : "#EF4444" },
+                ].map((row, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 2 ? "1px solid #F8FAFC" : "none" }}>
+                    <span style={{ fontSize: 12, color: "#64748B" }}>{row.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: row.color }}>{row.val}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Verdict */}
             <div style={{
@@ -438,22 +444,24 @@ export default function LotsView() {
         </div>
 
         {/* Investment summary */}
-        <div style={{ background: "linear-gradient(135deg, #534AB7, #7C3AED)", borderRadius: 16, padding: 16, color: "#fff" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.8, marginBottom: 12 }}>LOT INVESTMENT</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[
-              { label: "Lot Cost",      val: fmtAED(activeLot.total_cost) },
-              { label: "Total Refurb",  val: fmtAED(s.lotStock.reduce((x, d) => x + (d.refurb_cost || 0), 0)) },
-              { label: "Total In",      val: fmtAED(s.totalIn), big: true },
-              { label: "Devices",       val: s.lotStock.length, big: true },
-            ].map((item, i) => (
-              <div key={i} style={{ background: "rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}>{item.label}</div>
-                <div style={{ fontSize: item.big ? 16 : 14, fontWeight: 800 }}>{item.val}</div>
-              </div>
-            ))}
+        {isOwner && (
+          <div style={{ background: "linear-gradient(135deg, #534AB7, #7C3AED)", borderRadius: 16, padding: 16, color: "#fff" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.8, marginBottom: 12 }}>LOT INVESTMENT</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[
+                { label: "Lot Cost",      val: fmtAED(activeLot.total_cost) },
+                { label: "Total Refurb",  val: fmtAED(s.lotStock.reduce((x, d) => x + (d.refurb_cost || 0), 0)) },
+                { label: "Total In",      val: fmtAED(s.totalIn), big: true },
+                { label: "Devices",       val: s.lotStock.length, big: true },
+              ].map((item, i) => (
+                <div key={i} style={{ background: "rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}>{item.label}</div>
+                  <div style={{ fontSize: item.big ? 16 : 14, fontWeight: 800 }}>{item.val}</div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Recovery progress */}
         <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #F1F5F9" }}>
@@ -479,35 +487,39 @@ export default function LotsView() {
         </div>
 
         {/* Profit so far */}
-        <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #F1F5F9" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>P&L So Far</div>
-          {[
-            { label: "Revenue recovered", val: fmtAED(s.recovered), color: "#0F172A" },
-            { label: "Cost of sold devices", val: fmtAED(s.costOfSold), color: "#64748B" },
-            { label: "Profit so far", val: `${fmtAED(s.profitSoFar)} (${marginPct.toFixed(1)}%)`, color: s.profitSoFar >= 0 ? "#10B981" : "#EF4444", big: true },
-          ].map((row, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: i < 2 ? "1px solid #F8FAFC" : "none" }}>
-              <span style={{ fontSize: 12, color: "#64748B" }}>{row.label}</span>
-              <span style={{ fontSize: row.big ? 14 : 12, fontWeight: row.big ? 800 : 600, color: row.color }}>{row.val}</span>
-            </div>
-          ))}
-        </div>
+        {isOwner && (
+          <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #F1F5F9" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>P&L So Far</div>
+            {[
+              { label: "Revenue recovered", val: fmtAED(s.recovered), color: "#0F172A" },
+              { label: "Cost of sold devices", val: fmtAED(s.costOfSold), color: "#64748B" },
+              { label: "Profit so far", val: `${fmtAED(s.profitSoFar)} (${marginPct.toFixed(1)}%)`, color: s.profitSoFar >= 0 ? "#10B981" : "#EF4444", big: true },
+            ].map((row, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: i < 2 ? "1px solid #F8FAFC" : "none" }}>
+                <span style={{ fontSize: 12, color: "#64748B" }}>{row.label}</span>
+                <span style={{ fontSize: row.big ? 14 : 12, fontWeight: row.big ? 800 : 600, color: row.color }}>{row.val}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Remaining potential */}
-        <div style={{ background: "#ECFDF5", borderRadius: 14, padding: 14, border: "1px solid #BBF7D0" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#059669", marginBottom: 8 }}>Remaining Potential</div>
-          {[
-            { label: "Available devices", val: s.available.length },
-            { label: "Stock value at sell price", val: fmtAED(s.potentialRev) },
-            { label: "Remaining cost basis", val: fmtAED(s.remainingCost) },
-            { label: "Potential additional profit", val: fmtAED(s.potentialRev - s.remainingCost) },
-          ].map((row, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: i < 3 ? "1px solid #BBF7D0" : "none" }}>
-              <span style={{ fontSize: 11, color: "#059669" }}>{row.label}</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#059669" }}>{row.val}</span>
-            </div>
-          ))}
-        </div>
+        {isOwner && (
+          <div style={{ background: "#ECFDF5", borderRadius: 14, padding: 14, border: "1px solid #BBF7D0" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "#059669", marginBottom: 8 }}>Remaining Potential</div>
+            {[
+              { label: "Available devices", val: s.available.length },
+              { label: "Stock value at sell price", val: fmtAED(s.potentialRev) },
+              { label: "Remaining cost basis", val: fmtAED(s.remainingCost) },
+              { label: "Potential additional profit", val: fmtAED(s.potentialRev - s.remainingCost) },
+            ].map((row, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: i < 3 ? "1px solid #BBF7D0" : "none" }}>
+                <span style={{ fontSize: 11, color: "#059669" }}>{row.label}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#059669" }}>{row.val}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -553,16 +565,18 @@ export default function LotsView() {
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
             </div>
           ))}
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", marginBottom: 3, letterSpacing: 0.5 }}>LOT PURCHASE PRICE (AED) — excl. refurb *</div>
-            <input type="number" value={lotForm.total_cost} onChange={e => setLotForm(p => ({ ...p, total_cost: e.target.value }))}
-              placeholder="e.g. 18000"
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #FDE68A", fontSize: 15, fontWeight: 700, outline: "none", boxSizing: "border-box", background: "#FFFBEB" }} />
-          </div>
+          {isOwner && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", marginBottom: 3, letterSpacing: 0.5 }}>LOT PURCHASE PRICE (AED) — excl. refurb *</div>
+              <input type="number" value={lotForm.total_cost} onChange={e => setLotForm(p => ({ ...p, total_cost: e.target.value }))}
+                placeholder="e.g. 18000"
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #FDE68A", fontSize: 15, fontWeight: 700, outline: "none", boxSizing: "border-box", background: "#FFFBEB" }} />
+            </div>
+          )}
         </div>
 
         {/* Allocation preview */}
-        {allocatedRows.length > 0 && (
+        {isOwner && allocatedRows.length > 0 && (
           <>
             {/* Summary */}
             <div style={{ background: "linear-gradient(135deg, #534AB7, #7C3AED)", borderRadius: 14, padding: 14, color: "#fff" }}>
@@ -662,13 +676,13 @@ export default function LotsView() {
             </div>
 
             {/* Mini stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isOwner ? "1fr 1fr 1fr 1fr" : "1fr 1fr", gap: 6, marginBottom: 10 }}>
               {[
-                { label: "Cost",    val: `AED ${(lot.total_cost || 0).toLocaleString()}`, color: "#EF4444" },
+                isOwner && { label: "Cost",    val: `AED ${(lot.total_cost || 0).toLocaleString()}`, color: "#EF4444" },
                 { label: "Sold",    val: s.sold.length,      color: "#10B981" },
                 { label: "Left",    val: s.available.length, color: "#6366F1" },
-                { label: "Profit",  val: s.profitSoFar > 0 ? `+${s.profitSoFar.toLocaleString()}` : s.profitSoFar.toLocaleString(), color: s.profitSoFar >= 0 ? "#10B981" : "#EF4444" },
-              ].map((item, i) => (
+                isOwner && { label: "Profit",  val: s.profitSoFar > 0 ? `+${s.profitSoFar.toLocaleString()}` : s.profitSoFar.toLocaleString(), color: s.profitSoFar >= 0 ? "#10B981" : "#EF4444" },
+              ].filter(Boolean).map((item, i) => (
                 <div key={i} style={{ textAlign: "center", padding: "6px 4px", background: "#F8FAFC", borderRadius: 8 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: item.color }}>{item.val}</div>
                   <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 700 }}>{item.label}</div>

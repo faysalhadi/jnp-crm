@@ -11,3 +11,9 @@ export const supabase = createClient(
     }
   }
 );
+
+// Admin client — only used for creating auth users from Settings → Team
+export const adminSupabase = createClient(
+  process.env.REACT_APP_SUPABASE_URL,
+  process.env.REACT_APP_SUPABASE_SERVICE_KEY
+);
