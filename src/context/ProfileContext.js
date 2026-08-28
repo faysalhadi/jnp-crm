@@ -10,6 +10,7 @@ export function ProfileProvider({ children }) {
   const [profiles, setProfiles] = useState([]); // all profiles — owner only
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState(null);
+  const [viewingAs, setViewingAsState] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -99,6 +100,13 @@ export function ProfileProvider({ children }) {
   // WhatsApp number for the current user — falls back to Faisal's if not set
   const myWhatsApp = currentProfile?.whatsapp_number || '+971509423162';
 
+  function setViewingAs(profile) { setViewingAsState(profile); }
+  function clearViewingAs() { setViewingAsState(null); }
+
+  const isViewingAs = viewingAs !== null;
+  const effectiveId = viewingAs ? viewingAs.id : currentProfile?.id;
+  const showCostFields = isOwner && !isViewingAs;
+
   return (
     <ProfileContext.Provider value={{
       currentProfile,
@@ -108,10 +116,16 @@ export function ProfileProvider({ children }) {
       isOwner,
       isSalesperson,
       myWhatsApp,
+      viewingAs,
+      isViewingAs,
+      effectiveId,
+      showCostFields,
       createSalesperson,
       deleteSalesperson,
       assignClient,
       fetchAllProfiles,
+      setViewingAs,
+      clearViewingAs,
     }}>
       {children}
     </ProfileContext.Provider>

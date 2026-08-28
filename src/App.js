@@ -28,6 +28,7 @@ import PartsCompatibilityTab from "./components/tabs/PartsCompatibilityTab";
 import SalesTab from "./components/tabs/SalesTab";
 import ScreenTallyTab from "./components/tabs/ScreenTallyTab";
 import HomeTab from "./components/tabs/HomeTab";
+import SalespersonHomeTab from "./components/tabs/SalespersonHomeTab";
 import CustomersTab from "./components/tabs/CustomersTab";
 import TradersTab from "./components/tabs/TradersTab";
 import StockTab from "./components/tabs/StockTab";
@@ -114,7 +115,7 @@ export default function App() {
     handleLogout,
   } = useAuth();
 
-  const { profileLoading, profileError, isOwner, isSalesperson } = useProfile();
+  const { profileLoading, profileError, isOwner, isSalesperson, isViewingAs, viewingAs, clearViewingAs } = useProfile();
 
 
   // ── sourcing alerts for dashboard ──
@@ -234,9 +235,16 @@ export default function App() {
     { key: "ask",       icon: "🤖", label: "Ask Claude" },
   ];
   const SALESPERSON_TABS = ["home", "customers", "stock"];
-  const NAV_TABS = isOwner
+  const NAV_TABS = (isOwner && !isViewingAs)
     ? ALL_NAV_TABS
     : ALL_NAV_TABS.filter(t => SALESPERSON_TABS.includes(t.key));
+
+  // When entering viewingAs mode, switch to an allowed tab
+  useEffect(() => {
+    if (isViewingAs && !SALESPERSON_TABS.includes(activeTab)) {
+      setActiveTab('home');
+    }
+  }, [isViewingAs]); // eslint-disable-line
 
   // ── screens ──────────────────────────────────────────────────────────────────
 
@@ -300,8 +308,29 @@ export default function App() {
   // list view
   return (
     <div style={isMobile
-      ? { height: "100dvh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", overflow: "hidden" }
-      : { height: "100dvh", background: "#F8FAFC", display: "flex", overflow: "hidden" }}>
+      ? { height: "100dvh", background: "#F8FAFC", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", overflow: "hidden", paddingTop: isViewingAs ? 40 : 0 }
+      : { height: "100dvh", background: "#F8FAFC", display: "flex", overflow: "hidden", paddingTop: isViewingAs ? 40 : 0 }}>
+
+      {/* ── Viewing-as banner ── */}
+      {isViewingAs && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          background: '#112B1E', borderBottom: '1px solid #1A4530',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 16px', fontFamily: 'Inter, sans-serif',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1A4530', color: '#2EC97A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>
+              {viewingAs.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()}
+            </div>
+            <span style={{ color: '#2EC97A', fontSize: 13, fontWeight: 600 }}>Viewing as {viewingAs.name}</span>
+            <span style={{ color: '#7880A3', fontSize: 12 }}>· read only</span>
+          </div>
+          <button onClick={clearViewingAs} style={{ background: 'none', border: '1px solid #1A4530', color: '#2EC97A', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+            Exit ✕
+          </button>
+        </div>
+      )}
 
       {/* ── Desktop sidebar ── */}
       {!isMobile && <DesktopSidebar NAV_TABS={NAV_TABS} />}
@@ -344,7 +373,9 @@ export default function App() {
       <TopBar />
       {/* ── HOME / DASHBOARD TAB ── */}
       {activeTab === "home" && (
-        <HomeTab tasks={tasks} sourcingAlerts={sourcingAlerts} />
+        (isSalesperson || isViewingAs)
+          ? <SalespersonHomeTab />
+          : <HomeTab tasks={tasks} sourcingAlerts={sourcingAlerts} />
       )}
 
       {/* ── CUSTOMERS TAB ── */}

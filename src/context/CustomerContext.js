@@ -64,7 +64,7 @@ export function getQueuePriority(customer, pendingFollowUpMap, stockMatchSet) {
 const CustomerContext = createContext(null);
 
 export function CustomerProvider({ children }) {
-  const { isSalesperson, currentProfile, profileLoading } = useProfile();
+  const { isSalesperson, currentProfile, profileLoading, viewingAs, isViewingAs } = useProfile();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastActivityMap, setLastActivityMap] = useState({});
@@ -98,7 +98,9 @@ export function CustomerProvider({ children }) {
       .select("*, deals(*)")
       .order("last_active", { ascending: false });
 
-    if (isSalesperson && currentProfile?.id) {
+    if (isViewingAs && viewingAs?.id) {
+      query = query.eq('assigned_to', viewingAs.id);
+    } else if (isSalesperson && currentProfile?.id) {
       query = query.eq('assigned_to', currentProfile.id);
     }
 
@@ -130,12 +132,12 @@ export function CustomerProvider({ children }) {
     const fuMap = {};
     (followUps || []).forEach(fu => { if (!fuMap[fu.customer_id]) fuMap[fu.customer_id] = fu; });
     setPendingFollowUpMap(fuMap);
-  }, [isSalesperson, currentProfile?.id, profileLoading]); // eslint-disable-line
+  }, [isSalesperson, currentProfile?.id, profileLoading, isViewingAs, viewingAs?.id]); // eslint-disable-line
 
-  // Re-fetch when profile finishes loading to apply correct role-based filter
+  // Re-fetch when profile finishes loading or viewingAs changes
   useEffect(() => {
     if (!profileLoading) loadCustomers();
-  }, [profileLoading, loadCustomers]); // eslint-disable-line
+  }, [profileLoading, loadCustomers, isViewingAs]); // eslint-disable-line
 
   const activeCustomer = customers.find(c => c.id === activeCustomerId);
   const activeDeal = activeCustomer?.deals?.find(d => d.id === activeDealId);

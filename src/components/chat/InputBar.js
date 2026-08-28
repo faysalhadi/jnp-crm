@@ -5,8 +5,10 @@ import { useChat } from "../../context/ChatContext";
 import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { useChatActions } from "../../hooks/useChatActions";
+import { useProfile } from "../../context/ProfileContext";
 
 export default function InputBar() {
+  const { isViewingAs } = useProfile();
   const { activeCustomer } = useCustomers();
   const {
     messages,
@@ -26,6 +28,14 @@ export default function InputBar() {
     sendDirectReply,
   } = useChatActions();
   const [aiComposeContext, setAiComposeContext] = useState("");
+
+  if (isViewingAs) {
+    return (
+      <div style={{ padding: '12px 16px', textAlign: 'center', color: '#7880A3', fontSize: 12, borderTop: '1px solid #E2E8F0', background: '#F8FAFC' }}>
+        Read-only view — exit to take actions
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: "10px 14px 20px", background: "#fff", borderTop: "1px solid #F1F5F9", position: "sticky", bottom: 0 }}>

@@ -27,7 +27,7 @@ function fmtAED(n) {
 export default function LotsView() {
   const { anthropicKey } = useAuth();
   const { stock, loadStock } = useStock();
-  const { isOwner } = useProfile();
+  const { showCostFields } = useProfile();
 
   const [lots, setLots]           = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -321,7 +321,7 @@ export default function LotsView() {
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#6366F1" }}>AED {(d.max_price || 0).toLocaleString()}</div>
-                    {isOwner && <div style={{ fontSize: 10, color: "#94A3B8" }}>cost {(d.cost_price || 0).toLocaleString()}</div>}
+                    {showCostFields&& <div style={{ fontSize: 10, color: "#94A3B8" }}>cost {(d.cost_price || 0).toLocaleString()}</div>}
                   </div>
                 </div>
               );
@@ -363,11 +363,11 @@ export default function LotsView() {
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: i < chunkResult.devices.length - 1 ? "1px solid #F8FAFC" : "none" }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#0F172A" }}>{d.brand} {d.model}</div>
-                    {isOwner && <div style={{ fontSize: 10, color: "#94A3B8" }}>Cost AED {(d.cost_price || 0).toLocaleString()}</div>}
+                    {showCostFields&& <div style={{ fontSize: 10, color: "#94A3B8" }}>Cost AED {(d.cost_price || 0).toLocaleString()}</div>}
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#6366F1" }}>AED {d.allocatedPrice.toLocaleString()}</div>
-                    {isOwner && (
+                    {showCostFields&& (
                       <div style={{ fontSize: 10, color: d.profit > 0 ? "#10B981" : "#EF4444", fontWeight: 700 }}>
                         +{d.profit.toLocaleString()} ({d.margin.toFixed(1)}%)
                       </div>
@@ -378,7 +378,7 @@ export default function LotsView() {
             </div>
 
             {/* Summary */}
-            {isOwner && (
+            {showCostFields&& (
               <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #F1F5F9" }}>
                 {[
                   { label: "Your total cost", val: `AED ${chunkResult.totalCost.toLocaleString()}`, color: "#64748B" },
@@ -444,7 +444,7 @@ export default function LotsView() {
         </div>
 
         {/* Investment summary */}
-        {isOwner && (
+        {showCostFields&& (
           <div style={{ background: "linear-gradient(135deg, #534AB7, #7C3AED)", borderRadius: 16, padding: 16, color: "#fff" }}>
             <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.8, marginBottom: 12 }}>LOT INVESTMENT</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -487,7 +487,7 @@ export default function LotsView() {
         </div>
 
         {/* Profit so far */}
-        {isOwner && (
+        {showCostFields&& (
           <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #F1F5F9" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>P&L So Far</div>
             {[
@@ -504,7 +504,7 @@ export default function LotsView() {
         )}
 
         {/* Remaining potential */}
-        {isOwner && (
+        {showCostFields&& (
           <div style={{ background: "#ECFDF5", borderRadius: 14, padding: 14, border: "1px solid #BBF7D0" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "#059669", marginBottom: 8 }}>Remaining Potential</div>
             {[
@@ -565,7 +565,7 @@ export default function LotsView() {
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
             </div>
           ))}
-          {isOwner && (
+          {showCostFields&& (
             <div style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", marginBottom: 3, letterSpacing: 0.5 }}>LOT PURCHASE PRICE (AED) — excl. refurb *</div>
               <input type="number" value={lotForm.total_cost} onChange={e => setLotForm(p => ({ ...p, total_cost: e.target.value }))}
@@ -576,7 +576,7 @@ export default function LotsView() {
         </div>
 
         {/* Allocation preview */}
-        {isOwner && allocatedRows.length > 0 && (
+        {showCostFields&& allocatedRows.length > 0 && (
           <>
             {/* Summary */}
             <div style={{ background: "linear-gradient(135deg, #534AB7, #7C3AED)", borderRadius: 14, padding: 14, color: "#fff" }}>
@@ -676,12 +676,12 @@ export default function LotsView() {
             </div>
 
             {/* Mini stats */}
-            <div style={{ display: "grid", gridTemplateColumns: isOwner ? "1fr 1fr 1fr 1fr" : "1fr 1fr", gap: 6, marginBottom: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: showCostFields? "1fr 1fr 1fr 1fr" : "1fr 1fr", gap: 6, marginBottom: 10 }}>
               {[
-                isOwner && { label: "Cost",    val: `AED ${(lot.total_cost || 0).toLocaleString()}`, color: "#EF4444" },
+                showCostFields&& { label: "Cost",    val: `AED ${(lot.total_cost || 0).toLocaleString()}`, color: "#EF4444" },
                 { label: "Sold",    val: s.sold.length,      color: "#10B981" },
                 { label: "Left",    val: s.available.length, color: "#6366F1" },
-                isOwner && { label: "Profit",  val: s.profitSoFar > 0 ? `+${s.profitSoFar.toLocaleString()}` : s.profitSoFar.toLocaleString(), color: s.profitSoFar >= 0 ? "#10B981" : "#EF4444" },
+                showCostFields&& { label: "Profit",  val: s.profitSoFar > 0 ? `+${s.profitSoFar.toLocaleString()}` : s.profitSoFar.toLocaleString(), color: s.profitSoFar >= 0 ? "#10B981" : "#EF4444" },
               ].filter(Boolean).map((item, i) => (
                 <div key={i} style={{ textAlign: "center", padding: "6px 4px", background: "#F8FAFC", borderRadius: 8 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: item.color }}>{item.val}</div>

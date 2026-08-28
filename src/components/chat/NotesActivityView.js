@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import { formatWhatsAppNumber } from "../../utils/helpers";
+import { useProfile } from "../../context/ProfileContext";
 
 const ACTIVITY_TYPES = [
   { id: "called",    label: "📞 Called",    color: "#6366F1", bg: "#EEF2FF" },
@@ -16,6 +17,7 @@ const ACTIVITY_TYPES = [
 export default function NotesActivityView() {
   const { activeCustomerId, activeCustomer, loadCustomers, activeDeal } = useCustomers();
   const { anthropicKey } = useAuth();
+  const { isViewingAs } = useProfile();
   const [intel, setIntel] = useState(null);
   const [intelLoading, setIntelLoading] = useState(false);
   const {
@@ -374,20 +376,22 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
       <div style={{ padding: "10px 14px 12px", background: "#fff", borderBottom: "1px solid #F1F5F9", flexShrink: 0 }}>
 
         {/* Activity quick buttons */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          {ACTIVITY_TYPES.map(a => (
-            <button key={a.id} onClick={() => logActivity(a.id)}
-              style={{
-                flex: 1, padding: "7px 2px", borderRadius: 8,
-                border: "1px solid " + a.bg, background: a.bg,
-                fontSize: 11, fontWeight: 700, color: a.color,
-                cursor: "pointer", whiteSpace: "nowrap",
-                overflow: "hidden", textOverflow: "ellipsis",
-              }}>
-              {a.label}
-            </button>
-          ))}
-        </div>
+        {!isViewingAs && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            {ACTIVITY_TYPES.map(a => (
+              <button key={a.id} onClick={() => logActivity(a.id)}
+                style={{
+                  flex: 1, padding: "7px 2px", borderRadius: 8,
+                  border: "1px solid " + a.bg, background: a.bg,
+                  fontSize: 11, fontWeight: 700, color: a.color,
+                  cursor: "pointer", whiteSpace: "nowrap",
+                  overflow: "hidden", textOverflow: "ellipsis",
+                }}>
+                {a.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Re-engage button — only shown when client has lost deals */}
         {lostDeals.length > 0 && (
@@ -440,7 +444,7 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
         )}
 
         {/* ── Follow-up Section ── */}
-        <div style={{ marginBottom: 10 }}>
+        {!isViewingAs && <div style={{ marginBottom: 10 }}>
           {followUp ? (
             // Existing follow-up card
             <div style={{
@@ -532,7 +536,7 @@ Only extract if clearly mentioned. budgetUpdate only if client explicitly stated
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Note input */}
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>

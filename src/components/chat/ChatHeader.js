@@ -17,7 +17,7 @@ import { useProfile } from "../../context/ProfileContext";
 
 export default function ChatHeader() {
   const { setShowSideDrawer } = useUI();
-  const { isOwner, profiles, assignClient } = useProfile();
+  const { isOwner, isViewingAs, profiles, assignClient } = useProfile();
   const {
     activeCustomer,
     activeDeal,
@@ -422,8 +422,8 @@ export default function ChatHeader() {
         )}
       </div>
 
-      {/* ASSIGN TO SALESPERSON — owner only */}
-      {isOwner && (
+      {/* ASSIGN TO SALESPERSON — owner only, not in view-as mode */}
+      {isOwner && !isViewingAs && (
         <div style={{ padding: "0 14px 8px", display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, flexShrink: 0 }}>Assigned to</span>
           <select

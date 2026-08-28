@@ -6,7 +6,8 @@ import { useProfile } from "../../context/ProfileContext";
 export default function DesktopSidebar({ NAV_TABS }) {
   const { activeTab, setActiveTab, setShowSearch, setShowSideDrawer } = useUI();
   const { setView, setActiveCustomerId, setActiveDealId } = useCustomers();
-  const { isOwner, currentProfile } = useProfile();
+  const { isOwner, isViewingAs, currentProfile } = useProfile();
+  const showOwnerItems = isOwner && !isViewingAs;
 
   return (
     <div style={{ width: 280, flexShrink: 0, background: "#fff", borderRight: "1px solid #F1F5F9", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 40 }}>
@@ -33,7 +34,7 @@ export default function DesktopSidebar({ NAV_TABS }) {
         ))}
 
         {/* Extra nav items only accessible via drawer on mobile */}
-        {isOwner && (
+        {showOwnerItems && (
           <div style={{ borderTop: "1px solid #F1F5F9", marginTop: 8, paddingTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
             {[
               { icon: "📣", label: "Marketing" },

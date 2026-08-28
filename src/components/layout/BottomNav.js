@@ -6,7 +6,7 @@ import { useProfile } from "../../context/ProfileContext";
 export default function BottomNav({ NAV_TABS, sourcingAlerts }) {
   const { isMobile, activeTab, setActiveTab } = useUI();
   const { stock } = useStock();
-  const { isOwner } = useProfile();
+  const { isOwner, isViewingAs } = useProfile();
   if (!isMobile) return null;
 
   const SALESPERSON_TABS = ["home", "customers", "stock"];
@@ -18,7 +18,7 @@ export default function BottomNav({ NAV_TABS, sourcingAlerts }) {
     { key: "traders", icon: "🏪", label: "Traders" },
     { key: "ask", icon: "🤖", label: "Ask" },
   ];
-  const visibleTabs = allTabs.filter(t => isOwner || SALESPERSON_TABS.includes(t.key));
+  const visibleTabs = allTabs.filter(t => (isOwner && !isViewingAs) || SALESPERSON_TABS.includes(t.key));
 
   return (
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#fff", borderTop: "1px solid #F1F5F9", display: "flex", zIndex: 50, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)" }}>

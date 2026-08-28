@@ -9,7 +9,7 @@ export default function StockListMode() {
   const { stock } = useStock();
   const { customers } = useCustomers();
   const { anthropicKey } = useAuth();
-  const { isOwner } = useProfile();
+  const { showCostFields } = useProfile();
   const [consignmentStock, setConsignmentStock] = useState([]);
 
   useEffect(() => {
@@ -219,7 +219,7 @@ For whatsapp_text format:
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#534AB7" }}>
                         AED {(item.price || 0).toLocaleString()}
                       </div>
-                      {isOwner && item.cost_price > 0 && (
+                      {showCostFields &&item.cost_price > 0 && (
                         <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 1 }}>
                           Cost: AED {(item.cost_price || 0).toLocaleString()}
                         </div>
@@ -239,7 +239,7 @@ For whatsapp_text format:
                     AED {totalAsking.toLocaleString()}
                   </span>
                 </div>
-                {isOwner && totalCost > 0 && (
+                {showCostFields &&totalCost > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
                     <span style={{ fontSize: 11, color: "#7C3AED" }}>Your margin at this price</span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "#10B981" }}>
@@ -277,7 +277,7 @@ For whatsapp_text format:
           )}
 
           {/* ── Margin Calculator ── */}
-          {isOwner && result.items.length > 0 && totalCost > 0 && (
+          {showCostFields &&result.items.length > 0 && totalCost > 0 && (
             <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0", overflow: "hidden" }}>
               <div style={{ padding: "10px 14px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: "#0F172A" }}>💰 Margin Calculator</div>

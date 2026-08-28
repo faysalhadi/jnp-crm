@@ -8,9 +8,9 @@ import SalespersonDetailView from "./SalespersonDetailView";
 
 export default function SettingsTab({ exportData, handleLogoutWithUI }) {
   const { anthropicKey, setAnthropicKey, keyInput, setKeyInput, session } = useAuth();
-  const { isMobile } = useUI(); // eslint-disable-line
+  const { isMobile, setActiveTab } = useUI(); // eslint-disable-line
   const { setView } = useCustomers();
-  const { isOwner, profiles, createSalesperson, deleteSalesperson } = useProfile();
+  const { isOwner, profiles, createSalesperson, deleteSalesperson, setViewingAs } = useProfile();
 
   const [showAddForm, setShowAddForm]       = useState(false);
   const [formData, setFormData]             = useState({ name: "", email: "", password: "", whatsapp_number: "" });
@@ -108,15 +108,27 @@ export default function SettingsTab({ exportData, handleLogoutWithUI }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{sp.name}</div>
                   <div style={{ fontSize: 11, color: "#94A3B8" }}>{sp.email || ""}{sp.whatsapp_number ? ` · ${sp.whatsapp_number}` : ""}</div>
                 </div>
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (window.confirm(`Remove ${sp.name}? This deletes their account.`)) handleDelete(sp.id);
-                  }}
-                  disabled={deletingId === sp.id}
-                  style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FEE2E2", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
-                  {deletingId === sp.id ? "..." : "Remove"}
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      setViewingAs(sp);
+                      setView("list");
+                      setActiveTab("home");
+                    }}
+                    style={{ background: "#162040", color: "#5190FF", border: "1px solid #243660", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                    View CRM
+                  </button>
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (window.confirm(`Remove ${sp.name}? This deletes their account.`)) handleDelete(sp.id);
+                    }}
+                    disabled={deletingId === sp.id}
+                    style={{ background: "none", border: "none", color: "#F07070", cursor: "pointer", fontSize: 11, padding: "2px 6px", fontWeight: 600 }}>
+                    {deletingId === sp.id ? "..." : "Remove"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
