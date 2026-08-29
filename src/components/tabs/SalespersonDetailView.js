@@ -5,6 +5,7 @@ const TABS = ['Overview', 'Activity', 'Clients', 'Deals'];
 
 const STAGE_LABELS = {
   new_inquiry: 'New Inquiry',
+  watching: 'Watching',
   device_found: 'Device Found',
   negotiation: 'Negotiation',
   confirmed_pending_pickup: 'Confirmed',
@@ -14,6 +15,7 @@ const STAGE_LABELS = {
 
 const STAGE_COLORS = {
   new_inquiry: '#7880A3',
+  watching: '#8B5CF6',
   device_found: '#5190FF',
   negotiation: '#F0AC2A',
   confirmed_pending_pickup: '#2EC97A',

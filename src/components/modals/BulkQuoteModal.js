@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useStock } from "../../context/StockContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useProfile } from "../../context/ProfileContext";
+import { effectiveStatus } from "../../utils/holds";
 
 // Checks if a stock item matches generation requirement
 function matchesSpec(item, specText) {
@@ -62,7 +63,7 @@ export default function BulkQuoteModal({ onClose }) {
   const [matches, setMatches]     = useState(null);
   const [copied, setCopied]       = useState(false);
 
-  const available = stock.filter(s => s.status === "available");
+  const available = stock.filter(s => effectiveStatus(s) === "available");
 
   function findMatches() {
     const q = parseInt(qty);

@@ -5,6 +5,7 @@ import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
 import { useProfile } from "../../context/ProfileContext";
+import { effectiveStatus, isHoldActive } from "../../utils/holds";
 
 export default function GlobalSearch({ onClose }) {
   const [query, setQuery]           = useState("");
@@ -210,7 +211,7 @@ export default function GlobalSearch({ onClose }) {
                   icon={<span style={{ fontSize: 22 }}>📦</span>}
                   title={`${s.brand || ""} ${s.model || ""}`.trim() || "Device"}
                   sub={[s.processor, s.ram, s.ssd, s.condition].filter(Boolean).join(" · ") + (s.max_price ? ` · AED ${s.max_price}` : "")}
-                  badge={{ label: s.status === "available" ? "Available" : "Sold", color: s.status === "available" ? "#10B981" : "#94A3B8" }}
+                  badge={{ label: effectiveStatus(s) === "available" ? "Available" : isHoldActive(s) ? "On hold" : "Sold", color: effectiveStatus(s) === "available" ? "#10B981" : isHoldActive(s) ? "#D97706" : "#94A3B8" }}
                 />
               ))}
             </Section>

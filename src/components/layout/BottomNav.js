@@ -4,6 +4,7 @@ import { useStock } from "../../context/StockContext";
 import { useProfile } from "../../context/ProfileContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { ALL_NAV_TABS } from "../../constants/access";
+import { effectiveStatus } from "../../utils/holds";
 
 export default function BottomNav({ sourcingAlerts }) {
   const { isMobile, activeTab, setActiveTab } = useUI();
@@ -15,7 +16,7 @@ export default function BottomNav({ sourcingAlerts }) {
   const visibleTabs = ALL_NAV_TABS
     .filter(t => access.canTab(t.key))
     .map(t => t.key === "stock"
-      ? { ...t, badge: stock.filter(s => s.status === "available").length || 0 }
+      ? { ...t, badge: stock.filter(s => effectiveStatus(s) === "available").length || 0 }
       : t);
 
   return (

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { supabase } from "../../supabase";
 import { useProfile } from "../../context/ProfileContext";
 import { parseGB, labelGB } from "../../utils/helpers";
+import { effectiveStatus, isHoldActive } from "../../utils/holds";
 
 export default function QuickSaleModal({ stock, onClose, onComplete, prefill = null }) {
   const { currentProfile, isSalesperson } = useProfile();
@@ -18,7 +19,7 @@ export default function QuickSaleModal({ stock, onClose, onComplete, prefill = n
   const [result,         setResult]         = useState(null);
   const [inlineUpgrades, setInlineUpgrades] = useState({}); // { [itemId]: { expanded, selRam, ramPrices, selSsd, ssdPrices } }
 
-  const available = stock.filter(s => s.status === "available");
+  const available = stock.filter(s => effectiveStatus(s) === "available" || isHoldActive(s));
   const filteredStock = search
     ? available.filter(s =>
         [s.brand, s.model, s.processor, s.ram, s.ssd, s.serial_number]

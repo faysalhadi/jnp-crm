@@ -1,3 +1,4 @@
+import { effectiveStatus } from "./holds";
 import { supabase } from "../supabase";
 import { SYSTEM_PROMPT, STAGES } from "../constants";
 
@@ -49,7 +50,7 @@ export async function buildOwnerContext() {
   const stocks = allStock || [];
   const custs = allCustomers || [];
 
-  const available = stocks.filter(s => s.status === "available");
+  const available = stocks.filter(s => effectiveStatus(s) === "available");
   const sold = stocks.filter(s => s.status === "sold");
   const soldValue = sold.reduce((n, s) => n + (s.max_price || 0), 0);
 

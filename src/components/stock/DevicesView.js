@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import WaitingClientsPanel from "./WaitingClientsPanel";
 import { supabase } from "../../supabase";
 import { useStock } from "../../context/StockContext";
@@ -16,6 +16,9 @@ import ReservedView from "./ReservedView";
 import { BRANDS, EMPTY_STOCK, PART_ICONS, PART_CATEGORIES, EMPTY_PART } from "../../constants";
 import { daysSince, timeAgo, parseGB, labelGB } from "../../utils/helpers";
 import { getMatchingClients } from "../../services/broadcastService";
+import { effectiveStatus, isHoldActive, formatHoldRemaining } from "../../utils/holds";
+import { releaseHold, getHolderName } from "../../services/stockHoldService";
+import { useAuth } from "../../context/AuthContext";
 
 export default function DevicesView({
   filteredStock,
@@ -58,13 +61,37 @@ export default function DevicesView({
     loadCustomers,
   } = useCustomers();
   const { showToast } = useUI();
-  const { showCostFields } = useProfile();
+  const { showCostFields, isOwner } = useProfile();
+  const { user } = useAuth();
   const { partsSold, partsSoldLoading } = useParts();
   const {
     showEditReservation, setShowEditReservation,
     editReservationItem, setEditReservationItem,
     editReservationForm, setEditReservationForm,
   } = useReservations();
+
+  const [holderNames, setHolderNames] = useState({});
+  const heldUnits = useMemo(() => (stock || []).filter(isHoldActive), [stock]);
+
+  useEffect(() => {
+    const ids = [...new Set(heldUnits.map(s => s.quoted_by).filter(Boolean))]
+      .filter(id => !(id in holderNames));
+    if (!ids.length) return;
+    let cancelled = false;
+    Promise.all(ids.map(id => getHolderName(id).then(n => [id, n]))).then(pairs => {
+      if (!cancelled) setHolderNames(p => ({ ...p, ...Object.fromEntries(pairs) }));
+    });
+    return () => { cancelled = true; };
+  }, [heldUnits]); // eslint-disable-line
+
+  async function handleRelease(item) {
+    if (!window.confirm("Release the 48h hold on this unit?")) return;
+    const res = await releaseHold(item.id);
+    if (!res.ok) { showToast("Could not release: " + (res.error || "unknown error")); return; }
+    await loadStock();
+    refreshCachedStock();
+    showToast("Hold released 🔓");
+  }
 
   return (
     <>
@@ -73,7 +100,8 @@ export default function DevicesView({
       {stock.length > 0 && (
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { label: "Available", value: stock.filter(s => s.status === "available").length, color: "#10B981", bg: "#ECFDF5" },
+            { label: "Available", value: stock.filter(s => effectiveStatus(s) === "available").length, color: "#10B981", bg: "#ECFDF5" },
+            { label: "On Hold", value: heldUnits.length, color: "#D97706", bg: "#FFFBEB" },
             { label: "Sold", value: stock.filter(s => s.status === "sold").length, color: "#6366F1", bg: "#EEF2FF" },
             { label: "Total Items", value: stock.length, color: "#F59E0B", bg: "#FFFBEB" },
           ].map(s => (
@@ -214,8 +242,14 @@ export default function DevicesView({
       {stockFilter !== "parts_sold" && stockFilter !== "reserved" && filteredStock.map(item => {
         const isExpanded = expandedStockId === item.id;
         const matches    = getMatchingClients(item, customers);
-        const isAvail    = item.status === "available";
+        const isAvail    = effectiveStatus(item) === "available";
         const isReserved = item.status === "reserved";
+        const onHold     = isHoldActive(item);
+        const holdFor    = onHold && item.quoted_to
+          ? customers.find(c => c.id === item.quoted_to)
+          : null;
+        const holderName = onHold ? (holderNames[item.quoted_by] || "another agent") : "";
+        const canRelease = onHold && (isOwner || (user?.id && item.quoted_by === user.id));
         const reservedFor = isReserved && item.reserved_for_customer_id
           ? customers.find(c => c.id === item.reserved_for_customer_id)
           : null;
@@ -229,12 +263,32 @@ export default function DevicesView({
             border: `1.5px solid ${isReserved ? (isOverdue ? "#FCA5A5" : "#FDE68A") : isAvail ? "#E2E8F0" : "#F1F5F9"}`,
             boxShadow: isReserved ? "0 1px 6px rgba(245,158,11,0.15)" : "0 1px 6px rgba(0,0,0,0.05)",
             overflow: "hidden", opacity: isAvail || isReserved || stockFilter === "sold" ? 1 : 0.7 }}>
+          {/* Soft hold banner */}
+          {onHold && (
+            <div style={{ padding: "8px 14px", background: "#FFFBEB", borderBottom: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#D97706" }}>
+                  ⏳ SOFT HOLD · {formatHoldRemaining(item)}
+                </div>
+                <div style={{ fontSize: 11, color: "#B45309" }}>
+                  Quoted to {holdFor?.name || "a client"} by {holderName}
+                </div>
+              </div>
+              {canRelease && (
+                <button onClick={e => { e.stopPropagation(); handleRelease(item); }}
+                  style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", color: "#D97706", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                  Release
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Reserved banner */}
           {isReserved && (
             <div style={{ padding: "8px 14px", background: isOverdue ? "#FEF2F2" : "#FFFBEB", borderBottom: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: isOverdue ? "#EF4444" : "#D97706" }}>
-                  🔒 Reserved{reservedFor ? ` for ${reservedFor.name}` : ""}
+                  🔒 HARD HOLD · Reserved{reservedFor ? ` for ${reservedFor.name}` : ""}
                 </div>
                 {pickupLabel && (
                   <div style={{ fontSize: 11, color: isOverdue ? "#EF4444" : "#B45309" }}>
@@ -284,11 +338,11 @@ export default function DevicesView({
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 4, alignItems: "flex-start", flexShrink: 0 }}>
-                  <button onClick={e => { e.stopPropagation(); if (!isReserved) toggleStockStatus(item); }}
-                    style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: isReserved ? "default" : "pointer",
-                             background: isReserved ? "#FFFBEB" : isAvail ? "#ECFDF5" : "#F1F5F9",
-                             color: isReserved ? "#D97706" : isAvail ? "#10B981" : "#94A3B8" }}>
-                    {isReserved ? "🔒 Reserved" : isAvail ? "✅ Available" : "🏷️ Sold"}
+                  <button onClick={e => { e.stopPropagation(); if (!isReserved && !onHold) toggleStockStatus(item); }}
+                    style={{ padding: "3px 10px", borderRadius: 20, border: "none", fontSize: 10, fontWeight: 700, cursor: isReserved || onHold ? "default" : "pointer",
+                             background: isReserved || onHold ? "#FFFBEB" : isAvail ? "#ECFDF5" : "#F1F5F9",
+                             color: isReserved || onHold ? "#D97706" : isAvail ? "#10B981" : "#94A3B8" }}>
+                    {isReserved ? "🔒 Reserved" : onHold ? "⏳ On hold" : isAvail ? "✅ Available" : "🏷️ Sold"}
                   </button>
                   {isAvail && (
                     <button onClick={e => { e.stopPropagation(); openBroadcast(item); }}
@@ -371,7 +425,7 @@ export default function DevicesView({
               );
             })()}
 
-            {item.status === "available" && <WaitingClientsPanel stockItem={item} />}
+            {effectiveStatus(item) === "available" && <WaitingClientsPanel stockItem={item} />}
 
             {/* Expanded details */}
             {isExpanded && (

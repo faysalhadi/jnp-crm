@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useStock } from "../../context/StockContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { supabase } from "../../supabase";
+import { effectiveStatus } from "../../utils/holds";
 import { useAuth } from "../../context/AuthContext";
 import { useProfile } from "../../context/ProfileContext";
 
@@ -24,7 +25,7 @@ export default function StockListMode() {
   const [copied, setCopied]         = useState(false);
   const [error, setError]           = useState(null);
 
-  const availableStock = stock.filter(s => s.status === "available");
+  const availableStock = stock.filter(s => effectiveStatus(s) === "available");
   const allAvailable   = [
     ...availableStock,
     ...consignmentStock.map(c => ({

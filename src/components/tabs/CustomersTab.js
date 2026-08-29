@@ -7,6 +7,8 @@ import { useStock } from "../../context/StockContext";
 import { TagStrip } from "../chat/TagEditor";
 import { getTag, customerStockMatch } from "../../constants";
 import { getReasonLine, getQuickMessage } from "../../utils/reasonLine";
+import { effectiveStatus, isHoldActive, formatHoldRemaining } from "../../utils/holds";
+import { useAuth } from "../../context/AuthContext";
 import { logWhatsAppContact } from "../../services/quickContactService";
 import ClientPreviewPanel from "./ClientPreviewPanel";
 import { useProfile } from "../../context/ProfileContext";
@@ -43,12 +45,12 @@ function buildWaUrl(number) {
 }
 
 const STAGE_COLORS = {
-  new_inquiry: "#6366F1", device_found: "#F59E0B",
+  new_inquiry: "#6366F1", watching: "#8B5CF6", device_found: "#F59E0B",
   negotiation: "#F59E0B", confirmed_pending_pickup: "#10B981",
   closed: "#10B981", lost: "#94A3B8",
 };
 const STAGE_LABELS = {
-  new_inquiry: "Inquiry", device_found: "Found",
+  new_inquiry: "Inquiry", watching: "Watching", device_found: "Found",
   negotiation: "Negotiating", confirmed_pending_pickup: "Pickup",
   closed: "Closed", lost: "Lost",
 };
@@ -63,7 +65,7 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
   const isOverdue  = queuePriority?.priority <= 2;
   const isIncomplete = !(c.deals || []).length && !c.notes && !fu;
 
-  const available    = useMemo(() => (stock || []).filter(s => s.status === "available"), [stock]);
+  const available    = useMemo(() => (stock || []).filter(s => effectiveStatus(s) === "available"), [stock]);
   const matchedStock = useMemo(() => customerStockMatch(c, available), [c, available]);
   const daysSilent   = useMemo(() => {
     const ts = lastAct?.logged_at || c.last_activity_at || c.last_active;
@@ -76,6 +78,15 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
 
   const { loadCustomers } = useCustomers();
   const { isOwner, profiles } = useProfile();
+  const { user } = useAuth();
+
+  // 5b — the hold chip belongs to the client it is held FOR, and only for the
+  // agent holding it. Everyone else sees the hold on the stock unit instead.
+  const myHold = useMemo(
+    () => (stock || []).find(s =>
+      isHoldActive(s) && s.quoted_to === c.id && user?.id && s.quoted_by === user.id),
+    [stock, c.id, user?.id]
+  );
   const assignedSP = isOwner && c.assigned_to ? (profiles || []).find(p => p.id === c.assigned_to) : null;
   const spInitials = assignedSP ? assignedSP.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() : null;
 
@@ -143,6 +154,12 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
                   fontWeight: 700, flexShrink: 0,
                 }}>
                   {STAGE_LABELS[latestDeal.stage] || latestDeal.stage}
+                </span>
+              )}
+              {myHold && (
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, flexShrink: 0,
+                  background: "#FFFBEB", color: "#D97706" }}>
+                  ⏳ held {formatHoldRemaining(myHold).replace(" left", "")}
                 </span>
               )}
               {fu && (
@@ -234,7 +251,7 @@ export default function CustomersTab() {
   }, [customers]); // eslint-disable-line
 
   const stockMatchSet = useMemo(() => {
-    const available = (stock || []).filter(s => s.status === "available");
+    const available = (stock || []).filter(s => effectiveStatus(s) === "available");
     const matched = new Set();
     allClients.forEach(c => {
       if (customerStockMatch(c, available)) matched.add(c.id);
@@ -246,6 +263,14 @@ export default function CustomersTab() {
     allClients
       .map(c => ({ c, priority: getQueuePriority(c, pendingFollowUpMap, stockMatchSet) }))
       .filter(({ priority }) => priority !== null)
+      // A parked requirement is a wait, not a task. When every open deal is
+      // 'watching' and nothing more urgent is driving the row, keep it out of
+      // the daily queue. getQueuePriority itself is untouched.
+      .filter(({ c, priority }) => {
+        if (priority.priority < 6) return true;
+        const open = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+        return !(open.length > 0 && open.every(d => d.stage === "watching"));
+      })
       .sort((a, b) => a.priority.priority - b.priority.priority),
     [allClients, pendingFollowUpMap, stockMatchSet]
   );

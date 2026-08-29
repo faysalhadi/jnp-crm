@@ -2,6 +2,7 @@ export const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
 
 export const STAGES = [
   { id: "new_inquiry",              label: "New Inquiry",              color: "#6366F1", bg: "#EEF2FF" },
+  { id: "watching",                 label: "Watching",                 color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "device_found",             label: "Device Found",             color: "#8B5CF6", bg: "#F5F3FF" },
   { id: "negotiation",              label: "Negotiation",              color: "#EC4899", bg: "#FDF2F8" },
   { id: "confirmed_pending_pickup", label: "Confirmed — Pending Pickup", color: "#F59E0B", bg: "#FFFBEB" },
@@ -311,7 +312,7 @@ export function customerStockMatch(customer, availableStock = []) {
   if (!availableStock.length) return null;
   // 1) Deal-based: open deals with a real model-level match (score >= 3)
   const openDeals = (customer.deals || []).filter(d =>
-    ["new_inquiry", "device_found", "negotiation"].includes(d.stage));
+    ["new_inquiry", "watching", "device_found", "negotiation"].includes(d.stage));
   for (const d of openDeals) {
     for (const s of availableStock) {
       const m = scoreMatch(s.brand, s.model, d.brand, d.model, s.processor, d.processor);

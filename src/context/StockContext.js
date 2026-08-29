@@ -3,6 +3,8 @@ import { supabase } from "../supabase";
 import * as XLSX from "xlsx";
 import { EMPTY_STOCK } from "../constants";
 import { daysSince } from "../utils/helpers";
+import { effectiveStatus, isHoldActive } from "../utils/holds";
+import { sweepExpiredHolds } from "../services/stockHoldService";
 
 const StockContext = createContext(null);
 
@@ -39,15 +41,26 @@ export function StockProvider({ children }) {
       .order("created_at", { ascending: false });
     setStock(data || []);
     setStockLoading(false);
+    // Tidy-up only: clear rows whose 48h hold already lapsed. Correctness never
+    // depends on this — effectiveStatus already reads them as available.
+    sweepExpiredHolds(data || []).then(res => {
+      if (res?.cleared) {
+        setStock(prev => prev.map(s =>
+          s.status === "quoted" && !isHoldActive(s)
+            ? { ...s, status: "available", quoted_by: null, quoted_to: null, quoted_at: null, quoted_deal_id: null }
+            : s
+        ));
+      }
+    });
   }, []);
 
   const refreshCachedStock = useCallback(async () => {
     const { data } = await supabase
       .from("stock")
-      .select("brand, model, processor, ram, ssd, screen, condition, charger, box, activation_lock, max_price, min_price, cost_price, created_at")
-      .eq("status", "available")
+      .select("brand, model, processor, ram, ssd, screen, condition, charger, box, activation_lock, max_price, min_price, cost_price, created_at, status, quoted_at")
+      .in("status", ["available", "quoted"])
       .order("brand");
-    setCachedStock(data || []);
+    setCachedStock((data || []).filter(s => effectiveStatus(s) === "available"));
   }, []);
 
   async function saveStock() {
@@ -99,10 +112,13 @@ export function StockProvider({ children }) {
   }
 
   async function toggleStockStatus(item) {
-    const newStatus = item.status === "available" ? "sold" : "available";
-    await supabase.from("stock").update({ status: newStatus }).eq("id", item.id);
+    const newStatus = effectiveStatus(item) === "available" ? "sold" : "available";
+    const patch = newStatus === "available"
+      ? { status: "available", quoted_by: null, quoted_to: null, quoted_at: null, quoted_deal_id: null }
+      : { status: newStatus };
+    await supabase.from("stock").update(patch).eq("id", item.id);
     setStock(prev => prev.map(s =>
-      s.id === item.id ? { ...s, status: newStatus } : s
+      s.id === item.id ? { ...s, ...patch } : s
     ));
     refreshCachedStock();
   }
@@ -219,7 +235,7 @@ export function StockProvider({ children }) {
 
   const filteredStock = stock.filter(item => {
     if (stockSearch === "slow") {
-      return item.status === "available" && daysSince(item.created_at) >= 7;
+      return effectiveStatus(item) === "available" && daysSince(item.created_at) >= 7;
     }
     if (stockSearch) {
       const q = stockSearch.toLowerCase();
@@ -228,7 +244,9 @@ export function StockProvider({ children }) {
              (item.processor || "").toLowerCase().includes(q) ||
              (item.serial_number || "").toLowerCase().includes(q);
     }
-    if (stockFilter === "available") return item.status === "available";
+    // Held units stay in the Available tab so the amber hold badge is where a
+    // double-quote would actually happen.
+    if (stockFilter === "available") return effectiveStatus(item) === "available" || isHoldActive(item);
     if (stockFilter === "reserved") return item.status === "reserved";
     if (stockFilter === "sold") return item.status === "sold";
     return true;

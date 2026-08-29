@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { callClaude } from "../utils/claude";
 import { autoTier } from "../utils/helpers";
 import { STAGES } from "../constants";
+import { releaseHold, upgradeToReserved } from "../services/stockHoldService";
 
 export function useChatActions() {
   const { anthropicKey } = useAuth();
@@ -99,6 +100,25 @@ export function useChatActions() {
     const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
     await updateCustomer(activeCustomerId, { tier: autoTier(updatedDeals, activeCustomer.tier) });
     setPendingSuggestion(null);
+
+    // Hold lifecycle. Soft hold → hard hold on a confirmed pickup; dropped when
+    // the deal is lost or parked. 'closed' is left alone — the sold flow owns it.
+    const heldStockId = activeDeal?.stock_item_id || null;
+    if (heldStockId) {
+      if (stageId === "confirmed_pending_pickup") await upgradeToReserved(heldStockId);
+      else if (stageId === "lost" || stageId === "watching") await releaseHold(heldStockId);
+    }
+    if (stageId === "watching") {
+      await updateDeal(activeDealId, {
+        parked_reason: "no_stock",
+        parked_at: new Date().toISOString(),
+        stock_item_id: null,
+      });
+    }
+    if (heldStockId && (stageId === "confirmed_pending_pickup" || stageId === "lost" || stageId === "watching")) {
+      await loadStock();
+      refreshCachedStock();
+    }
     if (stageId === "lost") setShowLossReason(true);
     if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }
     if (stageId === "closed") { setLinkStockDeal({ ...activeDeal, ...fields }); setShowLinkStock(true); }

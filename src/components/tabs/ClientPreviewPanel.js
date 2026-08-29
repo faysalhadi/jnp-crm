@@ -5,6 +5,8 @@ import { useStock } from "../../context/StockContext";
 import { TagStrip } from "../chat/TagEditor";
 import { STAGES, getRecommendation, customerStockMatch } from "../../constants";
 import { formatWhatsAppNumber } from "../../utils/helpers";
+import { effectiveStatus } from "../../utils/holds";
+import DealForkModal from "../modals/DealForkModal";
 
 const ACT_ICON = {
   called: "📞", no_answer: "📵", messaged: "💬", met: "🤝",
@@ -35,11 +37,12 @@ const SH = {
 
 export default function ClientPreviewPanel({ client, onOpenChat }) {
   const { loadCustomers, pendingFollowUpMap, lastActivityMap } = useCustomers();
-  const { stock } = useStock();
+  const { stock, loadStock, refreshCachedStock } = useStock();
 
   const [activities, setActivities]     = useState([]);
   const [followUps, setFollowUps]       = useState([]);
   const [historyOpen, setHistoryOpen]   = useState(false);
+  const [showDealFork, setShowDealFork] = useState(false);
 
   // D1 — customers.notes editing
   const [editingNotes, setEditingNotes] = useState(false);
@@ -126,7 +129,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
     .reduce((a, d) => a + (d.value || 0), 0);
 
   const available = useMemo(
-    () => (stock || []).filter(s => s.status === "available"),
+    () => (stock || []).filter(s => effectiveStatus(s) === "available"),
     [stock]
   );
   const stockMatchSet = useMemo(() => {
@@ -289,7 +292,20 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </div>
         )}
 
-        {/* 5. OPEN DEALS */}
+        {/* 5. NEW REQUIREMENT — the fork */}
+        <div style={{ marginTop: 18 }}>
+          <button
+            onClick={() => setShowDealFork(true)}
+            style={{
+              width: "100%", padding: "10px 0", borderRadius: 10,
+              border: "1.5px solid #C7D2FE", background: "#EEF2FF",
+              color: "#6366F1", fontSize: 13, fontWeight: 800, cursor: "pointer",
+            }}>
+            + New requirement
+          </button>
+        </div>
+
+        {/* 6. OPEN DEALS */}
         {openDeals.length > 0 && (
           <>
             <div style={SH}>OPEN DEALS</div>
@@ -322,7 +338,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </>
         )}
 
-        {/* 6. FOLLOW-UPS */}
+        {/* 7. FOLLOW-UPS */}
         {followUps.length > 0 && (
           <>
             <div style={SH}>FOLLOW-UPS</div>
@@ -356,7 +372,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </>
         )}
 
-        {/* 7. ACTIVITY TIMELINE (D2) */}
+        {/* 8. ACTIVITY TIMELINE (D2) */}
         <div style={SH}>ACTIVITY</div>
 
         {/* D2: Add note input */}
@@ -405,7 +421,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           })}
         </div>
 
-        {/* 8. DEAL HISTORY */}
+        {/* 9. DEAL HISTORY */}
         {closedDeals.length > 0 && (
           <>
             <div style={SH}>DEAL HISTORY</div>
@@ -462,6 +478,20 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </button>
         </div>
       </div>
+
+      <DealForkModal
+        open={showDealFork}
+        customer={client}
+        deal={openDeals.find(d => d.stage === "new_inquiry") || null}
+        onClose={() => setShowDealFork(false)}
+        onSaved={() => {
+          setShowDealFork(false);
+          loadCustomers();
+          loadStock();
+          refreshCachedStock();
+          fetchPanelData(client.id);
+        }}
+      />
     </div>
   );
 }

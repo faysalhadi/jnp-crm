@@ -11,9 +11,11 @@ import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import TagEditor, { TagPill } from "./TagEditor";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
+import DealForkModal from "../modals/DealForkModal";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
 import { useProfile } from "../../context/ProfileContext";
+import { effectiveStatus } from "../../utils/holds";
 
 export default function ChatHeader() {
   const { setShowSideDrawer } = useUI();
@@ -37,7 +39,7 @@ export default function ChatHeader() {
     pendingFollowUpMap,
     lastActivityMap,
   } = useCustomers();
-  const { stock } = useStock();
+  const { stock, loadStock, refreshCachedStock } = useStock();
   const {
     editingName, setEditingName,
     nameInput, setNameInput,
@@ -60,6 +62,7 @@ export default function ChatHeader() {
   const [showFreqPicker, setShowFreqPicker] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
   const [showBulkQuote, setShowBulkQuote] = useState(false);
+  const [showDealFork, setShowDealFork] = useState(false);
   const [showDeleteDeal, setShowDeleteDeal] = useState(false);
   const [showFindStock, setShowFindStock] = useState(false);
   const [stockMatches, setStockMatches] = useState({ own: [], trader: [] });
@@ -130,7 +133,7 @@ export default function ChatHeader() {
 
   const recommendation = useMemo(() => {
     if (!activeCustomer) return null;
-    const available = (stock || []).filter(s => s.status === "available");
+    const available = (stock || []).filter(s => effectiveStatus(s) === "available");
     const stockMatchSet = new Set();
     if (customerStockMatch(activeCustomer, available)) stockMatchSet.add(activeCustomer.id);
     const priority = getQueuePriority(activeCustomer, pendingFollowUpMap, stockMatchSet);
@@ -185,10 +188,11 @@ export default function ChatHeader() {
     const model = (activeDeal.model || "").toLowerCase();
     const budget = activeDeal.budget;
     // Search own stock
-    let ownQuery = supabase.from("stock").select("*").eq("status", "available");
+    let ownQuery = supabase.from("stock").select("*").in("status", ["available", "quoted"]);
     if (brand) ownQuery = ownQuery.ilike("brand", "%" + brand + "%");
     const { data: ownStock } = await ownQuery;
     const filteredOwn = (ownStock || []).filter(s => {
+      if (effectiveStatus(s) !== "available") return false;
       if (model) {
         const sm = (s.model || "").toLowerCase();
         const words = model.split(" ").filter(w => w.length > 2);
@@ -320,7 +324,13 @@ export default function ChatHeader() {
               💬 WhatsApp
             </a>
           )}
-          <button onClick={() => setShowAddDeal(true)}
+          <button onClick={() => {
+              if (!activeCustomer.contact_type || activeCustomer.contact_type === "client" || activeCustomer.contact_type === "walkin") {
+                setShowDealFork(true);
+              } else {
+                setShowAddDeal(true);
+              }
+            }}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#6366F1" }}>+</button>
           <button onClick={() => setShowSideDrawer(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>📊</button>
@@ -332,6 +342,16 @@ export default function ChatHeader() {
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #FEE2E2", background: "#FFF5F5", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>🗑</button>
         </div>
       </div>
+
+      {/* NEW REQUIREMENT — the fork */}
+      {(!activeCustomer.contact_type || activeCustomer.contact_type === "client" || activeCustomer.contact_type === "walkin") && !isViewingAs && (
+        <div style={{ padding: "0 14px 10px" }}>
+          <button onClick={() => setShowDealFork(true)}
+            style={{ width: "100%", padding: "9px 0", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+            + New requirement
+          </button>
+        </div>
+      )}
 
       {/* DEAL TABS */}
       {(activeCustomer.deals || []).length > 0 && (
@@ -957,6 +977,14 @@ export default function ChatHeader() {
     </div>
 
     {showContactSheet && <ContactSheet onClose={() => setShowContactSheet(false)} />}
+
+    <DealForkModal
+      open={showDealFork}
+      customer={activeCustomer}
+      deal={activeDeal}
+      onClose={() => setShowDealFork(false)}
+      onSaved={() => { setShowDealFork(false); loadCustomers(); loadStock(); refreshCachedStock(); }}
+    />
 
     {showTagEditor && (
       <TagEditor

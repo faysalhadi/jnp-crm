@@ -1,6 +1,7 @@
 import ownerOnly from "../layout/ownerOnly";
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
+import { effectiveStatus } from "../../utils/holds";
 import { useUI } from "../../context/UIContext";
 import { useAuth } from "../../context/AuthContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -312,7 +313,7 @@ function MarketingTab({ stock }) {
     } catch {}
   }, [settingsReady]); // eslint-disable-line
 
-  const availableStock = (stock || []).filter(s => s.status === "available");
+  const availableStock = (stock || []).filter(s => effectiveStatus(s) === "available");
 
   function stockSummary() {
     const ownedLines = availableStock.slice(0, 6).map(s =>

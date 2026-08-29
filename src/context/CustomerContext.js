@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { supabase } from "../supabase";
 import { daysSince, monthRevenue } from "../utils/helpers";
 import { useProfile } from "./ProfileContext";
+import { placeHold, releaseHold } from "../services/stockHoldService";
 
 
 // ── Client health calculation ─────────────────────────────────────────────────
@@ -239,7 +240,29 @@ export function CustomerProvider({ children }) {
   }
 
   async function updateDeal(dealId, fields) {
+    // When the unit on a deal changes, the old unit must not stay held for a
+    // client it is no longer promised to.
+    let previous = null;
+    if (Object.prototype.hasOwnProperty.call(fields, "stock_item_id")) {
+      const { data } = await supabase
+        .from("deals").select("stock_item_id, customer_id, stage").eq("id", dealId).maybeSingle();
+      previous = data || null;
+    }
+
     await supabase.from("deals").update(fields).eq("id", dealId);
+
+    if (previous && previous.stock_item_id !== fields.stock_item_id) {
+      if (previous.stock_item_id) await releaseHold(previous.stock_item_id);
+      const stillOpen = (fields.stage || previous.stage) !== "closed"
+                     && (fields.stage || previous.stage) !== "lost";
+      if (fields.stock_item_id && stillOpen) {
+        await placeHold(fields.stock_item_id, {
+          customerId: previous.customer_id,
+          dealId,
+        });
+      }
+    }
+
     await loadCustomers();
   }
 

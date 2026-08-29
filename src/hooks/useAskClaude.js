@@ -6,6 +6,7 @@ import { useParts } from "../context/PartsContext";
 import { useSales } from "../context/SalesContext";
 import { useAuth } from "../context/AuthContext";
 import { useAskClaudeContext } from "../context/AskClaudeContext";
+import { effectiveStatus } from "../utils/holds";
 
 export function useAskClaude() {
   const { anthropicKey } = useAuth();
@@ -57,23 +58,25 @@ export function useAskClaude() {
   async function buildStockContext() {
     const { data: stock } = await supabase
       .from("stock")
-      .select("brand, model, processor, ram, ssd, condition, status, max_price, created_at")
-      .eq("status", "available")
+      .select("brand, model, processor, ram, ssd, condition, status, quoted_at, max_price, created_at")
+      .in("status", ["available", "quoted"])
       .order("brand");
-    const lines = (stock || []).map((s, i) => {
+    const avail = (stock || []).filter(s => effectiveStatus(s) === "available");
+    const lines = avail.map((s, i) => {
       const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
       return `${i + 1}. ${s.brand || ""} ${s.model || ""} ${s.processor || ""} ${s.ram || ""}/${s.ssd || ""} ${s.condition || ""} AED${s.max_price || 0} (${age}d)`;
     }).join("\n");
-    return `AVAILABLE STOCK (${(stock || []).length} items):\n${lines || "(none)"}`;
+    return `AVAILABLE STOCK (${avail.length} items):\n${lines || "(none)"}`;
   }
 
   async function buildMarginsContext() {
     const { data: stock } = await supabase
       .from("stock")
-      .select("brand, model, condition, cost_price, min_price, max_price, created_at")
-      .eq("status", "available")
+      .select("brand, model, condition, cost_price, min_price, max_price, created_at, status, quoted_at")
+      .in("status", ["available", "quoted"])
       .order("brand");
-    const lines = (stock || []).map((s, i) => {
+    const avail = (stock || []).filter(s => effectiveStatus(s) === "available");
+    const lines = avail.map((s, i) => {
       const cost = Number(s.cost_price) || 0;
       const sell = Number(s.max_price) || 0;
       const profit = sell - cost;

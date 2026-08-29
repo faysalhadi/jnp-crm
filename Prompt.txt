@@ -1,262 +1,280 @@
-# FIX — Salesperson can reach owner-only tabs from the client detail view
+JNP CRM — The Fork + Soft Hold on Stock
+
+WHY
+A customer asks about a laptop. It goes one of two ways: we have it (blocked
+on him deciding) or we don't (blocked on supply). Today that fork happens only
+in the agent's head and the app never learns which side it landed on.
+
+There are now FOUR people using this app. The failure this prevents: Ahmed
+quotes unit #47 to Rehman, Bilal quotes the same unit to Ali, both promise it,
+one of them loses face with a client.
+
+Read every file fully before editing. Targeted edits only — do NOT rewrite
+whole files. Run `npm run build` at the end and fix all ESLint errors.
+
+════════════════════════════════════════════════════════════════════════
+STEP 0 — SQL  (print this at the end for Faisal; do not try to run it)
+════════════════════════════════════════════════════════════════════════
+
+-- minimal identity: a hold has to be able to name a person
+CREATE TABLE IF NOT EXISTS profiles (
+  id         uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name  text,
+  role       text DEFAULT 'salesperson'
+             CHECK (role IN ('owner','manager','salesperson')),
+  active     boolean DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
 
-Symptom: a salesperson opens a client. The owner's side navigation appears and
-they can navigate into Marketing, Parts DB, Sales History, Sourcing, Traders
-and Ask Claude.
+-- soft hold on a stock unit
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_by      uuid;
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_to      uuid;
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_at      timestamptz;
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_deal_id uuid;
 
-Cause: nav access is currently decided separately in each nav component. The
-client detail view renders a nav that never got the role gate, so the
-restriction is bypassed.
+-- deal authorship + the price the client named
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by    uuid;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS target_price  numeric;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS parked_reason text;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS parked_at     timestamptz;
 
-The fix is NOT to add one more conditional to one more file. Access must be
-decided in ONE place, and each restricted tab must also refuse to render for a
-salesperson even if something manages to navigate there. Two layers.
+Faisal must also insert a profiles row per user. Print this template too:
+  INSERT INTO profiles (id, full_name, role)
+  VALUES ('<auth-user-id>', 'Faisal', 'owner');
 
-Read every file before editing.
-After all changes: npm run build, fix ESLint errors, git push.
+FIRST: check whether stock.status has a CHECK constraint. If it does, it must
+be widened to allow 'quoted'. Print the exact ALTER needed. If status is a
+plain text column, nothing extra is required.
 
----
+All code below must degrade safely if this SQL has not run yet — treat every
+new column as possibly null and never crash.
 
-## STEP 0 — Find the nav that leaks
+════════════════════════════════════════════════════════════════════════
+STEP 1 — NEW FILE: src/utils/holds.js
+════════════════════════════════════════════════════════════════════════
 
-Run these and read the output before writing any code:
+Pure helpers. No React, no supabase.
 
-```bash
-grep -rn "DesktopSidebar\|SideDrawer\|BottomNav\|TopBar" src/
-grep -rn "ChatDetailView" src/
-```
+  export const HOLD_HOURS = 48;
 
-Identify exactly which component renders navigation when a client is open.
-Common causes, confirm which one applies:
-- ChatDetailView renders inside the main layout, and the layout renders the
-  sidebar unconditionally
-- ChatDetailView is a full-screen route that renders its OWN copy of
-  DesktopSidebar or SideDrawer
-- The ☰ TopBar button stays mounted and opens SideDrawer over the detail view
+  export function isHoldActive(stockItem)
+    true when status === 'quoted' AND quoted_at is set
+    AND (now - quoted_at) < HOLD_HOURS.
+    Returns false safely for null/missing input.
 
-State which one it is in your output before proceeding.
+  export function holdRemainingMs(stockItem)
+    Milliseconds left, or 0 if not held / expired.
+
+  export function formatHoldRemaining(stockItem)
+    "31h left" · "4h left" · "42m left" · "" when not held.
+
+  export function effectiveStatus(stockItem)
+    Returns the status to ACT on:
+      'quoted' whose hold has expired  →  'available'
+      everything else                  →  the stored status
+    Every availability check in the app must go through this.
+
+DESIGN RULE — IMPORTANT:
+Expiry is COMPUTED, never stored. There is no scheduled job and no cron.
+A hold older than HOLD_HOURS is simply treated as available everywhere.
+Do NOT write a background task or timer to flip statuses.
+
+Optionally, when the app loads stock and finds expired 'quoted' rows, it may
+lazily clear them (status back to 'available', quoted_* to null) as a tidy-up.
+That is a convenience only — correctness must never depend on it.
+
+════════════════════════════════════════════════════════════════════════
+STEP 2 — NEW FILE: src/services/stockHoldService.js
+════════════════════════════════════════════════════════════════════════
+
+  import { supabase } from "../supabase";
+
+  export async function placeHold(stockId, { customerId, dealId })
+    Reads the row first. If isHoldActive() and quoted_by is a DIFFERENT user,
+    return { ok:false, conflict:true, heldBy, heldUntil } — do NOT overwrite.
+    Otherwise set:
+      status='quoted', quoted_by=<current user id>, quoted_to=customerId,
+      quoted_at=now(), quoted_deal_id=dealId
+
+  export async function releaseHold(stockId)
+    status back to 'available', quoted_* all null.
+    Only if the row is not already 'sold' or 'reserved'.
 
----
+  export async function upgradeToReserved(stockId)
+    status='reserved', keep quoted_to and quoted_deal_id, clear quoted_at
+    so no countdown shows on a hard hold.
 
-## STEP 1 — Single source of truth for nav access
+  export async function getHolderName(userId)
+    Looks up profiles.full_name. Falls back to "another agent" when the
+    profiles row is missing. Cache results in a module-level Map — this is
+    called per stock row and must not fire a query each time.
 
-Create a new file: **src/constants/access.js**
+Current user id: use the existing AuthContext if it exposes one; otherwise
+supabase.auth.getUser(). Do NOT add a new auth mechanism.
 
-```js
-// Tabs a salesperson may reach. Everything else is owner-only.
-export const SALESPERSON_TABS = ['home', 'customers', 'stock'];
+Every function returns { ok:true, ... } or { ok:false, error }. Never throws.
 
-// Side drawer / sidebar items a salesperson may reach.
-export const SALESPERSON_DRAWER_ITEMS = ['settings', 'signout'];
+════════════════════════════════════════════════════════════════════════
+STEP 3 — NEW FILE: src/components/modals/DealForkModal.js
+════════════════════════════════════════════════════════════════════════
 
-export function canAccessTab(tabId, { isOwner, isViewingAs }) {
-  if (isOwner && !isViewingAs) return true;
-  return SALESPERSON_TABS.includes(tabId);
-}
+The single most important screen in this change. Follow the visual pattern of
+the existing modals in src/components/modals/ (bottom sheet on mobile).
 
-export function canAccessDrawerItem(itemId, { isOwner, isViewingAs }) {
-  if (isOwner && !isViewingAs) return true;
-  return SALESPERSON_DRAWER_ITEMS.includes(itemId);
-}
-```
+Props: { customer, open, onClose, onSaved }
 
-Then create a hook in **src/context/ProfileContext.js** (add to the existing
-file, export from the same place):
+── Screen 1: the question ───────────────────────────────────────────────
 
-```js
-import { canAccessTab, canAccessDrawerItem } from '../constants/access';
+Full-width, centred:
+    "Do we have it?"
+    <customer name> as a subtitle
 
-// inside ProfileProvider, before the return:
-const access = {
-  canTab: (tabId) => canAccessTab(tabId, { isOwner, isViewingAs }),
-  canDrawer: (itemId) => canAccessDrawerItem(itemId, { isOwner, isViewingAs }),
-};
-```
+Two large tap targets side by side, each at least 90px tall:
 
-Add `access` to the context value object.
+  [ ✅  YES              ]     [ 👁  NOT YET            ]
+  [ Pick the unit        ]     [ Record the want       ]
+  [ 48h hold starts      ]     [ Matches on arrival    ]
 
-Every nav component from here on uses `access.canTab(...)` /
-`access.canDrawer(...)`. No component decides this on its own any more.
+  green border/text              purple border/text
 
----
+There is no third option and no way to dismiss without choosing. This
+question must be unskippable.
 
-## STEP 2 — Apply the single check in every nav component
+── Screen 2A: YES ───────────────────────────────────────────────────────
 
-For each of these files: read it, import `useProfile`, pull out `access`, and
-replace whatever ad-hoc `isOwner` / `isViewingAs` logic exists with the shared
-check.
+  1. UNIT PICKER (required)
+     List stock where effectiveStatus() === 'available'.
+     Searchable by brand/model. Show brand, model, specs, condition.
+     Units currently held by someone else appear GREYED with a label:
+       "held by Ahmed · 31h left"
+     Tapping a held unit shows an inline warning and does not select it.
+     An 'owner' role may override, with a confirm step — nobody else can.
 
-### src/components/layout/BottomNav.js
-```js
-const { access } = useProfile();
-const visibleTabs = tabs.filter(tab => access.canTab(tab.id));
-```
+  2. "You quoted" — numeric, AED, required
+  3. "He offered" — numeric, AED, optional → deals.target_price
 
-### src/components/layout/DesktopSidebar.js
-```js
-const { access } = useProfile();
-// filter the tab list with access.canTab(...)
-// filter the drawer-style items with access.canDrawer(...)
-```
-
-### src/components/layout/SideDrawer.js
-```js
-const { access } = useProfile();
-// Marketing, Parts DB, Sales History each wrapped with:
-{access.canDrawer('marketing') && ( ... )}
-{access.canDrawer('parts') && ( ... )}
-{access.canDrawer('sales_history') && ( ... )}
-// Settings and Sign Out always render
-```
-
-### src/components/layout/TopBar.js
-Read it. If the ☰ button opens a drawer that now has only Settings and Sign
-Out for a salesperson, that is fine — keep the button. But confirm the drawer
-it opens is the gated SideDrawer above, not a second copy.
-
----
-
-## STEP 3 — Fix the leak in the client detail view
-
-Based on what STEP 0 found, apply the matching fix:
-
-**If ChatDetailView renders its own nav:** remove it. The detail view should
-not render navigation at all — it is a child of the main layout, which already
-provides nav.
-
-**If the detail view is a full-screen overlay and nav is showing through:**
-give the overlay a solid background and a high enough z-index that the
-sidebar is genuinely covered, and make sure the sidebar is not rendered on top
-of it.
-
-**If the layout renders the sidebar unconditionally:** that is fine now,
-because STEP 2 makes the sidebar itself role-aware. Verify by reading
-DesktopSidebar and SideDrawer that no item escapes `access`.
-
-Whichever case applies, the detail view must have a working back button that
-returns to the Clients list.
-
----
-
-## STEP 4 — Second layer: tabs refuse to render
-
-Nav filtering is not enough on its own. If a tab id ever gets set some other
-way — a stale state value, a deep link, a stray `setActiveTab` call — the
-restricted tab would still render. Close that.
-
-### src/App.js
-
-Read the file. Find where the active tab is rendered (the switch or map that
-picks which tab component to show).
-
-Wrap it with the access check:
-
-```js
-const { access, profileLoading } = useProfile();
-
-// Never render a tab this user may not access.
-const safeTab = access.canTab(activeTab) ? activeTab : 'home';
-```
-
-Then render based on `safeTab`, not `activeTab`.
-
-Also add a correcting effect so the nav highlight does not sit on a tab that is
-not being shown:
-
-```js
-useEffect(() => {
-  if (!profileLoading && !access.canTab(activeTab)) {
-    setActiveTab('home');
-  }
-}, [profileLoading, activeTab, access]);
-```
-
-Note: `access` is recreated each render. To avoid an infinite loop, either
-wrap `access` in `useMemo` inside ProfileContext (dependencies: `isOwner`,
-`isViewingAs`), or depend on `isOwner, isViewingAs, activeTab` in the effect
-instead of `access`. Do the useMemo — it is cleaner:
-
-```js
-// in ProfileContext:
-const access = useMemo(() => ({
-  canTab: (tabId) => canAccessTab(tabId, { isOwner, isViewingAs }),
-  canDrawer: (itemId) => canAccessDrawerItem(itemId, { isOwner, isViewingAs }),
-}), [isOwner, isViewingAs]);
-```
-
-### Guard the owner-only tab components themselves
-
-At the top of each of these components, return null (or a short message) if
-the user should not be there. This is cheap and makes the restriction
-impossible to bypass from the UI:
-
-- src/components/tabs/MarketingTab.js
-- src/components/tabs/PartsCompatibilityTab.js
-- src/components/tabs/SalesTab.js
-- src/components/tabs/AskClaudeTab.js
-- src/components/tabs/TradersTab.js
-- src/SourcingModule.js
-
-```js
-const { isOwner, isViewingAs } = useProfile();
-if (!isOwner || isViewingAs) return null;
-```
-
----
-
-## STEP 5 — Check GlobalSearch
-
-Read src/components/layout/GlobalSearch.js.
-
-Global search likely queries stock, traders, sourcing deals and customers. For
-a salesperson it must not surface traders, sourcing deals, or clients that are
-not assigned to them.
-
-```js
-const { isOwner, isSalesperson, currentProfile, isViewingAs } = useProfile();
-
-// skip trader + sourcing result groups entirely when not a full owner
-// scope customer results with .eq('assigned_to', ...) using the same
-// rule as CustomerContext
-```
-
-If GlobalSearch is only rendered for owners, confirm that and skip this step —
-but say so in your output.
-
----
-
-## STEP 6 — Build and push
-
-```bash
-npm run build
-```
-
-Fix all ESLint errors. Watch for:
-- unused `isOwner` imports in nav components now using `access`
-- exhaustive-deps warnings on the correcting effect in App.js
-
-```bash
-git add -A
-git commit -m "fix: centralize role-based nav access, close leak from client detail view"
-git push
-```
-
----
-
-## TEST AFTER DEPLOY
-
-Log in as the salesperson in a private window:
-
-1. Bottom nav shows only Home, Clients, Stock
-2. Open a client — no owner nav appears anywhere on screen
-3. Tap ☰ — only Settings and Sign Out
-4. Back button from the client returns to the Clients list
-5. On desktop width, the sidebar shows only the three allowed tabs
-6. Global search returns only their own clients and stock — no traders,
-   no sourcing deals
-
-Then as owner:
-
-7. All tabs and drawer items present as before
-8. "View CRM" on a salesperson — nav collapses to the three tabs, and
-   restores fully on Exit
+  Then a summary block listing exactly what will happen:
+     ✓ Unit #47 held 48h — visible to everyone
+     ✓ Stage → negotiation
+     ✓ 24h follow-up created
+
+  On save:
+    - create/update the deal: stage='negotiation', stock_item_id, created_by,
+      target_price, value = quoted amount
+    - placeHold(stockId, { customerId, dealId })
+    - if placeHold returns conflict:true → show the conflict, keep the sheet
+      open, do NOT save the deal
+    - log activity_log: activity_type='note',
+      note="Quoted AED x" + (offered ? " · offered AED y" : "")
+    - create a follow_up 24h out
+    - onSaved()
+
+── Screen 2B: NOT YET ───────────────────────────────────────────────────
+
+  1. BRAND + MODEL — REQUIRED, both of them.
+     Block save if either is empty and explain why:
+       "Without brand and model we can't match this when stock arrives."
+     This is the single most common data-quality failure — enforce it.
+
+  2. "What would he pay" — numeric, AED, optional → deals.target_price
+
+  Summary block:
+     ✓ Stage → watching — out of your daily queue
+     ✓ Joins the Requirements board
+     ✓ Alerts you the day one lands
+
+  On save:
+    - deal: stage='watching', parked_reason='no_stock', parked_at=now(),
+      brand, model, target_price, created_by
+    - NO stock link, NO hold
+    - log activity_log note: "Requirement recorded: <brand> <model>"
+    - NO follow-up — this is a wait, not a task
+    - onSaved()
+
+Both screens: a Back link returns to screen 1. Errors show inline and keep
+the sheet open. Never lose what the agent typed.
+
+════════════════════════════════════════════════════════════════════════
+STEP 4 — WIRE THE FORK IN
+════════════════════════════════════════════════════════════════════════
+
+  grep -rn "stage.*new_inquiry\|insert.*deals\|from(\"deals\").insert" src/
+
+Find every place a NEW deal is created from a client. Route the main path
+through DealForkModal instead of creating a deal directly.
+
+Add a clear "+ New requirement" button in the client detail / right panel
+that opens the fork.
+
+Do NOT change QuickSaleModal or the walk-in flow — those are already-closed
+sales and have no fork.
+
+════════════════════════════════════════════════════════════════════════
+STEP 5 — SHOW THE HOLD
+════════════════════════════════════════════════════════════════════════
+
+5a. STOCK VIEWS (src/components/stock/DevicesView.js and the stock detail)
+    On any unit where isHoldActive():
+
+        ⏳ SOFT HOLD · 31h left
+        Quoted to Rehman Electronics by Ahmed
+        [ Release ]   ← only for the holder, or an owner
+
+    Amber styling. Use formatHoldRemaining().
+    A 'reserved' unit shows a hard-hold badge with NO countdown.
+
+5b. CLIENT QUEUE CARD
+    Add a small amber chip "held 31h" ONLY on the card of the client the
+    unit is held FOR, and only when the current user is the holder.
+    Other agents see nothing extra on client cards — the hold is surfaced on
+    the stock unit, which is where a double-quote would actually happen.
+
+5c. AVAILABILITY
+    Every "is this available" check must call effectiveStatus(), not read
+    status directly. Search for status === 'available' across src/ and fix
+    each one. A unit whose hold has expired must behave as fully available.
+
+════════════════════════════════════════════════════════════════════════
+STEP 6 — RELEASE AND UPGRADE
+════════════════════════════════════════════════════════════════════════
+
+  · deal → confirmed_pending_pickup   →  upgradeToReserved(stockId)
+  · deal → lost                       →  releaseHold(stockId)
+  · deal → watching / parked          →  releaseHold(stockId)
+  · deal → closed                     →  leave it; the existing sold flow owns it
+  · stock_item_id changed on a deal   →  release the old unit, hold the new one
+
+Hook these into wherever deal stage changes are already handled. Do not build
+a new stage-change mechanism.
+
+════════════════════════════════════════════════════════════════════════
+DO NOT
+════════════════════════════════════════════════════════════════════════
+  · Do NOT enable RLS on any table — that rollout is separate and staged.
+  · Do NOT write a cron job, timer, or background task for hold expiry.
+    Expiry is computed. This is deliberate.
+  · Do NOT let one agent silently take a unit held by another.
+  · Do NOT create a follow-up on the NOT YET path — parked is a wait.
+  · Do NOT auto-message anyone.
+  · Do NOT change getQueuePriority or getClientHealth logic.
+  · Do NOT add npm dependencies.
+  · Do NOT rewrite whole files.
+  · Do NOT restore the Pipeline view.
+
+════════════════════════════════════════════════════════════════════════
+FINISH
+════════════════════════════════════════════════════════════════════════
+  1. npm run build
+  2. Fix every ESLint error and unused-variable warning
+  3. Verify by reading the code back:
+       - a 'quoted' unit older than 48h reads as available everywhere
+       - placeHold refuses a unit actively held by a different user
+       - the NOT YET path cannot save without brand AND model
+       - nothing crashes if the step-0 SQL has not run yet
+  4. Print:
+       - the full step-0 SQL, ready to paste
+       - the stock.status constraint ALTER, if one is needed
+       - files created / edited
+       - every place you found that creates a deal, and which you rewired
+       - anything you did differently, and why

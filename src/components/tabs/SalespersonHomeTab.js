@@ -76,6 +76,7 @@ export default function SalespersonHomeTab() {
 
   const STAGE_LABELS = {
     new_inquiry: "New inquiry",
+    watching: "Watching",
     negotiation: "Negotiating",
     confirmed_pending_pickup: "Pickup pending",
     closed: "Closed",
@@ -84,6 +85,7 @@ export default function SalespersonHomeTab() {
 
   const STAGE_COLORS = {
     new_inquiry: "#6366F1",
+    watching: "#8B5CF6",
     negotiation: "#F59E0B",
     confirmed_pending_pickup: "#10B981",
   };

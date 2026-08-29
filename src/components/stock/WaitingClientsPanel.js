@@ -18,7 +18,7 @@ export default function WaitingClientsPanel({ stockItem }) {
     const { data: deals } = await supabase
       .from("deals")
       .select("*, customers(id, name, number, messages(content, role, ts))")
-      .eq("stage", "new_inquiry");
+      .in("stage", ["new_inquiry", "watching"]);
 
     if (!deals) return;
 

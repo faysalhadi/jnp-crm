@@ -430,7 +430,7 @@ function TradersTab({
               {(() => {
                 const buyingRequests = traderListings.filter(t => t.type === "buying");
                 const matches = [];
-                stock.filter(s => s.status === "available").forEach(s => {
+                stock.filter(s => effectiveStatus(s) === "available").forEach(s => {
                   buyingRequests.forEach(b => {
                     const brandMatch = !s.brand || !b.brand || s.brand.toLowerCase() === b.brand.toLowerCase();
                     const priceOk = !b.price || !s.cost_price || Number(b.price) >= Number(s.cost_price);
