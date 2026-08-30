@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { useCustomers } from "../../context/CustomerContext";
 import { TIERS, STAGES } from "../../constants";
+import { dealTotal } from "../../utils/bulk";
 
 export default function ContactSheet({ onClose }) {
   const {
@@ -184,7 +185,7 @@ export default function ContactSheet({ onClose }) {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: isClosed ? "#10B981" : "#534AB7" }}>
-                        {(deal.value || deal.budget) ? `AED ${Number(deal.value || deal.budget).toLocaleString()}` : "—"}
+                        {dealTotal(deal) > 0 ? `AED ${dealTotal(deal).toLocaleString()}` : "—"}
                       </div>
                       <div style={{ fontSize: 10, color: isClosed ? "#10B981" : "#94A3B8", marginTop: 1 }}>{stageLabel}</div>
                     </div>

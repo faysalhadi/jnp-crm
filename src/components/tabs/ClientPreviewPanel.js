@@ -5,8 +5,7 @@ import { useStock } from "../../context/StockContext";
 import { TagStrip } from "../chat/TagEditor";
 import { STAGES, getRecommendation, customerStockMatch } from "../../constants";
 import { formatWhatsAppNumber } from "../../utils/helpers";
-import { effectiveStatus } from "../../utils/holds";
-import DealForkModal from "../modals/DealForkModal";
+import { dealTotal, dealUnitLine } from "../../utils/bulk";
 
 const ACT_ICON = {
   called: "📞", no_answer: "📵", messaged: "💬", met: "🤝",
@@ -37,12 +36,11 @@ const SH = {
 
 export default function ClientPreviewPanel({ client, onOpenChat }) {
   const { loadCustomers, pendingFollowUpMap, lastActivityMap } = useCustomers();
-  const { stock, loadStock, refreshCachedStock } = useStock();
+  const { stock } = useStock();
 
   const [activities, setActivities]     = useState([]);
   const [followUps, setFollowUps]       = useState([]);
   const [historyOpen, setHistoryOpen]   = useState(false);
-  const [showDealFork, setShowDealFork] = useState(false);
 
   // D1 — customers.notes editing
   const [editingNotes, setEditingNotes] = useState(false);
@@ -122,14 +120,14 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
 
   // Computed
   const health    = getClientHealth(client);
-  const openDeals = (client.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
-  const closedDeals = (client.deals || []).filter(d => d.stage === "closed" || d.stage === "lost");
+  const openDeals = (client.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
+  const closedDeals = (client.deals || []).filter(d => d.stage === "closed" || d.stage === "parked");
   const closedValue = closedDeals
     .filter(d => d.stage === "closed")
     .reduce((a, d) => a + (d.value || 0), 0);
 
   const available = useMemo(
-    () => (stock || []).filter(s => effectiveStatus(s) === "available"),
+    () => (stock || []).filter(s => s.status === "available"),
     [stock]
   );
   const stockMatchSet = useMemo(() => {
@@ -292,20 +290,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </div>
         )}
 
-        {/* 5. NEW REQUIREMENT — the fork */}
-        <div style={{ marginTop: 18 }}>
-          <button
-            onClick={() => setShowDealFork(true)}
-            style={{
-              width: "100%", padding: "10px 0", borderRadius: 10,
-              border: "1.5px solid #C7D2FE", background: "#EEF2FF",
-              color: "#6366F1", fontSize: 13, fontWeight: 800, cursor: "pointer",
-            }}>
-            + New requirement
-          </button>
-        </div>
-
-        {/* 6. OPEN DEALS */}
+        {/* 5. OPEN DEALS */}
         {openDeals.length > 0 && (
           <>
             <div style={SH}>OPEN DEALS</div>
@@ -328,7 +313,8 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
                       )}
                     </div>
                     <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
-                      {d.budget ? <span style={{ fontSize: 11, color: "#64748B" }}>AED {Number(d.budget).toLocaleString()}</span> : null}
+                      {dealUnitLine(d) ? <span style={{ fontSize: 11, color: "#6366F1", fontWeight: 700 }}>{dealUnitLine(d)}</span> : null}
+                      {dealTotal(d) > 0 ? <span style={{ fontSize: 11, color: "#64748B" }}>AED {dealTotal(d).toLocaleString()} total</span> : null}
                       {daysIn !== null ? <span style={{ fontSize: 11, color: "#94A3B8" }}>{daysIn}d in stage</span> : null}
                     </div>
                   </div>
@@ -338,7 +324,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </>
         )}
 
-        {/* 7. FOLLOW-UPS */}
+        {/* 6. FOLLOW-UPS */}
         {followUps.length > 0 && (
           <>
             <div style={SH}>FOLLOW-UPS</div>
@@ -372,7 +358,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </>
         )}
 
-        {/* 8. ACTIVITY TIMELINE (D2) */}
+        {/* 7. ACTIVITY TIMELINE (D2) */}
         <div style={SH}>ACTIVITY</div>
 
         {/* D2: Add note input */}
@@ -421,7 +407,7 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           })}
         </div>
 
-        {/* 9. DEAL HISTORY */}
+        {/* 8. DEAL HISTORY */}
         {closedDeals.length > 0 && (
           <>
             <div style={SH}>DEAL HISTORY</div>
@@ -455,11 +441,11 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
                       ) : null}
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: d.stage === "lost" ? "#EF4444" : "#10B981" }}>
-                        {d.stage === "lost" ? "Lost" : "Closed"}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: d.stage === "parked" ? "#64748B" : "#10B981" }}>
+                        {d.stage === "parked" ? "Parked" : "Closed"}
                       </div>
-                      {d.value > 0 ? (
-                        <div style={{ fontSize: 11, color: "#64748B" }}>AED {Number(d.value).toLocaleString()}</div>
+                      {dealTotal(d) > 0 ? (
+                        <div style={{ fontSize: 11, color: "#64748B" }}>AED {dealTotal(d).toLocaleString()}</div>
                       ) : null}
                     </div>
                   </div>
@@ -478,20 +464,6 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </button>
         </div>
       </div>
-
-      <DealForkModal
-        open={showDealFork}
-        customer={client}
-        deal={openDeals.find(d => d.stage === "new_inquiry") || null}
-        onClose={() => setShowDealFork(false)}
-        onSaved={() => {
-          setShowDealFork(false);
-          loadCustomers();
-          loadStock();
-          refreshCachedStock();
-          fetchPanelData(client.id);
-        }}
-      />
     </div>
   );
 }

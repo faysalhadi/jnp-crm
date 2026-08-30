@@ -125,6 +125,7 @@ export default function ContactModal({ defaultType, onClose, onCreated }) {
       const { data: d } = await supabase.from("deals").insert({
         customer_id: c.id,
         stage:       "new_inquiry",
+        quantity:    1,
         budget:      form.budget ? parseFloat(form.budget) : null,
       }).select().single();
       deal = d;

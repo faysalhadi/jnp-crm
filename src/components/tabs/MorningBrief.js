@@ -4,7 +4,6 @@ import { useAuth } from "../../context/AuthContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
-import { effectiveStatus } from "../../utils/holds";
 
 export default function MorningBrief() {
   const { anthropicKey } = useAuth();
@@ -50,7 +49,7 @@ export default function MorningBrief() {
     const overdueFollowUps = (followUps || []).filter(f => new Date(f.due_at) < now);
     const todayFollowUps   = (followUps || []).filter(f => new Date(f.due_at) >= now);
 
-    const availableStock = stock.filter(s => effectiveStatus(s) === "available");
+    const availableStock = stock.filter(s => s.status === "available");
     const slowStock = availableStock.filter(s => {
       const days = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
       return days >= 7;
@@ -59,7 +58,7 @@ export default function MorningBrief() {
     const openDeals = customers
       .filter(c => !c.contact_type || c.contact_type === "client" || c.contact_type === "walkin")
       .flatMap(c => (c.deals || [])
-        .filter(d => d.stage !== "closed" && d.stage !== "lost")
+        .filter(d => d.stage !== "closed" && d.stage !== "parked")
         .map(d => ({ customer: c, deal: d, daysSilent: Math.floor((Date.now() - new Date(c.last_active || 0)) / 86400000) }))
       );
 

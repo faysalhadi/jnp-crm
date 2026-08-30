@@ -175,7 +175,7 @@ export default function App() {
   // ── tasks — used by dashboard overdue logic ──
   const tasks = customers.flatMap(c =>
     (c.deals || [])
-      .filter(d => d.stage !== "closed" && d.stage !== "lost")
+      .filter(d => d.stage !== "closed" && d.stage !== "parked")
       .map(d => ({
         customer: c, deal: d,
         days: daysSince(c.last_active),

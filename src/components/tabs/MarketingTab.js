@@ -1,7 +1,6 @@
 import ownerOnly from "../layout/ownerOnly";
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
-import { effectiveStatus } from "../../utils/holds";
 import { useUI } from "../../context/UIContext";
 import { useAuth } from "../../context/AuthContext";
 import { useCustomers } from "../../context/CustomerContext";
@@ -313,7 +312,7 @@ function MarketingTab({ stock }) {
     } catch {}
   }, [settingsReady]); // eslint-disable-line
 
-  const availableStock = (stock || []).filter(s => effectiveStatus(s) === "available");
+  const availableStock = (stock || []).filter(s => s.status === "available");
 
   function stockSummary() {
     const ownedLines = availableStock.slice(0, 6).map(s =>
@@ -770,7 +769,7 @@ function MarketingTab({ stock }) {
               <button onClick={async () => {
                 if (!anthropicKey) { alert("Add API key in Settings first."); return; }
                 setWeeklyLoading(true);
-                const openDeals = customers.filter(c => !c.contact_type || c.contact_type === "client").flatMap(c => (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost")).length;
+                const openDeals = customers.filter(c => !c.contact_type || c.contact_type === "client").flatMap(c => (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked")).length;
                 const topWanted = customers.flatMap(c => (c.deals || []).filter(d => d.stage !== "closed").map(d => [d.brand, d.model].filter(Boolean).join(" "))).filter(Boolean).slice(0, 5).join(", ");
                 const weekKey   = todayKey.slice(0, 7);
                 const brands    = [...new Set(availableStock.map(s => s.brand))].filter(Boolean).slice(0, 5).join(", ");

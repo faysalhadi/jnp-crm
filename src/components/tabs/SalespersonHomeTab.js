@@ -5,6 +5,7 @@ import { useUI } from "../../context/UIContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useProfile } from "../../context/ProfileContext";
 import PullToRefresh from "../ui/PullToRefresh";
+import { dealTotal, dealUnitLine } from "../../utils/bulk";
 
 export default function SalespersonHomeTab() {
   const { isMobile } = useUI();
@@ -51,7 +52,7 @@ export default function SalespersonHomeTab() {
   // Open deals from assigned clients
   const openDeals = customers.flatMap(c =>
     (c.deals || [])
-      .filter(d => d.stage !== "closed" && d.stage !== "lost")
+      .filter(d => d.stage !== "closed" && d.stage !== "parked")
       .map(d => ({ ...d, customer: c }))
   ).sort((a, b) => {
     const stageOrder = { confirmed_pending_pickup: 0, negotiation: 1, new_inquiry: 2 };
@@ -60,7 +61,7 @@ export default function SalespersonHomeTab() {
 
   // Clients needing attention (no activity in 3+ days with open deal)
   const needsAttention = customers.filter(c => {
-    const hasOpen = (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+    const hasOpen = (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "parked");
     if (!hasOpen) return false;
     const last = c.last_activity_at || c.last_active;
     if (!last) return true;
@@ -76,7 +77,6 @@ export default function SalespersonHomeTab() {
 
   const STAGE_LABELS = {
     new_inquiry: "New inquiry",
-    watching: "Watching",
     negotiation: "Negotiating",
     confirmed_pending_pickup: "Pickup pending",
     closed: "Closed",
@@ -85,7 +85,6 @@ export default function SalespersonHomeTab() {
 
   const STAGE_COLORS = {
     new_inquiry: "#6366F1",
-    watching: "#8B5CF6",
     negotiation: "#F59E0B",
     confirmed_pending_pickup: "#10B981",
   };
@@ -167,7 +166,7 @@ export default function SalespersonHomeTab() {
           <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", letterSpacing: 0.5, marginBottom: 10 }}>⚠️ NEEDS ATTENTION</div>
             {needsAttention.map(c => {
-              const openDeal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+              const openDeal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "parked");
               const last = c.last_activity_at || c.last_active;
               const days = last ? Math.floor((Date.now() - new Date(last)) / 86400000) : null;
               return (
@@ -198,7 +197,7 @@ export default function SalespersonHomeTab() {
                 style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 0", background: "none", border: "none", borderBottom: "1px solid #F1F5F9", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{d.customer.name}</div>
-                  <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{[d.brand, d.model].filter(Boolean).join(" ") || "—"}{d.value ? ` · AED ${d.value}` : ""}</div>
+                  <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{[d.brand, d.model].filter(Boolean).join(" ") || "—"}{dealUnitLine(d) ? ` · ${dealUnitLine(d)}` : ""}{dealTotal(d) > 0 ? ` · AED ${dealTotal(d).toLocaleString()} total` : ""}</div>
                 </div>
                 <div style={{ padding: "3px 8px", borderRadius: 8, background: (STAGE_COLORS[d.stage] || "#94A3B8") + "20", color: STAGE_COLORS[d.stage] || "#94A3B8", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
                   {STAGE_LABELS[d.stage] || d.stage}

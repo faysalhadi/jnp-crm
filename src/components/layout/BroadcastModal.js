@@ -74,7 +74,7 @@ export default function BroadcastModal() {
                   </div>
 
                   {broadcastClients.map(c => {
-                    const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+                    const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "parked");
                     const isSelected = broadcastSelected.has(c.id);
 
                     // Only compute match strength when we have a specific item

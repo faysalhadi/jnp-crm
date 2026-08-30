@@ -1,280 +1,313 @@
-JNP CRM — The Fork + Soft Hold on Stock
-
+NP CRM — Bulk Foundation (quantity, pools, parked)
+ 
+THIS SUPERSEDES the earlier "Fork + Soft Hold" and "Requirements Board" prompts.
+Do NOT run those. They were written for single units and model the business wrong.
+ 
 WHY
-A customer asks about a laptop. It goes one of two ways: we have it (blocked
-on him deciding) or we don't (blocked on supply). Today that fork happens only
-in the agent's head and the app never learns which side it landed on.
-
-There are now FOUR people using this app. The failure this prevents: Ahmed
-quotes unit #47 to Rehman, Bilal quotes the same unit to Ali, both promise it,
-one of them loses face with a client.
-
+This is a B2B wholesale business. Deals are 20–100 units, not one laptop.
+Stock has no serial numbers. Clients are recurring — a deal that doesn't close
+is parked, never lost.
+ 
+The app currently has no quantity anywhere. That is the foundation problem;
+everything else waits on it.
+ 
 Read every file fully before editing. Targeted edits only — do NOT rewrite
 whole files. Run `npm run build` at the end and fix all ESLint errors.
-
+ 
+Build the steps IN ORDER. Each leaves working software.
+ 
 ════════════════════════════════════════════════════════════════════════
-STEP 0 — SQL  (print this at the end for Faisal; do not try to run it)
+STEP 0 — INSPECT FIRST, REPORT BEFORE CHANGING ANYTHING
 ════════════════════════════════════════════════════════════════════════
-
--- minimal identity: a hold has to be able to name a person
+ 
+Before writing any code, read and report:
+ 
+  1. How src/context/StockContext.js loads and shapes stock rows.
+  2. Whether a stock row currently represents ONE laptop or a model line.
+     Look at how DevicesView.js, LotsView.js and QuickSaleModal.js treat rows.
+  3. Every place a deal is created (grep for deals insert).
+  4. Whether stock.status has a CHECK constraint.
+  5. Whether deals.stage has a CHECK constraint.
+ 
+Print this before proceeding. If anything contradicts the plan below, say so
+and stop rather than guessing.
+ 
+════════════════════════════════════════════════════════════════════════
+STEP 1 — SQL  (print for Faisal at the end; do not run it)
+════════════════════════════════════════════════════════════════════════
+ 
+-- identity (holds and parking must name a person)
 CREATE TABLE IF NOT EXISTS profiles (
-  id         uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  full_name  text,
-  role       text DEFAULT 'salesperson'
-             CHECK (role IN ('owner','manager','salesperson')),
-  active     boolean DEFAULT true,
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name text,
+  role text DEFAULT 'salesperson' CHECK (role IN ('owner','manager','salesperson')),
+  active boolean DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
 ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
-
--- soft hold on a stock unit
-ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_by      uuid;
-ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_to      uuid;
-ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_at      timestamptz;
-ALTER TABLE stock ADD COLUMN IF NOT EXISTS quoted_deal_id uuid;
-
--- deal authorship + the price the client named
+ 
+-- QUANTITY: the core change
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS quantity      integer DEFAULT 1;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS unit_price    numeric;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS target_unit_price numeric;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by    uuid;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS target_price  numeric;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS parked_reason text;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS parked_at     timestamptz;
-
-Faisal must also insert a profiles row per user. Print this template too:
-  INSERT INTO profiles (id, full_name, role)
-  VALUES ('<auth-user-id>', 'Faisal', 'owner');
-
-FIRST: check whether stock.status has a CHECK constraint. If it does, it must
-be widened to allow 'quoted'. Print the exact ALTER needed. If status is a
-plain text column, nothing extra is required.
-
-All code below must degrade safely if this SQL has not run yet — treat every
-new column as possibly null and never crash.
-
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS sourcing_started_at timestamptz;
+ 
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS quantity integer DEFAULT 1;
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS added_by uuid;
+ 
+-- holds are on QUANTITY of a model, never on a row
+CREATE TABLE IF NOT EXISTS stock_holds (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_key   text NOT NULL,
+  brand       text,
+  model       text,
+  quantity    integer NOT NULL,
+  deal_id     uuid,
+  customer_id uuid,
+  held_by     uuid,
+  created_at  timestamptz DEFAULT now(),
+  expires_at  timestamptz,
+  released_at timestamptz
+);
+ALTER TABLE stock_holds DISABLE ROW LEVEL SECURITY;
+ 
+-- backfill existing deals: value becomes unit_price at quantity 1
+UPDATE deals SET unit_price = value WHERE unit_price IS NULL AND value IS NOT NULL;
+ 
+-- lost becomes parked
+UPDATE deals SET stage = 'parked',
+                 parked_reason = COALESCE(loss_reason, 'bought_elsewhere'),
+                 parked_at = COALESCE(closed_at, now())
+WHERE stage = 'lost';
+ 
+Keep the old loss_reason column — do not drop it.
+If deals.stage or stock.status has a CHECK constraint, print the exact ALTER
+needed to allow 'parked' and 'sourcing'.
+ 
+ALL code must degrade safely if this SQL has not run yet.
+ 
 ════════════════════════════════════════════════════════════════════════
-STEP 1 — NEW FILE: src/utils/holds.js
+STEP 2 — STAGES
 ════════════════════════════════════════════════════════════════════════
-
+ 
+In src/constants/index.js, STAGES becomes:
+ 
+  new_inquiry              "New inquiry"     just asked
+  sourcing                 "Sourcing"        we don't have it, actively looking
+  device_found             "Found"           we have it / found it, quoted
+  negotiation              "Negotiation"     discussing price
+  confirmed_pending_pickup "Confirmed"       agreed, awaiting collection
+  closed                   "Closed"          paid in full
+  parked                   "Parked"          not now, still alive
+ 
+REMOVE 'lost' from STAGES. Parked replaces it entirely.
+ 
+Add PARK_REASONS, exported:
+  price_too_high    "Price too high"
+  not_sourced       "Couldn't source it"
+  bought_elsewhere  "Bought elsewhere"
+  went_quiet        "Went quiet"
+  not_needed_now    "Not needed now"
+ 
+Search for every 'lost' reference in src/ and route it to 'parked'. Anywhere
+filtering open deals as `stage !== 'closed' && stage !== 'lost'` must become
+`stage !== 'closed' && stage !== 'parked'`.
+ 
+'sourcing' and 'parked' are BOTH open stages, but they behave differently:
+sourcing is live work and belongs in the queue; parked is out of the queue.
+ 
+════════════════════════════════════════════════════════════════════════
+STEP 3 — NEW FILE: src/utils/bulk.js
+════════════════════════════════════════════════════════════════════════
+ 
 Pure helpers. No React, no supabase.
-
-  export const HOLD_HOURS = 48;
-
-  export function isHoldActive(stockItem)
-    true when status === 'quoted' AND quoted_at is set
-    AND (now - quoted_at) < HOLD_HOURS.
-    Returns false safely for null/missing input.
-
-  export function holdRemainingMs(stockItem)
-    Milliseconds left, or 0 if not held / expired.
-
-  export function formatHoldRemaining(stockItem)
-    "31h left" · "4h left" · "42m left" · "" when not held.
-
-  export function effectiveStatus(stockItem)
-    Returns the status to ACT on:
-      'quoted' whose hold has expired  →  'available'
-      everything else                  →  the stored status
-    Every availability check in the app must go through this.
-
-DESIGN RULE — IMPORTANT:
-Expiry is COMPUTED, never stored. There is no scheduled job and no cron.
-A hold older than HOLD_HOURS is simply treated as available everywhere.
-Do NOT write a background task or timer to flip statuses.
-
-Optionally, when the app loads stock and finds expired 'quoted' rows, it may
-lazily clear them (status back to 'available', quoted_* to null) as a tidy-up.
-That is a convenience only — correctness must never depend on it.
-
+ 
+  export function modelKey(brand, model)
+    lowercase, trim, collapse whitespace, strip punctuation ( / - , " ' )
+    return `${brand}|${model}`, or null if either is missing.
+    Do NOT fuzzy-match. Predictable grouping beats clever grouping.
+ 
+  export function dealTotal(deal)
+    (deal.unit_price || 0) * (deal.quantity || 1)
+    Use this everywhere a deal value is displayed. Never read `value` directly
+    for new code.
+ 
+  export function buildStockPools(stockRows, holds)
+    Group available stock by modelKey. For each pool return:
+      { key, brand, model, label,
+        total,      // sum of quantity across rows in this group
+        held,       // sum of quantity across ACTIVE holds for this key
+        sold,       // sum of quantity where status === 'sold'
+        free,       // total - held  (never below 0)
+        minPrice, maxPrice }  // from the rows
+ 
+    IMPORTANT: some rows will have quantity 1 (older per-unit entries) and some
+    will have quantity 50. Summing handles both. Do NOT try to consolidate or
+    rewrite existing rows — group on read.
+ 
+  export function isHoldActive(hold)
+    released_at is null AND expires_at is in the future.
+    Expiry is COMPUTED, never stored. There is no cron and no background job.
+    A hold past its expiry is simply treated as released everywhere.
+ 
+  export function holdRemaining(hold)
+    "31h left" · "4h left" · "42m left" · "" when inactive.
+ 
+  export function sourcingAge(deal)
+    Hours since sourcing_started_at.
+    Return { hours, level } where level is:
+      'ok'      under 24h
+      'warn'    24–48h
+      'late'    over 48h
+    Faisal loses the customer after about two days — these thresholds encode that.
+ 
 ════════════════════════════════════════════════════════════════════════
-STEP 2 — NEW FILE: src/services/stockHoldService.js
+STEP 4 — NEW FILE: src/services/holdService.js
 ════════════════════════════════════════════════════════════════════════
-
+ 
   import { supabase } from "../supabase";
-
-  export async function placeHold(stockId, { customerId, dealId })
-    Reads the row first. If isHoldActive() and quoted_by is a DIFFERENT user,
-    return { ok:false, conflict:true, heldBy, heldUntil } — do NOT overwrite.
-    Otherwise set:
-      status='quoted', quoted_by=<current user id>, quoted_to=customerId,
-      quoted_at=now(), quoted_deal_id=dealId
-
-  export async function releaseHold(stockId)
-    status back to 'available', quoted_* all null.
-    Only if the row is not already 'sold' or 'reserved'.
-
-  export async function upgradeToReserved(stockId)
-    status='reserved', keep quoted_to and quoted_deal_id, clear quoted_at
-    so no countdown shows on a hard hold.
-
-  export async function getHolderName(userId)
-    Looks up profiles.full_name. Falls back to "another agent" when the
-    profiles row is missing. Cache results in a module-level Map — this is
-    called per stock row and must not fire a query each time.
-
-Current user id: use the existing AuthContext if it exposes one; otherwise
+ 
+  export async function placeHold({ brand, model, quantity, dealId, customerId, hours = 48 })
+    Compute free for that modelKey first. If quantity > free, return
+    { ok:false, insufficient:true, free }. Otherwise insert into stock_holds
+    with held_by = current user and expires_at = now + hours.
+ 
+  export async function releaseHold(holdId)
+    Set released_at = now().
+ 
+  export async function releaseHoldsForDeal(dealId)
+    Release every active hold attached to that deal.
+ 
+  export async function extendHold(holdId, hours = 48)
+    Push expires_at out from now.
+ 
+  export async function getHolds(modelKeys)
+    Fetch active holds for a set of model keys. Used by buildStockPools.
+ 
+Current user: use the existing AuthContext if it exposes an id, otherwise
 supabase.auth.getUser(). Do NOT add a new auth mechanism.
-
+ 
 Every function returns { ok:true, ... } or { ok:false, error }. Never throws.
-
+ 
 ════════════════════════════════════════════════════════════════════════
-STEP 3 — NEW FILE: src/components/modals/DealForkModal.js
+STEP 5 — NEW FILE: src/services/parkService.js
 ════════════════════════════════════════════════════════════════════════
-
-The single most important screen in this change. Follow the visual pattern of
-the existing modals in src/components/modals/ (bottom sheet on mobile).
-
-Props: { customer, open, onClose, onSaved }
-
-── Screen 1: the question ───────────────────────────────────────────────
-
-Full-width, centred:
-    "Do we have it?"
-    <customer name> as a subtitle
-
-Two large tap targets side by side, each at least 90px tall:
-
-  [ ✅  YES              ]     [ 👁  NOT YET            ]
-  [ Pick the unit        ]     [ Record the want       ]
-  [ 48h hold starts      ]     [ Matches on arrival    ]
-
-  green border/text              purple border/text
-
-There is no third option and no way to dismiss without choosing. This
-question must be unskippable.
-
-── Screen 2A: YES ───────────────────────────────────────────────────────
-
-  1. UNIT PICKER (required)
-     List stock where effectiveStatus() === 'available'.
-     Searchable by brand/model. Show brand, model, specs, condition.
-     Units currently held by someone else appear GREYED with a label:
-       "held by Ahmed · 31h left"
-     Tapping a held unit shows an inline warning and does not select it.
-     An 'owner' role may override, with a confirm step — nobody else can.
-
-  2. "You quoted" — numeric, AED, required
-  3. "He offered" — numeric, AED, optional → deals.target_price
-
-  Then a summary block listing exactly what will happen:
-     ✓ Unit #47 held 48h — visible to everyone
-     ✓ Stage → negotiation
-     ✓ 24h follow-up created
-
-  On save:
-    - create/update the deal: stage='negotiation', stock_item_id, created_by,
-      target_price, value = quoted amount
-    - placeHold(stockId, { customerId, dealId })
-    - if placeHold returns conflict:true → show the conflict, keep the sheet
-      open, do NOT save the deal
-    - log activity_log: activity_type='note',
-      note="Quoted AED x" + (offered ? " · offered AED y" : "")
-    - create a follow_up 24h out
-    - onSaved()
-
-── Screen 2B: NOT YET ───────────────────────────────────────────────────
-
-  1. BRAND + MODEL — REQUIRED, both of them.
-     Block save if either is empty and explain why:
-       "Without brand and model we can't match this when stock arrives."
-     This is the single most common data-quality failure — enforce it.
-
-  2. "What would he pay" — numeric, AED, optional → deals.target_price
-
-  Summary block:
-     ✓ Stage → watching — out of your daily queue
-     ✓ Joins the Requirements board
-     ✓ Alerts you the day one lands
-
-  On save:
-    - deal: stage='watching', parked_reason='no_stock', parked_at=now(),
-      brand, model, target_price, created_by
-    - NO stock link, NO hold
-    - log activity_log note: "Requirement recorded: <brand> <model>"
-    - NO follow-up — this is a wait, not a task
-    - onSaved()
-
-Both screens: a Back link returns to screen 1. Errors show inline and keep
-the sheet open. Never lose what the agent typed.
-
+ 
+  export async function parkDeal(dealId, { reason, targetUnitPrice, note })
+ 
+  Does all of this, in order:
+    1. deals: stage='parked', parked_reason=reason, parked_at=now(),
+       target_unit_price = targetUnitPrice (when given)
+    2. releaseHoldsForDeal(dealId) — parked deals never hold inventory
+    3. follow_ups: mark any pending row for this customer status='done'
+    4. activity_log: activity_type='note',
+       note = "Parked: <reason label>" + (targetUnitPrice ? " — offered AED x/unit" : "")
+                                       + (note ? " · " + note : "")
+ 
+  export async function unparkDeal(dealId, newStage = 'new_inquiry')
+    Clear parked_reason and parked_at. KEEP target_unit_price — that number
+    stays valuable history.
+ 
+Returns { ok } shape. Never throws.
+ 
 ════════════════════════════════════════════════════════════════════════
-STEP 4 — WIRE THE FORK IN
+STEP 6 — QUANTITY IN THE UI
 ════════════════════════════════════════════════════════════════════════
-
-  grep -rn "stage.*new_inquiry\|insert.*deals\|from(\"deals\").insert" src/
-
-Find every place a NEW deal is created from a client. Route the main path
-through DealForkModal instead of creating a deal directly.
-
-Add a clear "+ New requirement" button in the client detail / right panel
-that opens the fork.
-
-Do NOT change QuickSaleModal or the walk-in flow — those are already-closed
-sales and have no fork.
-
+ 
+Everywhere a deal is shown or edited, it is quantity + unit price.
+ 
+6a. DEAL DISPLAY — client cards, client detail, anywhere a deal appears:
+ 
+      Dell 7490 · × 50 @ 850
+      AED 42,500 total
+ 
+    Quantity in the display face, bold. Total computed via dealTotal().
+    Never show a bare total without the quantity and unit price beside it.
+ 
+6b. DEAL CREATE / EDIT — the form gains two fields:
+      Quantity   (integer, required, default 1)
+      Unit price (AED, required to quote)
+    Show the computed total live under them as the user types.
+ 
+6c. Anywhere `deal.value` or `deal.budget` is currently displayed, switch to
+    dealTotal(). Leave the columns in the database.
+ 
 ════════════════════════════════════════════════════════════════════════
-STEP 5 — SHOW THE HOLD
+STEP 7 — STOCK POOL VIEW
 ════════════════════════════════════════════════════════════════════════
-
-5a. STOCK VIEWS (src/components/stock/DevicesView.js and the stock detail)
-    On any unit where isHoldActive():
-
-        ⏳ SOFT HOLD · 31h left
-        Quoted to Rehman Electronics by Ahmed
-        [ Release ]   ← only for the holder, or an owner
-
-    Amber styling. Use formatHoldRemaining().
-    A 'reserved' unit shows a hard-hold badge with NO countdown.
-
-5b. CLIENT QUEUE CARD
-    Add a small amber chip "held 31h" ONLY on the card of the client the
-    unit is held FOR, and only when the current user is the holder.
-    Other agents see nothing extra on client cards — the hold is surfaced on
-    the stock unit, which is where a double-quote would actually happen.
-
-5c. AVAILABILITY
-    Every "is this available" check must call effectiveStatus(), not read
-    status directly. Search for status === 'available' across src/ and fix
-    each one. A unit whose hold has expired must behave as fully available.
-
+ 
+In src/components/stock/DevicesView.js, group by pool using buildStockPools():
+ 
+    Dell Latitude 7490                          200 units
+    [████████████░░░░░░]  130 free · 50 held · 20 sold
+    Floor 750/unit                            [ Hold units ]
+ 
+  · The bar is three segments with a 2px gap between them.
+  · "Hold units" opens a sheet: quantity, duration (default 48h), confirm.
+    Holds are MANUAL — never place one automatically, ever.
+  · When a hold is active, show who holds it and the time remaining, with a
+    Release button for the holder or an owner.
+  · Add a soft signal above the actions when open quotes exist:
+      "⚠ 3 open quotes · 90 units — no hold placed"
+    Open quotes = deals at device_found or negotiation for this modelKey with
+    no active hold. It informs; it reserves nothing.
+ 
 ════════════════════════════════════════════════════════════════════════
-STEP 6 — RELEASE AND UPGRADE
+STEP 8 — QUEUE CHANGES
 ════════════════════════════════════════════════════════════════════════
-
-  · deal → confirmed_pending_pickup   →  upgradeToReserved(stockId)
-  · deal → lost                       →  releaseHold(stockId)
-  · deal → watching / parked          →  releaseHold(stockId)
-  · deal → closed                     →  leave it; the existing sold flow owns it
-  · stock_item_id changed on a deal   →  release the old unit, hold the new one
-
-Hook these into wherever deal stage changes are already handled. Do not build
-a new stage-change mechanism.
-
+ 
+8a. NEW SECTION "SOURCING", placed directly under ACT NOW.
+    Every deal at stage 'sourcing'. Sort oldest first.
+    Chip from sourcingAge(): "day 1" amber, "day 2 — closing out" red.
+    This is live work. It must NEVER be hidden or collapsed.
+ 
+8b. "PARKED" — a collapsed row at the very bottom.
+      👁  PARKED                                   14 ▸
+    Expands to parked clients, oldest parked first.
+    Excludes anyone already shown in a higher section.
+    A salesperson sees only deals where created_by is himself.
+    An owner or manager sees everyone's. Role decides the default scope —
+    do not build a separate owner screen.
+ 
+8c. In getQueuePriority (src/context/CustomerContext.js):
+    'sourcing' ranks just below urgent — it is time-critical.
+    'parked' returns null so a parked deal never creates a queue entry.
+ 
+8d. Add a "Park" button on every open deal. Opens a sheet with the five
+    PARK_REASONS as large tap targets. Choosing "Price too high" reveals a
+    required "What did he offer (per unit)" field. Then calls parkDeal().
+ 
 ════════════════════════════════════════════════════════════════════════
 DO NOT
 ════════════════════════════════════════════════════════════════════════
-  · Do NOT enable RLS on any table — that rollout is separate and staged.
-  · Do NOT write a cron job, timer, or background task for hold expiry.
-    Expiry is computed. This is deliberate.
-  · Do NOT let one agent silently take a unit held by another.
-  · Do NOT create a follow-up on the NOT YET path — parked is a wait.
+  · Do NOT consolidate, merge or rewrite existing stock rows. Group on read.
+  · Do NOT place a hold automatically under any circumstance.
+  · Do NOT write a cron, timer or background job for hold expiry.
+  · Do NOT keep 'lost' as a stage.
+  · Do NOT enable RLS on any table.
   · Do NOT auto-message anyone.
-  · Do NOT change getQueuePriority or getClientHealth logic.
   · Do NOT add npm dependencies.
   · Do NOT rewrite whole files.
   · Do NOT restore the Pipeline view.
-
+ 
 ════════════════════════════════════════════════════════════════════════
 FINISH
 ════════════════════════════════════════════════════════════════════════
   1. npm run build
   2. Fix every ESLint error and unused-variable warning
   3. Verify by reading the code back:
-       - a 'quoted' unit older than 48h reads as available everywhere
-       - placeHold refuses a unit actively held by a different user
-       - the NOT YET path cannot save without brand AND model
-       - nothing crashes if the step-0 SQL has not run yet
+       - free never goes below zero
+       - a hold past expires_at reads as released everywhere
+       - parked deals produce no queue entry
+       - sourcing deals appear high in the queue, never collapsed
+       - pools sum correctly when some rows are quantity 1 and others 50
+       - nothing crashes if the step-1 SQL has not run
   4. Print:
-       - the full step-0 SQL, ready to paste
-       - the stock.status constraint ALTER, if one is needed
+       - your step-0 findings
+       - the full step-1 SQL plus any CHECK-constraint ALTERs needed
        - files created / edited
-       - every place you found that creates a deal, and which you rewired
+       - every deal-creation point you found and how you handled quantity
        - anything you did differently, and why

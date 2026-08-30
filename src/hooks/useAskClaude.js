@@ -6,7 +6,6 @@ import { useParts } from "../context/PartsContext";
 import { useSales } from "../context/SalesContext";
 import { useAuth } from "../context/AuthContext";
 import { useAskClaudeContext } from "../context/AskClaudeContext";
-import { effectiveStatus } from "../utils/holds";
 
 export function useAskClaude() {
   const { anthropicKey } = useAuth();
@@ -58,25 +57,23 @@ export function useAskClaude() {
   async function buildStockContext() {
     const { data: stock } = await supabase
       .from("stock")
-      .select("brand, model, processor, ram, ssd, condition, status, quoted_at, max_price, created_at")
-      .in("status", ["available", "quoted"])
+      .select("brand, model, processor, ram, ssd, condition, status, max_price, created_at")
+      .eq("status", "available")
       .order("brand");
-    const avail = (stock || []).filter(s => effectiveStatus(s) === "available");
-    const lines = avail.map((s, i) => {
+    const lines = (stock || []).map((s, i) => {
       const age = Math.floor((Date.now() - new Date(s.created_at)) / 86400000);
       return `${i + 1}. ${s.brand || ""} ${s.model || ""} ${s.processor || ""} ${s.ram || ""}/${s.ssd || ""} ${s.condition || ""} AED${s.max_price || 0} (${age}d)`;
     }).join("\n");
-    return `AVAILABLE STOCK (${avail.length} items):\n${lines || "(none)"}`;
+    return `AVAILABLE STOCK (${(stock || []).length} items):\n${lines || "(none)"}`;
   }
 
   async function buildMarginsContext() {
     const { data: stock } = await supabase
       .from("stock")
-      .select("brand, model, condition, cost_price, min_price, max_price, created_at, status, quoted_at")
-      .in("status", ["available", "quoted"])
+      .select("brand, model, condition, cost_price, min_price, max_price, created_at")
+      .eq("status", "available")
       .order("brand");
-    const avail = (stock || []).filter(s => effectiveStatus(s) === "available");
-    const lines = avail.map((s, i) => {
+    const lines = (stock || []).map((s, i) => {
       const cost = Number(s.cost_price) || 0;
       const sell = Number(s.max_price) || 0;
       const profit = sell - cost;
@@ -95,11 +92,11 @@ export function useAskClaude() {
       .limit(50);
     const overdue = (custs || []).filter(c => {
       const days = Math.floor((Date.now() - new Date(c.last_active || 0)) / 86400000);
-      return days >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+      return days >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "parked");
     });
     const lines = overdue.map(c => {
       const days = Math.floor((Date.now() - new Date(c.last_active || 0)) / 86400000);
-      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+      const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "parked");
       return `${c.name} · ${days}d silent · ${[deal?.brand, deal?.model].filter(Boolean).join(" ") || "open deal"} · ${deal?.stage || ""} · ${deal?.budget ? "AED " + deal.budget : "no budget"}`;
     }).join("\n");
     return `OVERDUE FOLLOW UPS (${overdue.length}):\n${lines || "(none — all clients active)"}`;

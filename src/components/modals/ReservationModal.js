@@ -2,8 +2,6 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import Spinner from "../ui/Spinner";
 import { parseGB, labelGB } from "../../utils/helpers";
-import { effectiveStatus, isHoldActive } from "../../utils/holds";
-import { releaseHold } from "../../services/stockHoldService";
 
 export default function ReservationModal({ customer, deal, stock, onClose, onDone }) {
   const [activeModalTab, setActiveModalTab] = useState("devices");
@@ -28,7 +26,7 @@ export default function ReservationModal({ customer, deal, stock, onClose, onDon
       .then(({ data }) => { setParts(data || []); setPartsLoading(false); });
   }, []);
 
-  const available = stock.filter(s => effectiveStatus(s) === "available" || isHoldActive(s));
+  const available = stock.filter(s => s.status === "available");
   const brandMatch = deal?.brand
     ? available.filter(s => (s.brand || "").toLowerCase() === (deal.brand || "").toLowerCase())
     : [];
@@ -104,8 +102,6 @@ export default function ReservationModal({ customer, deal, stock, onClose, onDon
             reserved_at: soldAt,
             pickup_date: pickupDate,
             sold_price: finalPrice || null,
-            // Hard hold: keep quoted_to / quoted_deal_id, drop the countdown.
-            quoted_at: null,
           }).eq("id", item.id);
 
           if (upgradeRam[item.id] || upgradeSsd[item.id]) {
@@ -150,10 +146,6 @@ export default function ReservationModal({ customer, deal, stock, onClose, onDon
       }
 
       const deviceItem = selectedItems.find(i => i.itemType === "device");
-      // Reserving a different unit frees whatever this deal was holding before.
-      if (deal?.stock_item_id && deal.stock_item_id !== (deviceItem?.id || null)) {
-        await releaseHold(deal.stock_item_id);
-      }
       await supabase.from("deals").update({
         stage: "confirmed_pending_pickup",
         value: totalPrice || null,

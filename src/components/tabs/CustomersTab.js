@@ -5,10 +5,9 @@ import { useCustomers, getClientHealth, getQueuePriority } from "../../context/C
 import { useUI } from "../../context/UIContext";
 import { useStock } from "../../context/StockContext";
 import { TagStrip } from "../chat/TagEditor";
-import { getTag, customerStockMatch } from "../../constants";
+import { getTag, customerStockMatch, PARK_REASON_LABEL } from "../../constants";
 import { getReasonLine, getQuickMessage } from "../../utils/reasonLine";
-import { effectiveStatus, isHoldActive, formatHoldRemaining } from "../../utils/holds";
-import { useAuth } from "../../context/AuthContext";
+import { dealTotal, dealUnitLine } from "../../utils/bulk";
 import { logWhatsAppContact } from "../../services/quickContactService";
 import ClientPreviewPanel from "./ClientPreviewPanel";
 import { useProfile } from "../../context/ProfileContext";
@@ -45,18 +44,18 @@ function buildWaUrl(number) {
 }
 
 const STAGE_COLORS = {
-  new_inquiry: "#6366F1", watching: "#8B5CF6", device_found: "#F59E0B",
+  new_inquiry: "#6366F1", device_found: "#F59E0B",
   negotiation: "#F59E0B", confirmed_pending_pickup: "#10B981",
   closed: "#10B981", lost: "#94A3B8",
 };
 const STAGE_LABELS = {
-  new_inquiry: "Inquiry", watching: "Watching", device_found: "Found",
+  new_inquiry: "Inquiry", device_found: "Found",
   negotiation: "Negotiating", confirmed_pending_pickup: "Pickup",
   closed: "Closed", lost: "Lost",
 };
 
 function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingFollowUpMap, queuePriority, stock }) {
-  const openDeals  = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+  const openDeals  = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
   const latestDeal = openDeals[0] || (c.deals || [])[0];
   const activityTs = c.last_activity_at || c.last_active;
   const fu         = pendingFollowUpMap?.[c.id];
@@ -65,7 +64,7 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
   const isOverdue  = queuePriority?.priority <= 2;
   const isIncomplete = !(c.deals || []).length && !c.notes && !fu;
 
-  const available    = useMemo(() => (stock || []).filter(s => effectiveStatus(s) === "available"), [stock]);
+  const available    = useMemo(() => (stock || []).filter(s => s.status === "available"), [stock]);
   const matchedStock = useMemo(() => customerStockMatch(c, available), [c, available]);
   const daysSilent   = useMemo(() => {
     const ts = lastAct?.logged_at || c.last_activity_at || c.last_active;
@@ -78,15 +77,6 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
 
   const { loadCustomers } = useCustomers();
   const { isOwner, profiles } = useProfile();
-  const { user } = useAuth();
-
-  // 5b — the hold chip belongs to the client it is held FOR, and only for the
-  // agent holding it. Everyone else sees the hold on the stock unit instead.
-  const myHold = useMemo(
-    () => (stock || []).find(s =>
-      isHoldActive(s) && s.quoted_to === c.id && user?.id && s.quoted_by === user.id),
-    [stock, c.id, user?.id]
-  );
   const assignedSP = isOwner && c.assigned_to ? (profiles || []).find(p => p.id === c.assigned_to) : null;
   const spInitials = assignedSP ? assignedSP.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() : null;
 
@@ -156,17 +146,17 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
                   {STAGE_LABELS[latestDeal.stage] || latestDeal.stage}
                 </span>
               )}
-              {myHold && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, flexShrink: 0,
-                  background: "#FFFBEB", color: "#D97706" }}>
-                  ⏳ held {formatHoldRemaining(myHold).replace(" left", "")}
-                </span>
-              )}
               {fu && (
                 <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, flexShrink: 0,
                   background: isOverdue ? "#FEF2F2" : "#FFFBEB",
                   color:      isOverdue ? "#EF4444" : "#D97706" }}>
                   📅 {fmtFollowUp(fu.due_at)}
+                </span>
+              )}
+              {latestDeal && dealUnitLine(latestDeal) && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#6366F1", flexShrink: 0, whiteSpace: "nowrap" }}>
+                  {dealUnitLine(latestDeal)}
+                  {dealTotal(latestDeal) > 0 ? ` · ${dealTotal(latestDeal).toLocaleString()}` : ""}
                 </span>
               )}
               {(c.tags || []).length > 0 && (
@@ -227,6 +217,8 @@ export default function CustomersTab() {
   }, [customerViewMode]); // eslint-disable-line
 
   const { stock } = useStock();
+  const { isOwner, currentProfile } = useProfile();
+  const [parkedOpen, setParkedOpen] = useState(false);
   const {
     customers, loading,
     lastActivityMap, pendingFollowUpMap,
@@ -251,7 +243,7 @@ export default function CustomersTab() {
   }, [customers]); // eslint-disable-line
 
   const stockMatchSet = useMemo(() => {
-    const available = (stock || []).filter(s => effectiveStatus(s) === "available");
+    const available = (stock || []).filter(s => s.status === "available");
     const matched = new Set();
     allClients.forEach(c => {
       if (customerStockMatch(c, available)) matched.add(c.id);
@@ -263,30 +255,44 @@ export default function CustomersTab() {
     allClients
       .map(c => ({ c, priority: getQueuePriority(c, pendingFollowUpMap, stockMatchSet) }))
       .filter(({ priority }) => priority !== null)
-      // A parked requirement is a wait, not a task. When every open deal is
-      // 'watching' and nothing more urgent is driving the row, keep it out of
-      // the daily queue. getQueuePriority itself is untouched.
-      .filter(({ c, priority }) => {
-        if (priority.priority < 6) return true;
-        const open = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
-        return !(open.length > 0 && open.every(d => d.stage === "watching"));
-      })
       .sort((a, b) => a.priority.priority - b.priority.priority),
     [allClients, pendingFollowUpMap, stockMatchSet]
   );
 
   const sections = useMemo(() => {
-    const s = { critical: [], confirm: [], stockMatch: [], silent: [], reengage: [], open: [] };
+    const s = { critical: [], sourcing: [], confirm: [], stockMatch: [], silent: [], reengage: [], open: [] };
     queueClients.forEach(({ c, priority }) => {
-      if      (priority.priority <= 3)  s.critical.push({ c, priority });
-      else if (priority.priority === 4) s.confirm.push({ c, priority });
-      else if (priority.priority === 5) s.stockMatch.push({ c, priority });
-      else if (priority.priority === 6) s.silent.push({ c, priority });
-      else if (priority.priority === 7) s.reengage.push({ c, priority });
+      if      (priority.priority === 2) s.sourcing.push({ c, priority });
+      else if (priority.priority <= 4)  s.critical.push({ c, priority });
+      else if (priority.priority === 5) s.confirm.push({ c, priority });
+      else if (priority.priority === 6) s.stockMatch.push({ c, priority });
+      else if (priority.priority === 7) s.silent.push({ c, priority });
+      else if (priority.priority === 8) s.reengage.push({ c, priority });
       else                              s.open.push({ c, priority });
     });
+    // Live work, oldest first — the deal closest to going cold sits on top.
+    s.sourcing.sort((a, b) =>
+      new Date(a.priority.deal?.sourcing_started_at || 0) - new Date(b.priority.deal?.sourcing_started_at || 0));
     return s;
   }, [queueClients]);
+
+  // PARKED lives at the very bottom, collapsed. Role decides scope — a
+  // salesperson sees only what he parked; an owner or manager sees everyone's.
+  const parkedClients = useMemo(() => {
+    const inQueue = new Set(queueClients.map(({ c }) => c.id));
+    const mine = (d) => isOwner || !currentProfile?.id || d.created_by === currentProfile.id;
+    return allClients
+      .map(c => {
+        const parked = (c.deals || []).filter(d => d.stage === "parked" && mine(d));
+        if (!parked.length) return null;
+        const oldest = parked.reduce((acc, d) =>
+          !acc || (d.parked_at && new Date(d.parked_at) < new Date(acc)) ? (d.parked_at || acc) : acc, null);
+        return { c, parkedAt: oldest, deals: parked };
+      })
+      .filter(Boolean)
+      .filter(({ c }) => !inQueue.has(c.id))
+      .sort((a, b) => new Date(a.parkedAt || 0) - new Date(b.parkedAt || 0));
+  }, [allClients, queueClients, isOwner, currentProfile?.id]);
 
   const filteredAll = useMemo(() => {
     return allClients.filter(c => {
@@ -299,7 +305,7 @@ export default function CustomersTab() {
         return c.name.toLowerCase().includes(q) || (c.number || "").includes(search) || dealMatch;
       }
       if (filter === "urgent")     return c.urgent;
-      if (filter === "overdue")    return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+      if (filter === "overdue")    return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "parked");
       if (filter === "waiting")    return (c.deals || []).some(d => d.stage === "new_inquiry");
       if (filter === "incomplete") return !(c.deals || []).length && !c.notes && !pendingFollowUpMap?.[c.id];
       if (filter === "cooling")    return getClientHealth(c).status === "cooling";
@@ -321,7 +327,7 @@ export default function CustomersTab() {
   // On mobile: navigate to chat detail. On desktop: select client for panel.
   function openClient(c) {
     if (isMobile) {
-      const open = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+      const open = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
       const deal = open[0] || (c.deals || [])[0];
       setActiveCustomerId(c.id);
       setActiveDealId(deal?.id || null);
@@ -335,7 +341,7 @@ export default function CustomersTab() {
   // "Open chat view →" from panel navigates to ChatDetailView
   function openChatFromPanel() {
     if (!selectedClient) return;
-    const open = (selectedClient.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+    const open = (selectedClient.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
     const deal = open[0] || (selectedClient.deals || [])[0];
     setActiveCustomerId(selectedClient.id);
     setActiveDealId(deal?.id || null);
@@ -403,6 +409,7 @@ export default function CustomersTab() {
 
         {[
           { items: sections.critical,   label: "ACT NOW",       color: "#EF4444" },
+          { items: sections.sourcing,   label: "SOURCING",      color: "#F97316" },
           { items: sections.confirm,    label: "CONFIRM TODAY", color: "#6366F1" },
           { items: sections.stockMatch, label: "STOCK MATCH",   color: "#10B981" },
           { items: sections.silent,     label: "FOLLOW UP",     color: "#D97706" },
@@ -423,6 +430,53 @@ export default function CustomersTab() {
             </div>
           </div>
         ))}
+
+        {/* ── PARKED — collapsed, at the very bottom ── */}
+        {parkedClients.length > 0 && (
+          <div style={{ marginTop: 18 }}>
+            <button
+              onClick={() => setParkedOpen(v => !v)}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 8,
+                padding: "10px 14px", borderRadius: 12, cursor: "pointer",
+                border: "1px solid #F1F5F9", background: "#F8FAFC",
+              }}>
+              <span style={{ fontSize: 13 }}>👁</span>
+              <span style={{ flex: 1, textAlign: "left", fontSize: 10, fontWeight: 800, color: "#94A3B8", letterSpacing: 1 }}>
+                PARKED
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#64748B" }}>{parkedClients.length}</span>
+              <span style={{ fontSize: 11, color: "#94A3B8" }}>{parkedOpen ? "▾" : "▸"}</span>
+            </button>
+
+            {parkedOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                {parkedClients.map(({ c, parkedAt, deals }) => (
+                  <div key={c.id} onClick={() => openClient(c)}
+                    style={{
+                      background: "#fff", borderRadius: 12, padding: "10px 13px",
+                      border: "1px solid #F1F5F9", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 10,
+                    }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {c.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {[deals[0]?.brand, deals[0]?.model].filter(Boolean).join(" ") || "Parked deal"}
+                        {deals[0]?.parked_reason ? ` · ${PARK_REASON_LABEL[deals[0].parked_reason] || deals[0].parked_reason}` : ""}
+                        {deals[0]?.target_unit_price ? ` · offered AED ${Number(deals[0].target_unit_price).toLocaleString()}/unit` : ""}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 10, color: "#CBD5E1", flexShrink: 0, whiteSpace: "nowrap" }}>
+                      {parkedAt ? timeAgo(parkedAt) : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }

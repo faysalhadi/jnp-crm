@@ -5,7 +5,6 @@ import { useStock } from "../../context/StockContext";
 import { useUI } from "../../context/UIContext";
 import { useTraders } from "../../context/TradersContext";
 import { useProfile } from "../../context/ProfileContext";
-import { effectiveStatus, isHoldActive } from "../../utils/holds";
 
 export default function GlobalSearch({ onClose }) {
   const [query, setQuery]           = useState("");
@@ -64,7 +63,7 @@ export default function GlobalSearch({ onClose }) {
 
   const dealResults = q.length < 2 ? [] : customers
     .flatMap(c => (c.deals || [])
-      .filter(d => d.stage !== "closed" && d.stage !== "lost")
+      .filter(d => d.stage !== "closed" && d.stage !== "parked")
       .filter(d =>
         (d.brand || "").toLowerCase().includes(q) ||
         (d.model || "").toLowerCase().includes(q)
@@ -94,7 +93,7 @@ export default function GlobalSearch({ onClose }) {
                      stockResults.length || traderResults.length || noteResults.length;
 
   function goToClient(c) {
-    const deal = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost")[0] || (c.deals || [])[0];
+    const deal = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked")[0] || (c.deals || [])[0];
     setActiveCustomerId(c.id);
     setActiveDealId(deal?.id || null);
     setView("detail");
@@ -166,7 +165,7 @@ export default function GlobalSearch({ onClose }) {
           {clientResults.length > 0 && (
             <Section title="CLIENTS">
               {clientResults.map(c => {
-                const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+                const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "parked");
                 return (
                   <ResultRow key={c.id} onClick={() => goToClient(c)}
                     icon={<Av name={c.name} color="#6366F1" bg="#EEF2FF" />}
@@ -211,7 +210,7 @@ export default function GlobalSearch({ onClose }) {
                   icon={<span style={{ fontSize: 22 }}>📦</span>}
                   title={`${s.brand || ""} ${s.model || ""}`.trim() || "Device"}
                   sub={[s.processor, s.ram, s.ssd, s.condition].filter(Boolean).join(" · ") + (s.max_price ? ` · AED ${s.max_price}` : "")}
-                  badge={{ label: effectiveStatus(s) === "available" ? "Available" : isHoldActive(s) ? "On hold" : "Sold", color: effectiveStatus(s) === "available" ? "#10B981" : isHoldActive(s) ? "#D97706" : "#94A3B8" }}
+                  badge={{ label: s.status === "available" ? "Available" : "Sold", color: s.status === "available" ? "#10B981" : "#94A3B8" }}
                 />
               ))}
             </Section>

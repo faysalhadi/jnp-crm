@@ -81,7 +81,7 @@ EXTRACT:
 - quantity: units wanted (default 1)
 - budget: price in AED if mentioned (number only, null if not)
 - urgency: true if said urgent/today/asap/need now
-- stage: 'new_inquiry'|'device_found'|'negotiation'|'closed'|'lost'
+- stage: 'new_inquiry'|'sourcing'|'device_found'|'negotiation'|'closed'|'parked'
 - notes: important context
 - phone: extract phone number of the customer if visible in the chat, else empty string
 

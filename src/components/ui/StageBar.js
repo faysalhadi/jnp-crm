@@ -6,7 +6,7 @@ export default function StageBar({ stageId }) {
   const idx = STAGES.findIndex(s => s.id === stageId);
   const stage = STAGES[idx] || STAGES[0];
   const pct = Math.max(5, Math.round((idx / (STAGES.length - 2)) * 100));
-  if (stageId === "lost") return <Badge color="#EF4444" bg="#FEF2F2" small>Lost</Badge>;
+  if (stageId === "parked") return <Badge color="#64748B" bg="#F1F5F9" small>Parked</Badge>;
   if (stageId === "closed") return <Badge color="#10B981" bg="#ECFDF5" small>✓ Closed</Badge>;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

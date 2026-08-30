@@ -5,6 +5,7 @@ import { useReservations } from "../../context/ReservationsContext";
 import { useCustomers } from "../../context/CustomerContext";
 import { useSales } from "../../context/SalesContext";
 import Spinner from "../ui/Spinner";
+import { dealTotal } from "../../utils/bulk";
 
 export default function ReservedView() {
   const { loadStock, refreshCachedStock } = useStock();
@@ -72,7 +73,7 @@ export default function ReservedView() {
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "#6366F1" }}>
-                    AED {Number(deal.value || 0).toLocaleString()}
+                    AED {dealTotal(deal).toLocaleString()}
                   </div>
                   {deal.deposit_amount > 0 && (
                     <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700 }}>

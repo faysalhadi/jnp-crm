@@ -4,7 +4,6 @@ import { useAuth } from "../../context/AuthContext";
 import { useStock } from "../../context/StockContext";
 import { useProfile } from "../../context/ProfileContext";
 import * as XLSX from "xlsx";
-import { effectiveStatus } from "../../utils/holds";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function allocateLotCost(rows, lotCost) {
@@ -274,7 +273,7 @@ export default function LotsView() {
   function lotStats(lot) {
     const lotStock = stock.filter(s => s.lot_id === lot.id);
     const sold     = lotStock.filter(s => s.status === "sold");
-    const available = lotStock.filter(s => effectiveStatus(s) === "available");
+    const available = lotStock.filter(s => s.status === "available");
     const totalIn  = lot.total_cost + (lotStock.reduce((s, d) => s + (d.refurb_cost || 0), 0));
     const recovered = sold.reduce((s, d) => s + (d.sold_price || 0), 0);
     const costOfSold = sold.reduce((s, d) => s + (d.cost_price || 0), 0);

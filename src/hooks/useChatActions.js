@@ -8,7 +8,6 @@ import { useAuth } from "../context/AuthContext";
 import { callClaude } from "../utils/claude";
 import { autoTier } from "../utils/helpers";
 import { STAGES } from "../constants";
-import { releaseHold, upgradeToReserved } from "../services/stockHoldService";
 
 export function useChatActions() {
   const { anthropicKey } = useAuth();
@@ -18,7 +17,7 @@ export function useChatActions() {
     updateCustomer: _updateCustomer,
     updateDeal: _updateDeal,
     pendingSuggestion, setPendingSuggestion,
-    showLossReason, setShowLossReason,
+    showParkSheet, setShowParkSheet,
   } = useCustomers();
   const { loadStock, refreshCachedStock } = useStock();
   const {
@@ -78,17 +77,30 @@ export function useChatActions() {
   }
 
   async function moveStage(stageId) {
+    // Parking is never a bare stage write — parkDeal owns the transition so the
+    // reason, the hold release and the follow-up cleanup all happen together.
+    if (stageId === "parked") {
+      if (!activeDealId && activeCustomer?.id) {
+        const { data: stub } = await supabase.from("deals").insert({
+          customer_id: activeCustomer.id, stage: "new_inquiry", brand: "", model: "",
+        }).select().single();
+        if (stub) { setActiveDealId(stub.id); await loadCustomers(); }
+      }
+      setShowParkSheet(true);
+      return;
+    }
+
     if (!activeDealId && activeCustomer?.id) {
       const { data: newDeal } = await supabase.from("deals").insert({
         customer_id: activeCustomer.id,
         stage: stageId,
         brand: "", model: "",
-        ...(stageId === "closed" ? { closed_at: new Date().toISOString() } : {}),
+        ...(stageId === "closed"   ? { closed_at: new Date().toISOString() } : {}),
+        ...(stageId === "sourcing" ? { sourcing_started_at: new Date().toISOString() } : {}),
       }).select().single();
       if (newDeal) {
         setActiveDealId(newDeal.id);
         await loadCustomers();
-        if (stageId === "lost") setShowLossReason(true);
         if (stageId === "confirmed_pending_pickup") { setLinkStockDeal(newDeal); setShowReservation(true); }
         if (stageId === "closed") { setLinkStockDeal(newDeal); setShowLinkStock(true); }
       }
@@ -96,30 +108,15 @@ export function useChatActions() {
     }
     const fields = { stage: stageId };
     if (stageId === "closed") fields.closed_at = new Date().toISOString();
+    // Stamp the sourcing clock once — re-entering the stage must not reset the
+    // age that the queue uses to shout.
+    if (stageId === "sourcing" && !activeDeal?.sourcing_started_at) {
+      fields.sourcing_started_at = new Date().toISOString();
+    }
     await updateDeal(activeDealId, fields);
     const updatedDeals = activeCustomer.deals.map(d => d.id === activeDealId ? { ...d, ...fields } : d);
     await updateCustomer(activeCustomerId, { tier: autoTier(updatedDeals, activeCustomer.tier) });
     setPendingSuggestion(null);
-
-    // Hold lifecycle. Soft hold → hard hold on a confirmed pickup; dropped when
-    // the deal is lost or parked. 'closed' is left alone — the sold flow owns it.
-    const heldStockId = activeDeal?.stock_item_id || null;
-    if (heldStockId) {
-      if (stageId === "confirmed_pending_pickup") await upgradeToReserved(heldStockId);
-      else if (stageId === "lost" || stageId === "watching") await releaseHold(heldStockId);
-    }
-    if (stageId === "watching") {
-      await updateDeal(activeDealId, {
-        parked_reason: "no_stock",
-        parked_at: new Date().toISOString(),
-        stock_item_id: null,
-      });
-    }
-    if (heldStockId && (stageId === "confirmed_pending_pickup" || stageId === "lost" || stageId === "watching")) {
-      await loadStock();
-      refreshCachedStock();
-    }
-    if (stageId === "lost") setShowLossReason(true);
     if (stageId === "confirmed_pending_pickup") { setLinkStockDeal({ ...activeDeal, stage: stageId }); setShowReservation(true); }
     if (stageId === "closed") { setLinkStockDeal({ ...activeDeal, ...fields }); setShowLinkStock(true); }
   }

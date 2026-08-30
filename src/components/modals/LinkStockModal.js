@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import Spinner from "../ui/Spinner";
 import { parseGB, labelGB } from "../../utils/helpers";
-import { effectiveStatus, isHoldActive } from "../../utils/holds";
 
 export default function LinkStockModal({ customer, deal, onClose, onDone }) {
   const [devices,    setDevices]    = useState([]);
@@ -22,11 +21,10 @@ export default function LinkStockModal({ customer, deal, onClose, onDone }) {
 
   useEffect(() => {
     Promise.all([
-      supabase.from("stock").select("*").in("status", ["available", "quoted"]).order("brand"),
+      supabase.from("stock").select("*").eq("status", "available").order("brand"),
       supabase.from("stock_parts").select("*").gt("quantity", 0).order("category"),
     ]).then(([{ data: d }, { data: p }]) => {
-      // A held unit stays sellable — the agent closing the sale may be the holder.
-      setDevices((d || []).filter(s => effectiveStatus(s) === "available" || isHoldActive(s)));
+      setDevices(d || []);
       setParts(p || []);
       setLoading(false);
     });

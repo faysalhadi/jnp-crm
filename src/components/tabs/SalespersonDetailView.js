@@ -5,7 +5,6 @@ const TABS = ['Overview', 'Activity', 'Clients', 'Deals'];
 
 const STAGE_LABELS = {
   new_inquiry: 'New Inquiry',
-  watching: 'Watching',
   device_found: 'Device Found',
   negotiation: 'Negotiation',
   confirmed_pending_pickup: 'Confirmed',
@@ -15,7 +14,6 @@ const STAGE_LABELS = {
 
 const STAGE_COLORS = {
   new_inquiry: '#7880A3',
-  watching: '#8B5CF6',
   device_found: '#5190FF',
   negotiation: '#F0AC2A',
   confirmed_pending_pickup: '#2EC97A',
@@ -123,7 +121,7 @@ export default function SalespersonDetailView({ salesperson, onClose }) {
     setLoading(false);
   }
 
-  const openDeals = deals.filter(d => !['closed', 'lost'].includes(d.stage));
+  const openDeals = deals.filter(d => !['closed', 'parked'].includes(d.stage));
   const closedDeals = deals.filter(d => d.stage === 'closed');
   const thisMonth = new Date();
   thisMonth.setDate(1); thisMonth.setHours(0, 0, 0, 0);
@@ -301,7 +299,7 @@ export default function SalespersonDetailView({ salesperson, onClose }) {
                 <div style={{ color: s.muted, textAlign: 'center', paddingTop: 48, fontSize: 13 }}>No clients assigned</div>
               ) : clients.map(client => {
                 const clientDeals = deals.filter(d => d.customer_id === client.id);
-                const openDeal = clientDeals.find(d => !['closed', 'lost'].includes(d.stage));
+                const openDeal = clientDeals.find(d => !['closed', 'parked'].includes(d.stage));
                 return (
                   <div key={client.id} style={{
                     background: s.surface, border: `1px solid ${s.border}`,
@@ -364,8 +362,8 @@ export default function SalespersonDetailView({ salesperson, onClose }) {
                     </div>
                     <div style={{
                       fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
-                      background: deal.stage === 'closed' ? s.greenBg : deal.stage === 'lost' ? s.redBg : s.surface2,
-                      color: deal.stage === 'closed' ? s.green : deal.stage === 'lost' ? s.red : STAGE_COLORS[deal.stage] || s.muted,
+                      background: deal.stage === 'closed' ? s.greenBg : deal.stage === 'parked' ? s.surface2 : s.surface2,
+                      color: deal.stage === 'closed' ? s.green : deal.stage === 'parked' ? s.muted : STAGE_COLORS[deal.stage] || s.muted,
                     }}>
                       {STAGE_LABELS[deal.stage] || deal.stage}
                     </div>

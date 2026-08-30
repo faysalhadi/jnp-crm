@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../supabase";
 import Badge from "../ui/Badge";
-import { STAGES, TIERS, PAYMENT_STATUSES, LOSS_REASONS, BRANDS, MATCH_CATEGORIES, getMatchCategory, TRADER_CATEGORIES, getRecommendation, customerStockMatch } from "../../constants";
+import { STAGES, TIERS, PAYMENT_STATUSES, BRANDS, MATCH_CATEGORIES, getMatchCategory, TRADER_CATEGORIES, getRecommendation, customerStockMatch } from "../../constants";
 import { getQueuePriority } from "../../context/CustomerContext";
 import { useStock } from "../../context/StockContext";
 import { daysSince, formatWhatsAppNumber } from "../../utils/helpers";
@@ -11,11 +11,11 @@ import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import TagEditor, { TagPill } from "./TagEditor";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
-import DealForkModal from "../modals/DealForkModal";
+import ParkSheet from "../modals/ParkSheet";
+import { dealTotal, dealUnitLine, dealQty } from "../../utils/bulk";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
 import { useProfile } from "../../context/ProfileContext";
-import { effectiveStatus } from "../../utils/holds";
 
 export default function ChatHeader() {
   const { setShowSideDrawer } = useUI();
@@ -35,11 +35,11 @@ export default function ChatHeader() {
     updateDeal: _updateDeal,
     deleteCustomer: _deleteCustomer,
     addDeal: _addDeal,
-    showLossReason, setShowLossReason,
+    showParkSheet, setShowParkSheet,
     pendingFollowUpMap,
     lastActivityMap,
   } = useCustomers();
-  const { stock, loadStock, refreshCachedStock } = useStock();
+  const { stock } = useStock();
   const {
     editingName, setEditingName,
     nameInput, setNameInput,
@@ -62,7 +62,6 @@ export default function ChatHeader() {
   const [showFreqPicker, setShowFreqPicker] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
   const [showBulkQuote, setShowBulkQuote] = useState(false);
-  const [showDealFork, setShowDealFork] = useState(false);
   const [showDeleteDeal, setShowDeleteDeal] = useState(false);
   const [showFindStock, setShowFindStock] = useState(false);
   const [stockMatches, setStockMatches] = useState({ own: [], trader: [] });
@@ -72,73 +71,36 @@ export default function ChatHeader() {
   const [showQuotePrompt, setShowQuotePrompt] = useState(false);
   const [quoteText, setQuoteText] = useState("");
   const [quoteSaving, setQuoteSaving] = useState(false);
-  const [showLossReasonPrompt, setShowLossReasonPrompt] = useState(false);
+  const [showParkPrompt, setShowParkPrompt] = useState(false);
   const [showTagEditor, setShowTagEditor] = useState(false);
-  const [selectedLossReason, setSelectedLossReason] = useState(null);
-  const [lossReasonOther, setLossReasonOther] = useState("");
-  const [lossReasonSaving, setLossReasonSaving] = useState(false);
 
-  const LOSS_REASON_OPTIONS = [
-    { key: "price_too_high", label: "💸 Price too high" },
-    { key: "went_elsewhere", label: "🏃 Went elsewhere" },
-    { key: "no_stock", label: "📦 No matching stock" },
-    { key: "no_response", label: "🔇 No response" },
-    { key: "bad_timing", label: "⏰ Bad timing" },
-    { key: "other", label: "✏️ Other" },
-  ];
-
-  // Watch for showLossReason from context (triggered by moveStage)
+  // Watch for showParkSheet from context (triggered by moveStage)
   useEffect(() => {
-    if (showLossReason) {
-      setSelectedLossReason(null);
-      setLossReasonOther("");
-      setShowLossReasonPrompt(true);
-      setShowLossReason(false);
+    if (showParkSheet) {
+      setShowParkPrompt(true);
+      setShowParkSheet(false);
     }
-  }, [showLossReason]); // eslint-disable-line
+  }, [showParkSheet]); // eslint-disable-line
 
-  async function saveLossReasonAndReminder(reason) {
-    setLossReasonSaving(true);
-    const finalReason = reason === "other" ? lossReasonOther.trim() : reason;
-    if (finalReason && activeDealId) {
-      await supabase.from("deals").update({ loss_reason: finalReason }).eq("id", activeDealId);
-    }
-    // Auto-create 14-day re-engagement follow-up tied to the client
-    const reengageDate = new Date();
-    reengageDate.setDate(reengageDate.getDate() + 14);
-    reengageDate.setHours(10, 0, 0, 0);
-    const dealDesc = [activeDeal?.brand, activeDeal?.model].filter(Boolean).join(" ") || "device";
-    await supabase.from("follow_ups").insert({
-      customer_id: activeCustomerId,
-      due_at: reengageDate.toISOString(),
-      note: `Re-engage — was looking for ${dealDesc}${activeDeal?.budget ? `, budget ~${activeDeal.budget} AED` : ""}${finalReason ? `. Lost: ${finalReason}` : ""}`,
-      status: "pending",
-    });
-    await loadCustomers();
-    setLossReasonSaving(false);
-    setShowLossReasonPrompt(false);
-    setSelectedLossReason(null);
-    setLossReasonOther("");
-  }
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);
   const addDeal = () => _addDeal(activeCustomerId, newDeal);
 
   const tier = TIERS[activeCustomer?.tier] || TIERS.cold;
-  const overdue = daysSince(activeCustomer?.last_active) >= 1 && (activeCustomer?.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+  const overdue = daysSince(activeCustomer?.last_active) >= 1 && (activeCustomer?.deals || []).some(d => d.stage !== "closed" && d.stage !== "parked");
   const closedDealValue = (activeCustomer?.deals || []).filter(d => d.stage === "closed").reduce((a, d) => a + (d.value || 0), 0);
   const initials = (activeCustomer?.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
   const currentStageLabel = STAGES.find(s => s.id === activeDeal?.stage)?.label || activeDeal?.stage || "";
 
   const recommendation = useMemo(() => {
     if (!activeCustomer) return null;
-    const available = (stock || []).filter(s => effectiveStatus(s) === "available");
+    const available = (stock || []).filter(s => s.status === "available");
     const stockMatchSet = new Set();
     if (customerStockMatch(activeCustomer, available)) stockMatchSet.add(activeCustomer.id);
     const priority = getQueuePriority(activeCustomer, pendingFollowUpMap, stockMatchSet);
     if (!priority) return null;
-    const openDeals = (activeCustomer.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost");
+    const openDeals = (activeCustomer.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
     const openDeal = openDeals[0] || null;
     const fu = pendingFollowUpMap?.[activeCustomer.id];
     const lastNote = lastActivityMap?.[activeCustomer.id]?.activity_type === "note" ? lastActivityMap[activeCustomer.id] : null;
@@ -188,11 +150,10 @@ export default function ChatHeader() {
     const model = (activeDeal.model || "").toLowerCase();
     const budget = activeDeal.budget;
     // Search own stock
-    let ownQuery = supabase.from("stock").select("*").in("status", ["available", "quoted"]);
+    let ownQuery = supabase.from("stock").select("*").eq("status", "available");
     if (brand) ownQuery = ownQuery.ilike("brand", "%" + brand + "%");
     const { data: ownStock } = await ownQuery;
     const filteredOwn = (ownStock || []).filter(s => {
-      if (effectiveStatus(s) !== "available") return false;
       if (model) {
         const sm = (s.model || "").toLowerCase();
         const words = model.split(" ").filter(w => w.length > 2);
@@ -324,13 +285,7 @@ export default function ChatHeader() {
               💬 WhatsApp
             </a>
           )}
-          <button onClick={() => {
-              if (!activeCustomer.contact_type || activeCustomer.contact_type === "client" || activeCustomer.contact_type === "walkin") {
-                setShowDealFork(true);
-              } else {
-                setShowAddDeal(true);
-              }
-            }}
+          <button onClick={() => setShowAddDeal(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#6366F1" }}>+</button>
           <button onClick={() => setShowSideDrawer(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>📊</button>
@@ -342,16 +297,6 @@ export default function ChatHeader() {
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #FEE2E2", background: "#FFF5F5", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>🗑</button>
         </div>
       </div>
-
-      {/* NEW REQUIREMENT — the fork */}
-      {(!activeCustomer.contact_type || activeCustomer.contact_type === "client" || activeCustomer.contact_type === "walkin") && !isViewingAs && (
-        <div style={{ padding: "0 14px 10px" }}>
-          <button onClick={() => setShowDealFork(true)}
-            style={{ width: "100%", padding: "9px 0", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-            + New requirement
-          </button>
-        </div>
-      )}
 
       {/* DEAL TABS */}
       {(activeCustomer.deals || []).length > 0 && (
@@ -491,16 +436,16 @@ export default function ChatHeader() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", marginBottom: 2 }}>
                 {[activeDeal.brand, activeDeal.model].filter(Boolean).join(" ") || "Device TBD"}
+                {dealUnitLine(activeDeal) && (
+                  <span style={{ color: "#6366F1" }}> · {dealUnitLine(activeDeal)}</span>
+                )}
               </div>
-              <div style={{ fontSize: 11, color: "#94A3B8" }}>
-                {currentStageLabel}
-                {activeDeal.budget ? ` · AED ${Number(activeDeal.budget).toLocaleString()}` : ""}
-              </div>
+              <div style={{ fontSize: 11, color: "#94A3B8" }}>{currentStageLabel}</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {activeDeal.value && (
+              {dealTotal(activeDeal) > 0 && (
                 <span style={{ fontSize: 11, color: "#10B981", fontWeight: 700 }}>
-                  AED {Number(activeDeal.value).toLocaleString()}
+                  AED {dealTotal(activeDeal).toLocaleString()}
                 </span>
               )}
               <span style={{ fontSize: 12, color: "#94A3B8" }}>{dealExpanded ? "▲" : "▼"}</span>
@@ -541,6 +486,13 @@ export default function ChatHeader() {
                   ))}
                 </div>
               </div>
+
+              {activeDeal.stage !== "closed" && activeDeal.stage !== "parked" && (
+                <button onClick={() => setShowParkPrompt(true)}
+                  style={{ width: "100%", marginBottom: 10, padding: "8px 0", borderRadius: 10, border: "1px solid #E2E8F0", background: "#F8FAFC", color: "#64748B", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  👁 Park this deal
+                </button>
+              )}
 
               {activeDeal.stage === "new_inquiry" && (() => {
                 const autoCategory = getMatchCategory(activeDeal.brand, activeDeal.model, activeDeal.processor || "");
@@ -643,7 +595,7 @@ export default function ChatHeader() {
           )}
 
           {/* RESERVE / CONFIRM — flush bottom, always visible, smaller */}
-          {activeDeal.stage !== "closed" && activeDeal.stage !== "lost" && (
+          {activeDeal.stage !== "closed" && activeDeal.stage !== "parked" && (
             <div style={{ display: "flex", borderTop: "1px solid #F1F5F9", flexWrap: "wrap" }}>
               <button onClick={handleReserveDevice}
                 style={{ flex: 1, padding: "9px 8px", border: "none", borderRight: "1px solid #F1F5F9", background: "#FFFBEB", color: "#D97706", fontSize: 12, fontWeight: 700, cursor: "pointer", minWidth: 70 }}>
@@ -769,66 +721,13 @@ export default function ChatHeader() {
         </div>
       )}
 
-      {/* ── Loss Reason Bottom Sheet ── */}
-      {showLossReasonPrompt && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 500, display: "flex", alignItems: "flex-end" }}>
-          <div style={{ background: "#fff", width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "20px 20px 0 0", padding: 20, paddingBottom: 40 }}>
-            <div style={{ width: 36, height: 3, background: "#E2E8F0", borderRadius: 2, margin: "0 auto 16px" }} />
-            <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>😔 Why was this lost?</div>
-            <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 16 }}>
-              {[activeDeal?.brand, activeDeal?.model].filter(Boolean).join(" ") || "This deal"} · Helps improve future follow-ups
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-              {LOSS_REASON_OPTIONS.map(r => (
-                <button key={r.key} onClick={() => setSelectedLossReason(r.key)}
-                  style={{
-                    padding: "12px 16px", borderRadius: 12, border: "none", textAlign: "left",
-                    fontSize: 14, fontWeight: 600, cursor: "pointer",
-                    background: selectedLossReason === r.key ? "#EEF2FF" : "#F8FAFC",
-                    color: selectedLossReason === r.key ? "#6366F1" : "#374151",
-                    outline: selectedLossReason === r.key ? "2px solid #6366F1" : "2px solid transparent",
-                    transition: "all 0.15s",
-                  }}>
-                  {r.label}
-                </button>
-              ))}
-            </div>
-            {selectedLossReason === "other" && (
-              <textarea
-                autoFocus
-                value={lossReasonOther}
-                onChange={e => setLossReasonOther(e.target.value)}
-                placeholder="Describe what happened..."
-                rows={2}
-                style={{
-                  width: "100%", padding: "10px 12px", borderRadius: 10,
-                  border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none",
-                  resize: "none", fontFamily: "inherit", lineHeight: 1.5,
-                  boxSizing: "border-box", marginBottom: 14,
-                }}
-              />
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <button
-                onClick={() => selectedLossReason && saveLossReasonAndReminder(selectedLossReason)}
-                disabled={!selectedLossReason || lossReasonSaving || (selectedLossReason === "other" && !lossReasonOther.trim())}
-                style={{
-                  width: "100%", padding: 13, borderRadius: 12, border: "none",
-                  background: selectedLossReason ? "#6366F1" : "#E2E8F0",
-                  color: selectedLossReason ? "#fff" : "#94A3B8",
-                  fontWeight: 800, fontSize: 14, cursor: selectedLossReason ? "pointer" : "default",
-                  opacity: lossReasonSaving ? 0.7 : 1,
-                }}>
-                {lossReasonSaving ? "Saving..." : "✅ Save + Set Re-engage Reminder"}
-              </button>
-              <button onClick={() => { setShowLossReasonPrompt(false); setSelectedLossReason(null); setLossReasonOther(""); }}
-                style={{ width: "100%", padding: 10, borderRadius: 12, border: "none", background: "none", color: "#CBD5E1", fontSize: 12, cursor: "pointer" }}>
-                Skip
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Park Sheet ── */}
+      <ParkSheet
+        open={showParkPrompt}
+        deal={activeDeal}
+        onClose={() => setShowParkPrompt(false)}
+        onParked={() => loadCustomers()}
+      />
 
       {/* ── Find Stock Modal ── */}
       {showFindStock && (
@@ -951,8 +850,28 @@ export default function ChatHeader() {
           </select>
           <input placeholder="Model (e.g. Air M2)" value={newDeal.model} onChange={e => setNewDeal(p => ({ ...p, model: e.target.value }))}
             style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, marginBottom: 8, outline: "none", boxSizing: "border-box" }} />
-          <input placeholder="Budget in AED (optional)" value={newDeal.value} onChange={e => setNewDeal(p => ({ ...p, value: e.target.value }))} type="number"
-            style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, marginBottom: 12, outline: "none", boxSizing: "border-box" }} />
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 3, letterSpacing: 0.5 }}>QUANTITY</div>
+              <input type="number" min={1} inputMode="numeric" value={newDeal.quantity ?? 1}
+                onChange={e => setNewDeal(p => ({ ...p, quantity: e.target.value }))}
+                style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ flex: 2 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 3, letterSpacing: 0.5 }}>UNIT PRICE (AED)</div>
+              <input type="number" inputMode="numeric" placeholder="per unit" value={newDeal.unit_price ?? ""}
+                onChange={e => setNewDeal(p => ({ ...p, unit_price: e.target.value }))}
+                style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "#64748B", marginBottom: 12, fontWeight: 700 }}>
+            {(() => {
+              const t = dealTotal({ quantity: newDeal.quantity, unit_price: newDeal.unit_price });
+              return t > 0
+                ? `AED ${t.toLocaleString()} total · ${dealQty({ quantity: newDeal.quantity })} unit${dealQty({ quantity: newDeal.quantity }) !== 1 ? "s" : ""}`
+                : "Enter a unit price to see the total";
+            })()}
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addDeal} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Add Deal</button>
             <button onClick={() => setShowAddDeal(false)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>Cancel</button>
@@ -977,14 +896,6 @@ export default function ChatHeader() {
     </div>
 
     {showContactSheet && <ContactSheet onClose={() => setShowContactSheet(false)} />}
-
-    <DealForkModal
-      open={showDealFork}
-      customer={activeCustomer}
-      deal={activeDeal}
-      onClose={() => setShowDealFork(false)}
-      onSaved={() => { setShowDealFork(false); loadCustomers(); loadStock(); refreshCachedStock(); }}
-    />
 
     {showTagEditor && (
       <TagEditor

@@ -11,7 +11,6 @@ import { useSales } from "../../context/SalesContext";
 import { useParts } from "../../context/PartsContext";
 import { useProfile } from "../../context/ProfileContext";
 import MorningBrief from "./MorningBrief";
-import { effectiveStatus } from "../../utils/holds";
 
 export default function HomeTab({ tasks, sourcingAlerts }) {
   const { activeTab, setActiveTab, isMobile, setCustomerViewMode } = useUI();
@@ -97,7 +96,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
     let lostQuery = supabase
       .from("deals")
       .select("*, customers(id, name, number, contact_type)")
-      .eq("stage", "lost")
+      .eq("stage", "parked")
       .not("brand", "is", null)
       .order("id", { ascending: false })
       .limit(200);
@@ -124,13 +123,11 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
       (reengagedData || []).forEach(c => { reengagedMap[c.id] = c.last_reengaged_at; });
     }
 
-    const { data: availableStockRows } = await supabase
+    const { data: availableStockData } = await supabase
       .from("stock")
-      .select("id,brand,model,processor,ram,ssd,condition,max_price,status,quoted_at")
-      .in("status", ["available", "quoted"]);
-    // An expired 'quoted' row is available again — effectiveStatus decides.
-    const availableStockData = (availableStockRows || []).filter(s => effectiveStatus(s) === "available");
-    if (!availableStockData.length) return;
+      .select("id,brand,model,processor,ram,ssd,condition,max_price")
+      .eq("status", "available");
+    if (!availableStockData?.length) return;
 
     const { scoreMatch } = await import("../../constants");
 
@@ -184,11 +181,10 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   };
 
   const loadWaitingMatches = async () => {
-    const { data: availableStockRows } = await supabase
+    const { data: availableStock } = await supabase
       .from("stock")
-      .select("id,brand,model,processor,ram,ssd,condition,max_price,status,quoted_at")
-      .in("status", ["available", "quoted"]);
-    const availableStock = (availableStockRows || []).filter(s => effectiveStatus(s) === "available");
+      .select("id,brand,model,processor,ram,ssd,condition,max_price,status")
+      .eq("status", "available");
     let dealQuery = supabase
       .from("deals")
       .select("id,brand,model,budget,customer_id,customers(id,name,number)")
@@ -240,7 +236,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
   const { partsRevMTD } = useParts();
   const followUpsDue = tasks.filter(t => t.days >= 1).length;
   const overdueFollowUps = tasks.filter(t => t.days >= 1).length;
-  const slowStock = stock.filter(s => effectiveStatus(s) === "available" && daysSince(s.created_at) >= 7);
+  const slowStock = stock.filter(s => s.status === "available" && daysSince(s.created_at) >= 7);
   const slowStockCount = slowStock.length;
   const pendingPaymentClients = customers.filter(c =>
     (c.deals || []).some(d => d.stage === "closed" && d.payment_status === "pending")
@@ -308,7 +304,7 @@ export default function HomeTab({ tasks, sourcingAlerts }) {
         {[
           { label: "Open Deals", value: openDeals, color: "#6366F1", bg: "#EEF2FF", icon: "📋", onClick: () => { setCustomerViewMode("pipeline"); setActiveTab("customers"); } },
           { label: "Revenue MTD", value: (() => { const total = revenue + partsRevMTD; return `AED ${total >= 1000 ? (total/1000).toFixed(1)+"k" : total}`; })(), color: "#10B981", bg: "#ECFDF5", icon: "💰" },
-          { label: "In Stock", value: stock.filter(s => effectiveStatus(s) === "available").length, color: "#F59E0B", bg: "#FFFBEB", icon: "📦" },
+          { label: "In Stock", value: stock.filter(s => s.status === "available").length, color: "#F59E0B", bg: "#FFFBEB", icon: "📦" },
           { label: "Incomplete", value: customers.filter(c => (!c.contact_type || c.contact_type === "client" || c.contact_type === "walkin") && !(c.deals || []).length && !c.notes).length, color: "#F97316", bg: "#FFF7ED", icon: "🟠", onClick: () => { setActiveTab("customers"); setFilter && setFilter("all"); } },
           { label: "Follow Ups", value: followUpsDue, color: "#EF4444", bg: "#FEF2F2", icon: "⏰", onClick: () => { setActiveTab("customers"); setFilter("overdue"); } },
         ].map(s => (

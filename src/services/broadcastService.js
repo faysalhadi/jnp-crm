@@ -7,7 +7,7 @@ export function getMatchingClients(item, customers) {
     if (c.contact_type !== "client") return false;
     const deals = c.deals || [];
     return deals.some(d => {
-      if (d.stage === "closed" || d.stage === "lost")
+      if (d.stage === "closed" || d.stage === "parked")
         return false;
       const brandMatch = !item.brand || !d.brand ||
         d.brand.toLowerCase() === item.brand.toLowerCase();
@@ -22,7 +22,7 @@ export async function generateBroadcastMessages(item, clients, anthropicKey) {
   const messages = {};
   for (const client of clients) {
     const deal = (client.deals || []).find(d =>
-      d.stage !== "closed" && d.stage !== "lost"
+      d.stage !== "closed" && d.stage !== "parked"
     );
     const prompt = `Generate a short friendly WhatsApp message
 to ${client.name} about this laptop:

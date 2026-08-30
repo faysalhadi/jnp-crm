@@ -45,7 +45,7 @@ export default function StockMatchAlert({ stockItem, onClose }) {
       .filter(c => !c.contact_type || c.contact_type === "client" || c.contact_type === "walkin")
       .forEach(c => {
         (c.deals || [])
-          .filter(d => d.stage !== "closed" && d.stage !== "lost" && d.stage !== "waiting")
+          .filter(d => d.stage !== "closed" && d.stage !== "parked" && d.stage !== "waiting")
           .forEach(d => {
             if (!d.brand && !d.model) return;
             const sb = (stockItem.brand || "").toLowerCase();

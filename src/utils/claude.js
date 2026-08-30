@@ -1,4 +1,3 @@
-import { effectiveStatus } from "./holds";
 import { supabase } from "../supabase";
 import { SYSTEM_PROMPT, STAGES } from "../constants";
 
@@ -50,7 +49,7 @@ export async function buildOwnerContext() {
   const stocks = allStock || [];
   const custs = allCustomers || [];
 
-  const available = stocks.filter(s => effectiveStatus(s) === "available");
+  const available = stocks.filter(s => s.status === "available");
   const sold = stocks.filter(s => s.status === "sold");
   const soldValue = sold.reduce((n, s) => n + (s.max_price || 0), 0);
 
@@ -66,9 +65,9 @@ export async function buildOwnerContext() {
       }).join("\n")
     : "(none)";
 
-  const openDeals = custs.reduce((n, c) => n + (c.deals||[]).filter(d => d.stage!=="closed"&&d.stage!=="lost").length, 0);
+  const openDeals = custs.reduce((n, c) => n + (c.deals||[]).filter(d => d.stage!=="closed"&&d.stage!=="parked").length, 0);
   const urgent = custs.filter(c => c.urgent).length;
-  const cold = custs.filter(c => age(c.last_active)>=3 && (c.deals||[]).some(d=>d.stage!=="closed"&&d.stage!=="lost")).length;
+  const cold = custs.filter(c => age(c.last_active)>=3 && (c.deals||[]).some(d=>d.stage!=="closed"&&d.stage!=="parked")).length;
 
   const stageCounts = Object.fromEntries(STAGES.map(s=>[s.id,0]));
   custs.forEach(c=>(c.deals||[]).forEach(d=>{ if(stageCounts[d.stage]!==undefined) stageCounts[d.stage]++; }));
@@ -81,11 +80,11 @@ export async function buildOwnerContext() {
   }));
 
   const followUps = custs
-    .filter(c => age(c.last_active)>=1 && (c.deals||[]).some(d=>d.stage!=="closed"&&d.stage!=="lost"))
+    .filter(c => age(c.last_active)>=1 && (c.deals||[]).some(d=>d.stage!=="closed"&&d.stage!=="parked"))
     .sort((a,b) => age(b.last_active)-age(a.last_active))
     .slice(0,15)
     .map(c => {
-      const d = (c.deals||[]).find(deal=>deal.stage!=="closed"&&deal.stage!=="lost");
+      const d = (c.deals||[]).find(deal=>deal.stage!=="closed"&&deal.stage!=="parked");
       const device = d ? [d.brand,d.model].filter(Boolean).join(" ")||"Unknown" : "Unknown";
       const stage = STAGES.find(s=>s.id===d?.stage)?.label || d?.stage || "";
       return `- ${c.name} | ${device} | ${age(c.last_active)} days silent | ${stage}`;
@@ -111,7 +110,7 @@ New Inquiry: ${stageCounts["new_inquiry"]||0}
 Device Found: ${stageCounts["device_found"]||0}
 Negotiation: ${stageCounts["negotiation"]||0}
 Closed this month: ${closedThisMonth}
-Lost: ${stageCounts["lost"]||0}
+Parked: ${stageCounts["parked"]||0}
 
 REVENUE:
 This month: AED ${monthRev.toLocaleString()}

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { scoreMatch } from "../../constants";
 import { useProfile } from "../../context/ProfileContext";
-import { effectiveStatus } from "../../utils/holds";
 
 function fmtAED(price, currency) {
   if (!price) return "—";
@@ -48,16 +47,16 @@ export default function TraderMatchesPanel() {
       { data: buyingListings },
       { data: yourStock },
     ] = await Promise.all([
-      supabase.from("deals").select("*, customers(id, name, number)").in("stage", ["new_inquiry", "watching"]),
+      supabase.from("deals").select("*, customers(id, name, number)").eq("stage", "new_inquiry"),
       supabase.from("trader_inventory").select("*").eq("type", "selling").gte("created_at", thirtyDaysAgo),
       supabase.from("trader_inventory").select("*").eq("type", "buying").gte("created_at", thirtyDaysAgo),
-      supabase.from("stock").select("*").in("status", ["available", "quoted"]),
+      supabase.from("stock").select("*").eq("status", "available"),
     ]);
 
     const waitingDeals = (allDeals || []).filter(d => d.brand || d.model);
     const selling      = sellingListings || [];
     const buying       = buyingListings  || [];
-    const stock        = (yourStock || []).filter(s => effectiveStatus(s) === "available");
+    const stock        = yourStock       || [];
 
     setStats({ waitingDeals: waitingDeals.length, sellingListings: selling.length, buyingListings: buying.length, yourStock: stock.length });
 

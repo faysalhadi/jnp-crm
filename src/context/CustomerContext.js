@@ -2,14 +2,14 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { supabase } from "../supabase";
 import { daysSince, monthRevenue } from "../utils/helpers";
 import { useProfile } from "./ProfileContext";
-import { placeHold, releaseHold } from "../services/stockHoldService";
+import { sourcingAge, sourcingLabel } from "../utils/bulk";
 
 
 // ── Client health calculation ─────────────────────────────────────────────────
 export function getClientHealth(customer) {
   const deals = customer.deals || [];
   const closedDeals = deals.filter(d => d.stage === "closed");
-  const openDeals   = deals.filter(d => d.stage !== "closed" && d.stage !== "lost");
+  const openDeals   = deals.filter(d => d.stage !== "closed" && d.stage !== "parked");
   const prefs       = customer.preferences || {};
   const freqDays    = prefs.order_frequency_days || 14;
 
@@ -33,31 +33,49 @@ export function getClientHealth(customer) {
 
 // ── Queue priority calculation ────────────────────────────────────────────────
 export function getQueuePriority(customer, pendingFollowUpMap, stockMatchSet) {
-  const fu       = pendingFollowUpMap?.[customer.id];
-  const openDeal = (customer.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
-  const now      = new Date();
+  const fu        = pendingFollowUpMap?.[customer.id];
+  // 'parked' is excluded here, which is what makes a parked deal produce no
+  // queue entry at all — it can no longer drive pickup, silent or open-request.
+  const openDeals = (customer.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
+  const openDeal  = openDeals[0];
+  const now       = new Date();
 
-  if (customer.urgent) return { priority: 1, label: "🔴 Urgent",       color: "#EF4444" };
+  if (customer.urgent) return { priority: 1, label: "🔴 Urgent", color: "#EF4444" };
+
+  // Sourcing ranks directly below urgent: it is live work on a two-day clock.
+  const sourcingDeal = openDeals
+    .filter(d => d.stage === "sourcing")
+    .sort((a, b) => new Date(a.sourcing_started_at || 0) - new Date(b.sourcing_started_at || 0))[0];
+  if (sourcingDeal) {
+    const { level } = sourcingAge(sourcingDeal);
+    const chip = sourcingLabel(sourcingDeal);
+    return {
+      priority: 2,
+      label: `🔎 ${chip.text}`,
+      color: level === "late" ? "#EF4444" : level === "warn" ? "#D97706" : "#F97316",
+      deal: sourcingDeal,
+    };
+  }
 
   if (fu) {
     const due = new Date(fu.due_at);
-    if (due <= now) return { priority: 2, label: "📅 Overdue",         color: "#EF4444" };
+    if (due <= now) return { priority: 3, label: "📅 Overdue",    color: "#EF4444" };
     const diffH = Math.round((due - now) / 3600000);
-    if (diffH <= 24) return { priority: 3, label: "📅 Due today",      color: "#D97706" };
+    if (diffH <= 24) return { priority: 4, label: "📅 Due today", color: "#D97706" };
   }
 
-  if (openDeal?.stage === "confirmed_pending_pickup") return { priority: 4, label: "⚡ Pickup today", color: "#6366F1" };
+  if (openDeal?.stage === "confirmed_pending_pickup") return { priority: 5, label: "⚡ Pickup today", color: "#6366F1" };
 
-  if (stockMatchSet?.has(customer.id)) return { priority: 5, label: "📦 Stock match", color: "#10B981" };
+  if (stockMatchSet?.has(customer.id)) return { priority: 6, label: "📦 Stock match", color: "#10B981" };
 
   if (openDeal && Math.floor((Date.now() - new Date(customer.last_activity_at || customer.last_active)) / 86400000) >= 3) {
-    return { priority: 6, label: "⚠️ Silent 3d+", color: "#D97706" };
+    return { priority: 7, label: "⚠️ Silent 3d+", color: "#D97706" };
   }
 
   const health = getClientHealth(customer);
-  if (health.status === "cooling") return { priority: 7, label: "🔄 Re-engage",   color: "#EF4444" };
+  if (health.status === "cooling") return { priority: 8, label: "🔄 Re-engage", color: "#EF4444" };
 
-  if (openDeal) return { priority: 8, label: "📋 Open request", color: "#6366F1" };
+  if (openDeal) return { priority: 9, label: "📋 Open request", color: "#6366F1" };
 
   return null;
 }
@@ -85,11 +103,11 @@ export function CustomerProvider({ children }) {
     name: "", number: "", notes: ""
   });
   const [newDeal, setNewDeal] = useState({
-    brand: "", model: "", value: ""
+    brand: "", model: "", quantity: 1, unit_price: ""
   });
   const [showAddDeal, setShowAddDeal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showLossReason, setShowLossReason] = useState(false);
+  const [showParkSheet, setShowParkSheet] = useState(false);
 
   const loadCustomers = useCallback(async () => {
     // Do not fetch until we know who the user is — otherwise the assigned_to
@@ -155,7 +173,7 @@ export function CustomerProvider({ children }) {
   const activeCustomer = customers.find(c => c.id === activeCustomerId);
   const activeDeal = activeCustomer?.deals?.find(d => d.id === activeDealId);
 
-  const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "lost").length, 0);
+  const openDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked").length, 0);
   const closedDeals = customers.reduce((a, c) => a + (c.deals || []).filter(d => d.stage === "closed").length, 0);
   const revenue = monthRevenue(customers);
 
@@ -165,7 +183,7 @@ export function CustomerProvider({ children }) {
       if (contactTypeFilter !== "all" && cType !== contactTypeFilter) return false;
       if (search) return c.name.toLowerCase().includes(search.toLowerCase()) || (c.number || "").includes(search);
       if (filter === "urgent") return c.urgent;
-      if (filter === "overdue") return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "lost");
+      if (filter === "overdue") return daysSince(c.last_active) >= 1 && (c.deals || []).some(d => d.stage !== "closed" && d.stage !== "parked");
       if (filter === "vip") return c.tier === "vip";
       if (filter === "cold") return c.tier === "cold";
       return true;
@@ -240,40 +258,24 @@ export function CustomerProvider({ children }) {
   }
 
   async function updateDeal(dealId, fields) {
-    // When the unit on a deal changes, the old unit must not stay held for a
-    // client it is no longer promised to.
-    let previous = null;
-    if (Object.prototype.hasOwnProperty.call(fields, "stock_item_id")) {
-      const { data } = await supabase
-        .from("deals").select("stock_item_id, customer_id, stage").eq("id", dealId).maybeSingle();
-      previous = data || null;
-    }
-
     await supabase.from("deals").update(fields).eq("id", dealId);
-
-    if (previous && previous.stock_item_id !== fields.stock_item_id) {
-      if (previous.stock_item_id) await releaseHold(previous.stock_item_id);
-      const stillOpen = (fields.stage || previous.stage) !== "closed"
-                     && (fields.stage || previous.stage) !== "lost";
-      if (fields.stock_item_id && stillOpen) {
-        await placeHold(fields.stock_item_id, {
-          customerId: previous.customer_id,
-          dealId,
-        });
-      }
-    }
-
     await loadCustomers();
   }
 
   async function addDeal(customerId, dealData) {
+    const qty  = Math.max(1, parseInt(dealData.quantity, 10) || 1);
+    const unit = dealData.unit_price ? parseFloat(dealData.unit_price) : null;
     const { data: d } = await supabase
       .from("deals")
       .insert({
         customer_id: customerId,
         brand: dealData.brand,
         model: dealData.model,
-        value: dealData.value ? parseFloat(dealData.value) : null,
+        quantity:   qty,
+        unit_price: unit,
+        // `value` stays written so anything still reading the legacy column
+        // sees a sane single-unit figure.
+        value: unit,
         stage: "new_inquiry",
       })
       .select()
@@ -281,7 +283,7 @@ export function CustomerProvider({ children }) {
     await loadCustomers();
     setActiveDealId(d?.id);
     setShowAddDeal(false);
-    setNewDeal({ brand: "", model: "", value: "" });
+    setNewDeal({ brand: "", model: "", quantity: 1, unit_price: "" });
   }
 
   return (
@@ -305,7 +307,7 @@ export function CustomerProvider({ children }) {
       newDeal, setNewDeal,
       showAddDeal, setShowAddDeal,
       showDeleteConfirm, setShowDeleteConfirm,
-      showLossReason, setShowLossReason,
+      showParkSheet, setShowParkSheet,
       openDeals,
       closedDeals,
       revenue,

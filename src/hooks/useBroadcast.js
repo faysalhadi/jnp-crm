@@ -20,7 +20,7 @@ export function useBroadcast() {
   function openBroadcast(item) {
     const matches = customers.filter(c =>
       (c.deals || []).some(d => {
-        if (d.stage === "closed" || d.stage === "lost") return false;
+        if (d.stage === "closed" || d.stage === "parked") return false;
         if (!item) return true; // no item filter — show all open deals
         const brandMatch = !item.brand || !d.brand || d.brand.toLowerCase() === item.brand.toLowerCase();
         const budgetOk = !item.min_price || !d.budget || Number(d.budget) >= Number(item.min_price);
@@ -43,7 +43,7 @@ export function useBroadcast() {
       const specs  = broadcastItem ? [broadcastItem.ram, broadcastItem.ssd, broadcastItem.condition].filter(Boolean).join(", ") : "";
       const price  = broadcastItem?.max_price || "";
       const msgs = await Promise.all(selected.map(async c => {
-        const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "lost");
+        const deal = (c.deals || []).find(d => d.stage !== "closed" && d.stage !== "parked");
         const interest = deal ? `${deal.brand || "laptop"} budget AED ${deal.budget || "unknown"}` : "laptop";
         const about = device ? `${device}${specs ? " — " + specs : ""}${price ? " AED " + price : ""}` : "available laptops";
         const prompt = `Write a short WhatsApp message to ${c.name} about: ${about}. Their interest: ${interest}. Personal, friendly, under 40 words, 1-2 emojis. Return message text only.`;

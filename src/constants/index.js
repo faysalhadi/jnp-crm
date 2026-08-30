@@ -1,14 +1,35 @@
 export const ANTHROPIC_KEY_STORAGE = "jnp_anthropic_key";
 
 export const STAGES = [
-  { id: "new_inquiry",              label: "New Inquiry",              color: "#6366F1", bg: "#EEF2FF" },
-  { id: "watching",                 label: "Watching",                 color: "#8B5CF6", bg: "#F5F3FF" },
-  { id: "device_found",             label: "Device Found",             color: "#8B5CF6", bg: "#F5F3FF" },
-  { id: "negotiation",              label: "Negotiation",              color: "#EC4899", bg: "#FDF2F8" },
-  { id: "confirmed_pending_pickup", label: "Confirmed — Pending Pickup", color: "#F59E0B", bg: "#FFFBEB" },
-  { id: "closed",                   label: "Deal Closed",              color: "#10B981", bg: "#ECFDF5" },
-  { id: "lost",                     label: "Lost",                     color: "#EF4444", bg: "#FEF2F2" },
+  { id: "new_inquiry",              label: "New inquiry",  color: "#6366F1", bg: "#EEF2FF" },
+  { id: "sourcing",                 label: "Sourcing",     color: "#F97316", bg: "#FFF7ED" },
+  { id: "device_found",             label: "Found",        color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "negotiation",              label: "Negotiation",  color: "#EC4899", bg: "#FDF2F8" },
+  { id: "confirmed_pending_pickup", label: "Confirmed",    color: "#F59E0B", bg: "#FFFBEB" },
+  { id: "closed",                   label: "Closed",       color: "#10B981", bg: "#ECFDF5" },
+  { id: "parked",                   label: "Parked",       color: "#64748B", bg: "#F1F5F9" },
 ];
+
+// A deal is never lost — it is parked, and stays alive for the next round.
+export const PARK_REASONS = [
+  { id: "price_too_high",   label: "Price too high" },
+  { id: "not_sourced",      label: "Couldn't source it" },
+  { id: "bought_elsewhere", label: "Bought elsewhere" },
+  { id: "went_quiet",       label: "Went quiet" },
+  { id: "not_needed_now",   label: "Not needed now" },
+];
+
+export const PARK_REASON_LABEL = PARK_REASONS.reduce(
+  (m, r) => { m[r.id] = r.label; return m; }, {}
+);
+
+// Open = still live work. 'parked' is open in the sense that it is not closed,
+// but it is deliberately out of the daily queue, so it is excluded here.
+export const OPEN_STAGES = ["new_inquiry", "sourcing", "device_found", "negotiation", "confirmed_pending_pickup"];
+
+export function isOpenStage(stage) {
+  return stage !== "closed" && stage !== "parked";
+}
 
 export const MATCH_CATEGORIES = [
   { id: "macbook_pro",   label: "MacBook Pro",           icon: "🍎" },
@@ -312,7 +333,7 @@ export function customerStockMatch(customer, availableStock = []) {
   if (!availableStock.length) return null;
   // 1) Deal-based: open deals with a real model-level match (score >= 3)
   const openDeals = (customer.deals || []).filter(d =>
-    ["new_inquiry", "watching", "device_found", "negotiation"].includes(d.stage));
+    ["new_inquiry", "device_found", "negotiation"].includes(d.stage));
   for (const d of openDeals) {
     for (const s of availableStock) {
       const m = scoreMatch(s.brand, s.model, d.brand, d.model, s.processor, d.processor);

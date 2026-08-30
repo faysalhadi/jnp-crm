@@ -4,7 +4,6 @@ import { useStock } from "../../context/StockContext";
 import { FACEBOOK_GROUPS } from "../../constants/facebookGroups";
 import { saveKey } from "../../hooks/useMarketingSettings";
 import { useProfile } from "../../context/ProfileContext";
-import { effectiveStatus } from "../../utils/holds";
 const CHANNEL   = "https://whatsapp.com/channel/0029Vb818z5GufIwfVtYoB0z";
 const CHAN_NAME  = "Vertex Tech Trading | Wholesale Deals";
 const BIZ      = "Laptop for Less";
@@ -100,7 +99,7 @@ async function callClaude(key, prompt) {
 }
 
 function buildStockSummary(stock) {
-  const available = stock.filter(s => effectiveStatus(s) === "available");
+  const available = stock.filter(s => s.status === "available");
   return available.slice(0, 8).map(s =>
     `${s.brand || ""} ${s.model || ""} | ${s.processor || ""} | ${s.ram || ""} | ${s.ssd || ""} | Grade ${s.condition || ""} | AED ${s.max_price || 0}`
   ).join("\n") || "Various laptops available";

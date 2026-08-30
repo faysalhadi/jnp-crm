@@ -6,7 +6,6 @@ import { useChat } from "../../context/ChatContext";
 import { useChatActions } from "../../hooks/useChatActions";
 import { formatWhatsAppNumber } from "../../utils/helpers";
 import { useProfile } from "../../context/ProfileContext";
-import { effectiveStatus } from "../../utils/holds";
 
 const ACTIVITY_TYPES = [
   { id: "called",    label: "📞 Called",    color: "#6366F1", bg: "#EEF2FF" },
@@ -139,7 +138,7 @@ export default function NotesActivityView() {
       .from("deals")
       .select("*")
       .eq("customer_id", cid)
-      .eq("stage", "lost")
+      .eq("stage", "parked")
       .order("updated_at", { ascending: false })
       .limit(3);
     setLostDeals(data || []);
@@ -152,10 +151,10 @@ export default function NotesActivityView() {
     setShowReengage(true);
     const deal = lostDeals[0];
     // Fetch current matching stock
-    let stockQuery = supabase.from("stock").select("brand,model,processor,ram,ssd,max_price,status,quoted_at").in("status", ["available", "quoted"]);
+    let stockQuery = supabase.from("stock").select("brand,model,processor,ram,ssd,max_price").eq("status", "available");
     if (deal?.brand) stockQuery = stockQuery.ilike("brand", "%" + deal.brand + "%");
     const { data: matchStock } = await stockQuery;
-    const stockList = (matchStock || []).filter(s => effectiveStatus(s) === "available").slice(0, 5)
+    const stockList = (matchStock || []).slice(0, 5)
       .map(s => `- ${s.brand} ${s.model} ${s.processor || ""} ${s.ram || ""} ${s.ssd || ""} — ${s.max_price || "??"} AED`.trim())
       .join("\n");
     const daysAgo = deal?.updated_at
