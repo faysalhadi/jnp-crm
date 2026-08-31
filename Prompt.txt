@@ -1,14 +1,16 @@
-JNP CRM — The missing queue views: Sourcing, Parked, and the owner's scope
+JNP CRM — Parked as a real view, and the missing Sourcing section
  
-CONTEXT
-The bulk foundation commit (a684880) landed the data layer — quantity, pools,
-the 'parked' and 'sourcing' stages, parkService — but did NOT build the queue
-sections for them. Verified against the deployed CustomersTab.js: the sections
-are still ACT NOW / CONFIRM TODAY / STOCK MATCH / FOLLOW UP / RE-ENGAGE /
-OPEN REQUESTS.
+VERIFIED STATE — read this before doing anything
+Three files were checked against main at commit 627774d:
+  src/components/tabs/CustomersTab.js       — sections are ACT NOW /
+      CONFIRM TODAY / STOCK MATCH / FOLLOW UP / RE-ENGAGE / OPEN REQUESTS.
+      The words PARKED and SOURCING do not appear at all.
+  src/components/tabs/HomeTab.js            — 'parked' appears only in a
+      background query feeding re-engage matching. No section.
+  src/components/tabs/SalespersonHomeTab.js — neither word appears.
  
-So a deal can be parked and then never seen again, and the owner has no way to
-see what his four salespeople are sitting on.
+Earlier commit messages claimed these sections had landed. They have not.
+Do not assume any of this exists — verify, then build what is missing.
  
 Read every file fully before editing. Targeted edits only — do NOT rewrite
 whole files. Run `npm run build` at the end and fix all ESLint errors.
@@ -17,172 +19,176 @@ whole files. Run `npm run build` at the end and fix all ESLint errors.
 STEP 0 — REPORT FIRST
 ════════════════════════════════════════════════════════════════════════
  
-  1. Confirm STAGES contains 'sourcing' and 'parked', and that 'lost' is gone.
-  2. Confirm src/services/parkService.js exists with parkDeal/unparkDeal.
-  3. Confirm src/utils/bulk.js exists with sourcingAge() and dealTotal().
-  4. Is there a "Park" button anywhere on a deal today? If not, note it —
-     step 4 below adds one.
-  5. How does ProfileContext expose role? Quote the exact field
-     (isOwner / role / access) so the scoping below uses the real API.
-  6. How does the queue currently build its `sections` object?
+  1. grep -rn "PARKED\|SOURCING" src/ — list every hit with its file.
+  2. grep -rn "'parked'\|\"parked\"\|'sourcing'\|\"sourcing\"" src/
+  3. Confirm STAGES contains 'sourcing' and 'parked' and that 'lost' is gone.
+  4. Confirm src/services/parkService.js exists (parkDeal, unparkDeal).
+  5. Confirm src/utils/bulk.js exists (sourcingAge, dealTotal, modelKey).
+  6. Quote the exact ProfileContext field that gives role / isOwner.
+  7. Find the Queue / All view switcher in CustomersTab.js and quote how
+     viewMode is stored and rendered.
+  8. Is there a "Park" button on any deal today? Yes or no.
  
-Print all six answers before changing anything.
- 
-════════════════════════════════════════════════════════════════════════
-STEP 1 — SOURCING SECTION
-════════════════════════════════════════════════════════════════════════
- 
-Insert a new section DIRECTLY UNDER "ACT NOW". It must never be collapsed —
-this is live work against a two-day clock.
- 
-  Label:  SOURCING
-  Dot:    amber
-  Members: every customer with at least one deal at stage 'sourcing'
- 
-  Sort: oldest sourcing_started_at first.
- 
-  On each card, a chip from sourcingAge(deal):
-      level 'ok'    →  "day 1"           amber
-      level 'warn'  →  "day 2"           amber, stronger
-      level 'late'  →  "day 3 — close it out"   red
- 
-  The reason line reads:
-      `Looking for ${brand} ${model} × ${quantity}`
- 
-Faisal loses the customer to another supplier after about two days. That is
-what these thresholds encode — do not change them.
+Print all eight before changing anything.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 2 — PARKED SECTION
+STEP 1 — PARKED BECOMES A VIEW, NOT A BURIED SECTION
 ════════════════════════════════════════════════════════════════════════
  
-At the VERY BOTTOM of the queue, below every other section:
+The Clients tab view switcher becomes THREE tabs:
  
-      👁  PARKED                                        14 ▸
+      [ Queue (12) ]   [ Parked (14) ]   [ All (104) ]
  
-  · Collapsed by default. Tap the header to expand.
-  · Keep expanded/collapsed in component state only — do not persist it.
-  · Members: customers with at least one deal at stage 'parked',
-    EXCLUDING anyone already rendered in a higher section (no duplicates).
-  · Sort by parked_at, OLDEST FIRST — the longest-ignored surface first.
-  · Reason line by parked_reason:
-        price_too_high    → `Offered ${money}/unit · ${n} weeks ago`
-        not_sourced       → `Couldn't find ${brand} ${model}`
-        bought_elsewhere  → `Bought elsewhere · ${n} weeks ago`
-        went_quiet        → `Went quiet · ${n} weeks ago`
-        not_needed_now    → `Not needed yet · ${n} weeks ago`
-  · Each card shows quantity and the model, same as any other card.
-  · An "Unpark" action on each card calls unparkDeal(dealId, 'new_inquiry').
+  · Parked sits between Queue and All.
+  · The count in the label is live and always visible — that count is the
+    whole point. Faisal must be able to see it without opening anything.
+  · Follow the existing viewMode pattern exactly as found in step 7.
+    Do NOT invent a new navigation mechanism.
+ 
+Do NOT add a collapsed PARKED row to the Queue. Parked is a destination now.
+If any earlier attempt left one, remove it.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 3 — ROLE SCOPING  (this is the owner's answer)
+STEP 2 — THE PARKED VIEW
 ════════════════════════════════════════════════════════════════════════
  
-Use the real ProfileContext API found in step 0.
+Contents, top to bottom:
  
-  SALESPERSON → sees only deals where created_by is himself, in both the
-                SOURCING and PARKED sections.
-  OWNER/MANAGER → sees everyone's, by default.
+── 2a. OWNER SUMMARY STRIP  (owner / manager only — hidden for salesperson)
  
-Do NOT build a separate owner screen. Role sets the default scope.
+      Ahmed      14 parked · 620 units · avg 22d
+      Bilal       6 parked · 180 units · avg 8d
+      Kashif     11 parked · 430 units · avg 17d
+      Faisal      9 parked · 340 units · avg 15d
  
-3a. OWNER FILTER ROW
-    When the viewer is owner or manager, render a compact filter row at the
-    top of the expanded PARKED section:
+  · units = SUM(deals.quantity) across that person's parked deals
+  · avg   = mean days since parked_at
+  · sort by parked count DESC
+  · font-variant-numeric: tabular-nums so columns line up
+  · quiet styling — small, muted. Reference, not a dashboard.
+  · tapping a row applies that person's filter
  
-        [ Everyone ]  [ Ahmed ]  [ Bilal ]  [ Kashif ]  [ Faisal ]
+── 2b. FILTER CHIPS  (owner / manager only)
  
-    Chips, horizontally scrollable, "Everyone" selected by default. Names
-    come from profiles where active = true. Filters the parked list by
-    created_by. Hidden entirely for a salesperson.
+      [ Everyone ]  [ Ahmed ]  [ Bilal ]  [ Kashif ]  [ Faisal ]
  
-3b. OWNER SUMMARY STRIP
-    Above that filter row, when the viewer is owner or manager, a compact
-    summary — one line per active salesperson:
+  Horizontally scrollable. "Everyone" selected by default. Names from
+  profiles where active = true. Filters by deals.created_by.
  
-        Ahmed     14 parked · 620 units · avg 22d
-        Bilal      6 parked · 180 units · avg 8d
-        Kashif    11 parked · 430 units · avg 17d
+── 2c. THE LIST
  
-    · units = sum of deals.quantity across that person's parked deals
-    · avg = mean days since parked_at
-    · Tapping a row applies that person's filter (same as the chip)
-    · Sort by parked count descending
-    · Use tabular-nums so the columns line up
-    · Keep it visually quiet — small text, muted. It is reference, not a
-      dashboard.
+  Every customer with at least one deal at stage 'parked'.
+  Sort by parked_at, OLDEST FIRST.
  
-    This is the view Faisal asked for twice: what each of his four people is
-    sitting on. If one agent parks twice what another does, that shows here.
+  Reuse the existing ClientCard. Reason line by parked_reason:
+      price_too_high    → `Offered ${money}/unit · ${n} weeks ago`
+      not_sourced       → `Couldn't find ${brand} ${model} × ${qty}`
+      bought_elsewhere  → `Bought elsewhere · ${n} weeks ago`
+      went_quiet        → `Went quiet · ${n} weeks ago`
+      not_needed_now    → `Not needed yet · ${n} weeks ago`
+      (null/unknown)    → `Parked ${n} weeks ago`
+ 
+  Show quantity and model on every card, same as elsewhere.
+  Each card carries an "Unpark" action → unparkDeal(dealId, 'new_inquiry').
+ 
+── 2d. EMPTY STATE
+ 
+      "Nothing parked yet.
+       Parked deals stay alive here — they come back when stock lands
+       or their price clears."
+ 
+── 2e. SCOPE BY ROLE
+ 
+  Salesperson → only deals whose created_by is himself.
+  Owner/manager → everyone, filterable by the chips.
+  A deal with created_by NULL stays visible to everyone — legacy rows
+  predate that column and must not vanish.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 4 — THE PARK ACTION
+STEP 3 — THE SOURCING SECTION  (in the Queue view)
 ════════════════════════════════════════════════════════════════════════
  
-If step 0 found no Park button, add one now.
+This genuinely does not exist. Build it.
  
-On every OPEN deal (any stage except closed and parked), in the client
-detail / right panel, a secondary "Park" button. Opens a bottom sheet:
+Insert DIRECTLY UNDER "ACT NOW" in the Queue view. Never collapsed.
+ 
+  Label:   SOURCING          dot: amber
+  Members: customers with at least one deal at stage 'sourcing'
+  Sort:    oldest sourcing_started_at first
+ 
+  Chip from sourcingAge(deal):
+      'ok'    → "day 1"                amber
+      'warn'  → "day 2"                amber, stronger
+      'late'  → "day 3 — close it out" red
+ 
+  Reason line: `Looking for ${brand} ${model} × ${quantity}`
+ 
+  Scope by role the same way as Parked.
+ 
+Faisal loses the customer to another supplier after roughly two days. That
+is what these thresholds encode — do not change them.
+ 
+════════════════════════════════════════════════════════════════════════
+STEP 4 — THE PARK BUTTON  (only if step 0 found none)
+════════════════════════════════════════════════════════════════════════
+ 
+On every open deal (any stage except closed and parked), in the client
+detail / right panel: a secondary "Park" button opening a bottom sheet.
  
   Title: "Park this one"
   Sub:   "<client> · <brand> <model> × <qty>"
  
   Five large tap targets from PARK_REASONS:
-      💰 Price too high        → reveals a REQUIRED
-                                 "What did he offer per unit" field
+      💰 Price too high   → reveals a REQUIRED
+                            "What did he offer per unit" field
       🔍 Couldn't source it
       🏃 Bought elsewhere
       🤐 Went quiet
       📅 Not needed now
  
-  Then a summary block before confirming:
+  Summary block before confirming:
       ✓ Leaves the queue · follow-up closed
-      ✓ <n> units released back to free      (only when a hold exists)
-      ✓ Joins <brand> <model> parked demand
+      ✓ <n> units released back to free   (only when a hold exists)
+      ✓ Moves to the Parked view
       ✓ Comes back when stock lands or his price clears
  
-  Confirm calls parkService.parkDeal(dealId, { reason, targetUnitPrice }).
-  On success, refresh the customer list.
+  Confirm → parkService.parkDeal(dealId, { reason, targetUnitPrice }),
+  then refresh the customer list.
  
 ════════════════════════════════════════════════════════════════════════
 STEP 5 — QUEUE PRIORITY
 ════════════════════════════════════════════════════════════════════════
  
 In getQueuePriority (src/context/CustomerContext.js):
+  · 'sourcing' ranks just below urgent — above follow-ups.
+  · 'parked' returns null. A parked deal must never create a queue entry
+    and must never land in OPEN REQUESTS.
  
-  · A deal at 'sourcing' ranks just below urgent — above follow-ups.
-    It is time-critical.
-  · A deal at 'parked' returns null. A parked deal must NEVER create a
-    queue entry, and must not put its client into OPEN REQUESTS.
- 
-Check that no other section (OPEN REQUESTS especially) is picking up parked
-or sourcing deals as a side effect. They each belong in exactly one place.
+Confirm no other section picks up parked or sourcing deals as a side effect.
  
 ════════════════════════════════════════════════════════════════════════
 DO NOT
 ════════════════════════════════════════════════════════════════════════
-  · Do NOT collapse or hide the SOURCING section.
-  · Do NOT let a parked deal appear in any other section.
+  · Do NOT put Parked back inside the Queue as a collapsed row.
+  · Do NOT collapse or hide SOURCING.
   · Do NOT build a separate owner-only screen — role sets default scope.
-  · Do NOT persist the collapsed state of PARKED.
+  · Do NOT hide deals whose created_by is NULL.
   · Do NOT auto-message anyone.
   · Do NOT enable RLS.
   · Do NOT add npm dependencies.
   · Do NOT rewrite whole files.
  
 ════════════════════════════════════════════════════════════════════════
-FINISH
+FINISH — VERIFY, DO NOT ASSUME
 ════════════════════════════════════════════════════════════════════════
   1. npm run build
   2. Fix every ESLint error and unused-variable warning
-  3. Verify by reading the code back:
-       - a salesperson sees only his own in SOURCING and PARKED
-       - an owner sees all, and the filter chips narrow to one person
-       - a parked client never appears twice in the queue
-       - SOURCING sits directly under ACT NOW and cannot be collapsed
-       - the summary strip is hidden for a salesperson
-  4. Print:
-       - your step 0 findings
-       - files created / edited
-       - the exact ProfileContext field you used for role
-       - anything you did differently, and why
+  3. Re-run `grep -rn "PARKED\|SOURCING" src/` and PASTE THE OUTPUT into
+     your summary. Do not claim a section exists without showing the grep
+     line that proves it.
+  4. Also confirm in the summary:
+       - the Clients tab renders three view tabs with live counts
+       - the summary strip and chips are absent for a salesperson
+       - SOURCING sits directly under ACT NOW
+       - a parked client appears in Parked and nowhere else
+  5. Print files created / edited, and anything you did differently and why.

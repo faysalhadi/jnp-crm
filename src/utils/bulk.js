@@ -185,10 +185,10 @@ export function parkedReasonLine(deal) {
       return offer !== null
         ? `Offered AED ${offer.toLocaleString()}/unit${when ? ` · ${when}` : ""}`
         : `Price too high${when ? ` · ${when}` : ""}`;
-    case "not_sourced":      return `Couldn't find ${what}`;
+    case "not_sourced":      return `Couldn't find ${what} × ${dealQty(deal)}`;
     case "bought_elsewhere": return `Bought elsewhere${when ? ` · ${when}` : ""}`;
     case "went_quiet":       return `Went quiet${when ? ` · ${when}` : ""}`;
     case "not_needed_now":   return `Not needed yet${when ? ` · ${when}` : ""}`;
-    default:                 return when ? `Parked · ${when}` : "Parked";
+    default:                 return when ? `Parked ${when}` : "Parked";
   }
 }

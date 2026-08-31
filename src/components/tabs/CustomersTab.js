@@ -55,9 +55,11 @@ const STAGE_LABELS = {
   closed: "Closed", lost: "Lost",
 };
 
-function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingFollowUpMap, queuePriority, stock, reasonOverride }) {
+function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingFollowUpMap, queuePriority, stock, reasonOverride, primaryDeal, extraAction }) {
   const openDeals  = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
-  const latestDeal = openDeals[0] || (c.deals || [])[0];
+  // The Parked view points this at the parked deal — otherwise the card would
+  // describe whichever deal happened to come first.
+  const latestDeal = primaryDeal || openDeals[0] || (c.deals || [])[0];
   const activityTs = c.last_activity_at || c.last_active;
   const fu         = pendingFollowUpMap?.[c.id];
   const health     = getClientHealth(c);
@@ -181,6 +183,7 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
               }}>
               ✆ WhatsApp
             </button>
+            {extraAction}
           </div>
         </div>
       </div>
@@ -219,7 +222,6 @@ export default function CustomersTab() {
 
   const { stock } = useStock();
   const { isOwner, currentProfile, profiles } = useProfile();
-  const [parkedOpen, setParkedOpen] = useState(false);   // never persisted
   const [ownerFilter, setOwnerFilter] = useState(null);  // null = everyone
 
   // Role sets the default scope — there is no separate owner screen.
@@ -289,23 +291,21 @@ export default function CustomersTab() {
     return s;
   }, [queueClients, dealVisible]);
 
-  // PARKED lives at the very bottom, collapsed. Role decides scope — a
+  // Parked is its own destination, not a buried row. Role decides scope — a
   // salesperson sees only what he parked; an owner or manager sees everyone's.
-  const parkedClients = useMemo(() => {
-    const inQueue = new Set(queueClients.map(({ c }) => c.id));
-    return allClients
+  const parkedClients = useMemo(() =>
+    allClients
       .map(c => {
         const parked = (c.deals || []).filter(d => d.stage === "parked" && dealVisible(d));
         if (!parked.length) return null;
+        // Oldest parked_at drives the sort — the longest-ignored surfaces first.
         const oldest = parked.reduce((acc, d) =>
           !acc || (d.parked_at && new Date(d.parked_at) < new Date(acc)) ? (d.parked_at || acc) : acc, null);
         return { c, parkedAt: oldest, deals: parked };
       })
       .filter(Boolean)
-      // No duplicates: anything already rendered in a live section stays there.
-      .filter(({ c }) => !inQueue.has(c.id))
-      .sort((a, b) => new Date(a.parkedAt || 0) - new Date(b.parkedAt || 0));
-  }, [allClients, queueClients, dealVisible]);
+      .sort((a, b) => new Date(a.parkedAt || 0) - new Date(b.parkedAt || 0)),
+    [allClients, dealVisible]);
 
   // Owner-only: one line per active salesperson, and the chip filter.
   const activeAgents = useMemo(
@@ -421,6 +421,7 @@ export default function CustomersTab() {
         <div style={{ display: "flex", borderBottom: "1px solid #F1F5F9", marginLeft: -14, marginRight: -14, paddingLeft: 14 }}>
           {[
             { key: "queue",   label: `Queue (${queueClients.length})` },
+            { key: "parked",  label: `Parked (${parkedClients.length})` },
             { key: "clients", label: `All (${allClients.length})` },
           ].map(m => (
             <button key={m.key} onClick={() => setViewMode(m.key)}
@@ -493,123 +494,104 @@ export default function CustomersTab() {
           </div>
         ))}
 
-        {/* ── PARKED — collapsed, at the very bottom ── */}
-        {parkedClients.length > 0 && (
-          <div style={{ marginTop: 18 }}>
-            <button
-              onClick={() => setParkedOpen(v => !v)}
-              style={{
-                width: "100%", display: "flex", alignItems: "center", gap: 8,
-                padding: "10px 14px", borderRadius: 12, cursor: "pointer",
-                border: "1px solid #F1F5F9", background: "#F8FAFC",
-              }}>
-              <span style={{ fontSize: 13 }}>👁</span>
-              <span style={{ flex: 1, textAlign: "left", fontSize: 10, fontWeight: 800, color: "#94A3B8", letterSpacing: 1 }}>
-                PARKED
-              </span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#64748B" }}>{parkedClients.length}</span>
-              <span style={{ fontSize: 11, color: "#94A3B8" }}>{parkedOpen ? "▾" : "▸"}</span>
-            </button>
+      </div>
+    );
+  }
 
-            {parkedOpen && (
-              <div style={{ marginTop: 8 }}>
+  // ── PARKED VIEW ───────────────────────────────────────────────────────────
+  function renderParkedList() {
+    return (
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 14px 40px", minHeight: 0, WebkitOverflowScrolling: "touch" }}>
 
-                {/* Owner/manager only — what each person is sitting on. */}
-                {canSeeAll && parkedByAgent.length > 0 && (
-                  <div style={{ background: "#fff", border: "1px solid #F1F5F9", borderRadius: 12, padding: "8px 12px", marginBottom: 8 }}>
-                    {parkedByAgent.map(r => (
-                      <div key={r.id}
-                        onClick={() => setOwnerFilter(f => f === r.id ? null : r.id)}
-                        style={{
-                          display: "flex", alignItems: "baseline", gap: 8, padding: "3px 0", cursor: "pointer",
-                          fontVariantNumeric: "tabular-nums",
-                          opacity: ownerFilter && ownerFilter !== r.id ? 0.45 : 1,
-                        }}>
-                        <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {agentName(r.id)}
-                        </span>
-                        <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>{r.count} parked</span>
-                        <span style={{ fontSize: 11, color: "#CBD5E1" }}>·</span>
-                        <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>{r.units} units</span>
-                        {r.avgDays !== null && (
-                          <>
-                            <span style={{ fontSize: 11, color: "#CBD5E1" }}>·</span>
-                            <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>avg {r.avgDays}d</span>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+        {/* 2a — owner/manager only: what each person is sitting on */}
+        {canSeeAll && parkedByAgent.length > 0 && (
+          <div style={{ background: "#fff", border: "1px solid #F1F5F9", borderRadius: 12, padding: "8px 12px", marginTop: 8, marginBottom: 8 }}>
+            {parkedByAgent.map(r => (
+              <div key={r.id}
+                onClick={() => setOwnerFilter(f => f === r.id ? null : r.id)}
+                style={{
+                  display: "flex", alignItems: "baseline", gap: 8, padding: "3px 0", cursor: "pointer",
+                  fontVariantNumeric: "tabular-nums",
+                  opacity: ownerFilter && ownerFilter !== r.id ? 0.45 : 1,
+                }}>
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {agentName(r.id)}
+                </span>
+                <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>{r.count} parked</span>
+                <span style={{ fontSize: 11, color: "#CBD5E1" }}>·</span>
+                <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>{r.units} units</span>
+                {r.avgDays !== null && (
+                  <>
+                    <span style={{ fontSize: 11, color: "#CBD5E1" }}>·</span>
+                    <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>avg {r.avgDays}d</span>
+                  </>
                 )}
-
-                {/* Owner/manager only — narrow to one person. */}
-                {canSeeAll && activeAgents.length > 0 && (
-                  <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", marginBottom: 8, paddingBottom: 2 }}>
-                    {[{ id: null, label: "Everyone" },
-                      ...activeAgents.map(p => ({ id: p.id, label: p.full_name || p.name || "Agent" }))
-                    ].map(chip => (
-                      <button key={chip.id || "all"} onClick={() => setOwnerFilter(chip.id)}
-                        style={{
-                          padding: "4px 12px", borderRadius: 16, cursor: "pointer", flexShrink: 0,
-                          fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
-                          border: `1.5px solid ${ownerFilter === chip.id ? "#6366F1" : "#E2E8F0"}`,
-                          background: ownerFilter === chip.id ? "#EEF2FF" : "#fff",
-                          color: ownerFilter === chip.id ? "#6366F1" : "#94A3B8",
-                        }}>
-                        {chip.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {visibleParked.length === 0 && (
-                    <div style={{ fontSize: 12, color: "#CBD5E1", textAlign: "center", padding: "14px 0" }}>
-                      Nothing parked for that person.
-                    </div>
-                  )}
-                  {visibleParked.map(({ c, parkedAt, deals }) => {
-                    const d = deals[0];
-                    return (
-                      <div key={c.id} onClick={() => openClient(c)}
-                        style={{
-                          background: "#fff", borderRadius: 12, padding: "10px 13px",
-                          border: "1px solid #F1F5F9", cursor: "pointer",
-                        }}>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {c.name}
-                          </span>
-                          <span style={{ fontSize: 10, color: "#CBD5E1", flexShrink: 0, whiteSpace: "nowrap" }}>
-                            {agoPhrase(parkedAt)}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 11, color: "#64748B", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                          {[d?.brand, d?.model].filter(Boolean).join(" ") || "Parked deal"} · × {dealQty(d)}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {parkedReasonLine(d)}
-                          </span>
-                          {canSeeAll && d?.created_by && (
-                            <span style={{ fontSize: 10, color: "#CBD5E1", flexShrink: 0, whiteSpace: "nowrap" }}>
-                              {agentName(d.created_by)}
-                            </span>
-                          )}
-                          <button
-                            onClick={e => { e.stopPropagation(); handleUnpark(d.id); }}
-                            style={{ padding: "3px 10px", borderRadius: 7, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
-                            Unpark
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
-            )}
+            ))}
           </div>
         )}
+
+        {/* 2b — owner/manager only: narrow to one person */}
+        {canSeeAll && activeAgents.length > 0 && (
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", marginBottom: 10, paddingBottom: 2 }}>
+            {[{ id: null, label: "Everyone" },
+              ...activeAgents.map(p => ({ id: p.id, label: p.full_name || p.name || "Agent" }))
+            ].map(chip => (
+              <button key={chip.id || "all"} onClick={() => setOwnerFilter(chip.id)}
+                style={{
+                  padding: "4px 12px", borderRadius: 16, cursor: "pointer", flexShrink: 0,
+                  fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
+                  border: `1.5px solid ${ownerFilter === chip.id ? "#6366F1" : "#E2E8F0"}`,
+                  background: ownerFilter === chip.id ? "#EEF2FF" : "#fff",
+                  color: ownerFilter === chip.id ? "#6366F1" : "#94A3B8",
+                }}>
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 2d — empty state */}
+        {parkedClients.length === 0 && (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>👁</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#0F172A" }}>Nothing parked yet.</div>
+            <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 6, lineHeight: 1.6 }}>
+              Parked deals stay alive here — they come back when stock
+              <br />lands or their price clears.
+            </div>
+          </div>
+        )}
+
+        {parkedClients.length > 0 && visibleParked.length === 0 && (
+          <div style={{ fontSize: 12, color: "#CBD5E1", textAlign: "center", padding: "30px 0" }}>
+            Nothing parked for that person.
+          </div>
+        )}
+
+        {/* 2c — the list, oldest parked first */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {visibleParked.map(({ c, deals }) => {
+            const d = deals[0];
+            return (
+              <ClientCard key={c.id} c={c}
+                onOpen={() => openClient(c)}
+                onSelect={isMobile ? null : () => openClient(c)}
+                isSelected={selectedClient?.id === c.id}
+                lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
+                queuePriority={null} stock={stock}
+                primaryDeal={d}
+                reasonOverride={parkedReasonLine(d)}
+                extraAction={
+                  <button
+                    onClick={e => { e.stopPropagation(); handleUnpark(d.id); }}
+                    style={{ height: 24, padding: "0 10px", borderRadius: 7, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                    Unpark
+                  </button>
+                } />
+            );
+          })}
+        </div>
       </div>
     );
   }
@@ -710,6 +692,7 @@ export default function CustomersTab() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
         {renderHeader()}
         {viewMode === "queue"   && renderQueueList()}
+        {viewMode === "parked"  && renderParkedList()}
         {viewMode === "clients" && renderAllClientsList()}
       </div>
     );
@@ -727,6 +710,7 @@ export default function CustomersTab() {
         {/* LEFT panel — 370px fixed */}
         <div style={{ width: 370, flexShrink: 0, display: "flex", flexDirection: "column", borderRight: "1px solid #F1F5F9", overflow: "hidden", minHeight: 0 }}>
           {viewMode === "queue"   && renderQueueList()}
+          {viewMode === "parked"  && renderParkedList()}
           {viewMode === "clients" && renderAllClientsList()}
         </div>
 

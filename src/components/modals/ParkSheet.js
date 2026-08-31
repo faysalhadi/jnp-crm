@@ -119,7 +119,7 @@ export default function ParkSheet({ open, deal, customer, onClose, onParked }) {
           <div style={{ padding: "12px 14px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #F1F5F9", display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
             <Check>Leaves the queue · follow-up closed</Check>
             {heldUnits > 0 && <Check>{heldUnits} unit{heldUnits !== 1 ? "s" : ""} released back to free</Check>}
-            <Check>Joins {title} parked demand</Check>
+            <Check>Moves to the Parked view</Check>
             <Check>Comes back when stock lands or his price clears</Check>
           </div>
         )}
