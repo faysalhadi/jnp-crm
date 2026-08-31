@@ -1,146 +1,171 @@
-JNP CRM — Restore "New requirement", bulk-native
+JNP CRM — The missing queue views: Sourcing, Parked, and the owner's scope
  
 CONTEXT
-Commit 6293373 added DealForkModal with a "+ New requirement" button.
-Commit a684880 (bulk foundation) correctly removed it — it was built on
-stock_item_id and per-unit holds, which the quantity-pool model replaced.
+The bulk foundation commit (a684880) landed the data layer — quantity, pools,
+the 'parked' and 'sourcing' stages, parkService — but did NOT build the queue
+sections for them. Verified against the deployed CustomersTab.js: the sections
+are still ACT NOW / CONFIRM TODAY / STOCK MATCH / FOLLOW UP / RE-ENGAGE /
+OPEN REQUESTS.
  
-But nothing replaced it, so there is now no way to record a new requirement.
-This prompt restores that entry point, built for quantity.
+So a deal can be parked and then never seen again, and the owner has no way to
+see what his four salespeople are sitting on.
  
 Read every file fully before editing. Targeted edits only — do NOT rewrite
 whole files. Run `npm run build` at the end and fix all ESLint errors.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 0 — CONFIRM WHAT'S THERE
+STEP 0 — REPORT FIRST
 ════════════════════════════════════════════════════════════════════════
  
-Report before changing anything:
-  1. Does src/components/modals/DealForkModal.js still exist, or was it deleted?
-  2. What deal-creation paths exist right now? grep for deals insert.
-  3. Confirm these exist from the bulk foundation commit:
-       src/utils/bulk.js — modelKey, buildStockPools, dealTotal
-       src/services/holdService.js — placeHold
-       src/services/parkService.js — parkDeal
-       constants: STAGES including 'sourcing' and 'parked', PARK_REASONS
-  4. Where the client detail / right panel renders its action buttons.
+  1. Confirm STAGES contains 'sourcing' and 'parked', and that 'lost' is gone.
+  2. Confirm src/services/parkService.js exists with parkDeal/unparkDeal.
+  3. Confirm src/utils/bulk.js exists with sourcingAge() and dealTotal().
+  4. Is there a "Park" button anywhere on a deal today? If not, note it —
+     step 4 below adds one.
+  5. How does ProfileContext expose role? Quote the exact field
+     (isOwner / role / access) so the scoping below uses the real API.
+  6. How does the queue currently build its `sections` object?
  
-If DealForkModal still exists, DELETE it — it is unit-based and wrong.
- 
-════════════════════════════════════════════════════════════════════════
-STEP 1 — NEW FILE: src/components/modals/NewRequirementModal.js
-════════════════════════════════════════════════════════════════════════
- 
-Props: { customer, open, onClose, onSaved }
- 
-── SCREEN 1: what do they want ─────────────────────────────────────────
- 
-  Brand      (required)
-  Model      (required)
-  Quantity   (required, integer, default 1)
- 
-  Brand and model are REQUIRED. Block save and explain why:
-    "Without brand and model we can't match this when stock arrives."
- 
-  As soon as brand + model are filled, compute the pool live using
-  modelKey() + buildStockPools() and show it under the fields:
- 
-      You have 130 free · 50 held · 20 sold
- 
-  If there is no pool for that model, show "None in stock".
- 
-  [ Next ]
- 
-── SCREEN 2: the fork — DERIVED, not asked blindly ─────────────────────
- 
-  Compare quantity wanted against pool.free and show ONLY the doors that
-  make sense. Do not offer "allocate all" when there is nothing to allocate.
- 
-  Header:  "They want 60 · you have 130 free"
- 
-  free >= wanted        → show doors A and C
-  0 < free < wanted     → show doors B and C
-  free === 0            → show door C only, and skip straight to it
- 
-  DOOR A — "Allocate all 60"        (green)
-    stage = 'device_found'
-    Then reveal:
-      Unit price   (AED, required)
-      [ ] Hold 60 units for 48h      ← UNCHECKED BY DEFAULT
-    Live total under the price field: 60 × 800 = AED 48,000
- 
-    The hold checkbox is MANUAL and off by default. Only pre-check nothing,
-    ever. But when wanted > 50% of free, show an amber nudge above it:
-      "You're quoting 60 of 130 free. Worth holding."
- 
-  DOOR B — "Allocate 30, source 30"  (amber)
-    stage = 'sourcing'
-    Fields: Unit price (optional), same manual hold checkbox for the
-    portion you have.
-    Note on the deal records the split.
-    Reason it is 'sourcing' not 'device_found': the job isn't done until
-    the remainder is found.
- 
-  DOOR C — "Not in stock — go looking"  (purple)
-    stage = 'sourcing'
-    sourcing_started_at = now()
-    Field: "What would he pay per unit" (optional) → target_unit_price
-    NO hold, NO unit price required.
- 
-  Every door writes: customer_id, brand, model, quantity, created_by,
-  and creates an activity_log note describing what was recorded.
- 
-  Doors A and B create a 24h follow_up. Door C does NOT — sourcing is
-  tracked by its own clock in the queue, not by a follow-up.
- 
-  A summary block before saving, listing exactly what will happen. Same
-  pattern as the park sheet.
- 
-  A Back link returns to screen 1 and keeps everything typed.
- 
-IMPORTANT: parking is NOT a door here. Parking is a later decision made on
-an existing deal when it stops progressing. Do not offer it at creation.
+Print all six answers before changing anything.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 2 — THE ENTRY POINT
+STEP 1 — SOURCING SECTION
 ════════════════════════════════════════════════════════════════════════
  
-Add a clearly visible "+ New requirement" button:
+Insert a new section DIRECTLY UNDER "ACT NOW". It must never be collapsed —
+this is live work against a two-day clock.
  
-  · in the client detail view / right panel, near the open-deals section
-  · and in the mobile client detail view
+  Label:  SOURCING
+  Dot:    amber
+  Members: every customer with at least one deal at stage 'sourcing'
  
-Opens NewRequirementModal for that customer. On save, refresh the customer
-list so the new deal appears immediately.
+  Sort: oldest sourcing_started_at first.
  
-Check whether any OTHER deal-creation path still exists (an old inline form,
-ContactModal, etc). If one does, route it through this modal too — there
-should be exactly one way to record a requirement.
+  On each card, a chip from sourcingAge(deal):
+      level 'ok'    →  "day 1"           amber
+      level 'warn'  →  "day 2"           amber, stronger
+      level 'late'  →  "day 3 — close it out"   red
  
-Do NOT touch QuickSaleModal or the walk-in flow. Those are already-closed
-sales with no fork.
+  The reason line reads:
+      `Looking for ${brand} ${model} × ${quantity}`
+ 
+Faisal loses the customer to another supplier after about two days. That is
+what these thresholds encode — do not change them.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 3 — CHECK THE SOURCING SECTION IS WIRED
+STEP 2 — PARKED SECTION
 ════════════════════════════════════════════════════════════════════════
  
-Door B and C create deals at stage 'sourcing'. Confirm the bulk foundation
-commit actually built the SOURCING queue section, and that:
+At the VERY BOTTOM of the queue, below every other section:
  
-  · it sits directly under ACT NOW, never collapsed
-  · sourcingAge() drives the chip — day 1 amber, day 2 red
-  · deals created by doors B and C appear there immediately
+      👁  PARKED                                        14 ▸
  
-If the section is missing or not wired, build it now per that spec.
+  · Collapsed by default. Tap the header to expand.
+  · Keep expanded/collapsed in component state only — do not persist it.
+  · Members: customers with at least one deal at stage 'parked',
+    EXCLUDING anyone already rendered in a higher section (no duplicates).
+  · Sort by parked_at, OLDEST FIRST — the longest-ignored surface first.
+  · Reason line by parked_reason:
+        price_too_high    → `Offered ${money}/unit · ${n} weeks ago`
+        not_sourced       → `Couldn't find ${brand} ${model}`
+        bought_elsewhere  → `Bought elsewhere · ${n} weeks ago`
+        went_quiet        → `Went quiet · ${n} weeks ago`
+        not_needed_now    → `Not needed yet · ${n} weeks ago`
+  · Each card shows quantity and the model, same as any other card.
+  · An "Unpark" action on each card calls unparkDeal(dealId, 'new_inquiry').
+ 
+════════════════════════════════════════════════════════════════════════
+STEP 3 — ROLE SCOPING  (this is the owner's answer)
+════════════════════════════════════════════════════════════════════════
+ 
+Use the real ProfileContext API found in step 0.
+ 
+  SALESPERSON → sees only deals where created_by is himself, in both the
+                SOURCING and PARKED sections.
+  OWNER/MANAGER → sees everyone's, by default.
+ 
+Do NOT build a separate owner screen. Role sets the default scope.
+ 
+3a. OWNER FILTER ROW
+    When the viewer is owner or manager, render a compact filter row at the
+    top of the expanded PARKED section:
+ 
+        [ Everyone ]  [ Ahmed ]  [ Bilal ]  [ Kashif ]  [ Faisal ]
+ 
+    Chips, horizontally scrollable, "Everyone" selected by default. Names
+    come from profiles where active = true. Filters the parked list by
+    created_by. Hidden entirely for a salesperson.
+ 
+3b. OWNER SUMMARY STRIP
+    Above that filter row, when the viewer is owner or manager, a compact
+    summary — one line per active salesperson:
+ 
+        Ahmed     14 parked · 620 units · avg 22d
+        Bilal      6 parked · 180 units · avg 8d
+        Kashif    11 parked · 430 units · avg 17d
+ 
+    · units = sum of deals.quantity across that person's parked deals
+    · avg = mean days since parked_at
+    · Tapping a row applies that person's filter (same as the chip)
+    · Sort by parked count descending
+    · Use tabular-nums so the columns line up
+    · Keep it visually quiet — small text, muted. It is reference, not a
+      dashboard.
+ 
+    This is the view Faisal asked for twice: what each of his four people is
+    sitting on. If one agent parks twice what another does, that shows here.
+ 
+════════════════════════════════════════════════════════════════════════
+STEP 4 — THE PARK ACTION
+════════════════════════════════════════════════════════════════════════
+ 
+If step 0 found no Park button, add one now.
+ 
+On every OPEN deal (any stage except closed and parked), in the client
+detail / right panel, a secondary "Park" button. Opens a bottom sheet:
+ 
+  Title: "Park this one"
+  Sub:   "<client> · <brand> <model> × <qty>"
+ 
+  Five large tap targets from PARK_REASONS:
+      💰 Price too high        → reveals a REQUIRED
+                                 "What did he offer per unit" field
+      🔍 Couldn't source it
+      🏃 Bought elsewhere
+      🤐 Went quiet
+      📅 Not needed now
+ 
+  Then a summary block before confirming:
+      ✓ Leaves the queue · follow-up closed
+      ✓ <n> units released back to free      (only when a hold exists)
+      ✓ Joins <brand> <model> parked demand
+      ✓ Comes back when stock lands or his price clears
+ 
+  Confirm calls parkService.parkDeal(dealId, { reason, targetUnitPrice }).
+  On success, refresh the customer list.
+ 
+════════════════════════════════════════════════════════════════════════
+STEP 5 — QUEUE PRIORITY
+════════════════════════════════════════════════════════════════════════
+ 
+In getQueuePriority (src/context/CustomerContext.js):
+ 
+  · A deal at 'sourcing' ranks just below urgent — above follow-ups.
+    It is time-critical.
+  · A deal at 'parked' returns null. A parked deal must NEVER create a
+    queue entry, and must not put its client into OPEN REQUESTS.
+ 
+Check that no other section (OPEN REQUESTS especially) is picking up parked
+or sourcing deals as a side effect. They each belong in exactly one place.
  
 ════════════════════════════════════════════════════════════════════════
 DO NOT
 ════════════════════════════════════════════════════════════════════════
-  · Do NOT pre-check the hold checkbox under any circumstance.
-  · Do NOT place a hold automatically.
-  · Do NOT offer "park" as a creation option.
-  · Do NOT allow save without brand AND model.
-  · Do NOT reintroduce stock_item_id or per-unit holds.
+  · Do NOT collapse or hide the SOURCING section.
+  · Do NOT let a parked deal appear in any other section.
+  · Do NOT build a separate owner-only screen — role sets default scope.
+  · Do NOT persist the collapsed state of PARKED.
+  · Do NOT auto-message anyone.
   · Do NOT enable RLS.
   · Do NOT add npm dependencies.
   · Do NOT rewrite whole files.
@@ -151,13 +176,13 @@ FINISH
   1. npm run build
   2. Fix every ESLint error and unused-variable warning
   3. Verify by reading the code back:
-       - free === 0 shows only door C
-       - free >= wanted never shows door B
-       - the hold checkbox starts unchecked in every case
-       - door C creates no follow-up but does set sourcing_started_at
-       - brand/model cannot be empty on save
+       - a salesperson sees only his own in SOURCING and PARKED
+       - an owner sees all, and the filter chips narrow to one person
+       - a parked client never appears twice in the queue
+       - SOURCING sits directly under ACT NOW and cannot be collapsed
+       - the summary strip is hidden for a salesperson
   4. Print:
-       - step 0 findings
-       - files created / edited / deleted
-       - every deal-creation path found and how you handled it
+       - your step 0 findings
+       - files created / edited
+       - the exact ProfileContext field you used for role
        - anything you did differently, and why

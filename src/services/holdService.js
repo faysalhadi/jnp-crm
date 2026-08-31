@@ -87,6 +87,19 @@ export async function placeHold({ brand, model, quantity, dealId, customerId, ho
   }
 }
 
+/** Active holds attached to one deal — used to say what a park will release. */
+export async function getHoldsForDeal(dealId) {
+  if (!dealId) return { ok: true, holds: [] };
+  try {
+    const { data, error } = await supabase
+      .from("stock_holds").select("*").eq("deal_id", dealId).is("released_at", null);
+    if (error) return { ok: false, error: error.message, holds: [] };
+    return { ok: true, holds: (data || []).filter(isHoldActive) };
+  } catch (e) {
+    return { ok: false, error: e?.message || "Could not load holds.", holds: [] };
+  }
+}
+
 export async function releaseHold(holdId) {
   if (!holdId) return { ok: true, skipped: true };
   try {

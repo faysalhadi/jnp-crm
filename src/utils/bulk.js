@@ -155,7 +155,40 @@ export function sourcingAge(deal) {
 export function sourcingLabel(deal) {
   const { hours, level } = sourcingAge(deal);
   if (hours === null) return { text: "sourcing", level };
-  if (level === "late") return { text: "day 2 — closing out", level };
-  if (level === "warn") return { text: "day 1", level };
-  return { text: "today", level };
+  // Day 1 is the first 24h. The thresholds in sourcingAge are unchanged — only
+  // how they are named, so "day 3" is the one that has run out of road.
+  if (level === "late") return { text: "day 3 — close it out", level };
+  if (level === "warn") return { text: "day 2", level };
+  return { text: "day 1", level };
+}
+
+// "5d ago" under a week, "3 weeks ago" beyond it. Plain weeks would render
+// "0 weeks ago" for anything parked in the last six days.
+export function agoPhrase(ts) {
+  if (!ts) return "";
+  const t = new Date(ts).getTime();
+  if (!Number.isFinite(t)) return "";
+  const days = Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  if (days < 7) return days <= 1 ? "today" : `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks} week${weeks !== 1 ? "s" : ""} ago`;
+}
+
+// Why this one is sitting in PARKED, in the words that make it actionable.
+export function parkedReasonLine(deal) {
+  if (!deal) return "";
+  const when  = agoPhrase(deal.parked_at);
+  const what  = [deal.brand, deal.model].filter(Boolean).join(" ") || "it";
+  const offer = numOrNull(deal.target_unit_price);
+  switch (deal.parked_reason) {
+    case "price_too_high":
+      return offer !== null
+        ? `Offered AED ${offer.toLocaleString()}/unit${when ? ` · ${when}` : ""}`
+        : `Price too high${when ? ` · ${when}` : ""}`;
+    case "not_sourced":      return `Couldn't find ${what}`;
+    case "bought_elsewhere": return `Bought elsewhere${when ? ` · ${when}` : ""}`;
+    case "went_quiet":       return `Went quiet${when ? ` · ${when}` : ""}`;
+    case "not_needed_now":   return `Not needed yet${when ? ` · ${when}` : ""}`;
+    default:                 return when ? `Parked · ${when}` : "Parked";
+  }
 }

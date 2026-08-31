@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import Spinner from "../ui/Spinner";
 import { daysSince, formatWhatsAppNumber } from "../../utils/helpers";
 import { useCustomers, getClientHealth, getQueuePriority } from "../../context/CustomerContext";
@@ -7,7 +7,8 @@ import { useStock } from "../../context/StockContext";
 import { TagStrip } from "../chat/TagEditor";
 import { getTag, customerStockMatch, PARK_REASON_LABEL } from "../../constants";
 import { getReasonLine, getQuickMessage } from "../../utils/reasonLine";
-import { dealTotal, dealUnitLine } from "../../utils/bulk";
+import { dealTotal, dealUnitLine, dealQty, parkedReasonLine, agoPhrase } from "../../utils/bulk";
+import { unparkDeal } from "../../services/parkService";
 import { logWhatsAppContact } from "../../services/quickContactService";
 import ClientPreviewPanel from "./ClientPreviewPanel";
 import { useProfile } from "../../context/ProfileContext";
@@ -54,7 +55,7 @@ const STAGE_LABELS = {
   closed: "Closed", lost: "Lost",
 };
 
-function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingFollowUpMap, queuePriority, stock }) {
+function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingFollowUpMap, queuePriority, stock, reasonOverride }) {
   const openDeals  = (c.deals || []).filter(d => d.stage !== "closed" && d.stage !== "parked");
   const latestDeal = openDeals[0] || (c.deals || [])[0];
   const activityTs = c.last_activity_at || c.last_active;
@@ -73,7 +74,7 @@ function ClientCard({ c, onOpen, onSelect, isSelected, lastActivityMap, pendingF
   }, [lastAct, c]);
 
   const ctx    = { queuePriority, openDeal: latestDeal, followUp: fu, matchedStock, lastActivity: lastAct, daysSilent };
-  const reason = getReasonLine(c, ctx);
+  const reason = reasonOverride || getReasonLine(c, ctx);
 
   const { loadCustomers } = useCustomers();
   const { isOwner, profiles } = useProfile();
@@ -217,8 +218,18 @@ export default function CustomersTab() {
   }, [customerViewMode]); // eslint-disable-line
 
   const { stock } = useStock();
-  const { isOwner, currentProfile } = useProfile();
-  const [parkedOpen, setParkedOpen] = useState(false);
+  const { isOwner, currentProfile, profiles } = useProfile();
+  const [parkedOpen, setParkedOpen] = useState(false);   // never persisted
+  const [ownerFilter, setOwnerFilter] = useState(null);  // null = everyone
+
+  // Role sets the default scope — there is no separate owner screen.
+  // A deal with no created_by is legacy and stays visible to everyone, so the
+  // scoping can only ever hide work that someone else explicitly created.
+  const canSeeAll = isOwner || currentProfile?.role === "manager";
+  const dealVisible = useCallback(
+    (d) => canSeeAll || !d?.created_by || d.created_by === currentProfile?.id,
+    [canSeeAll, currentProfile?.id]
+  );
   const {
     customers, loading,
     lastActivityMap, pendingFollowUpMap,
@@ -271,28 +282,76 @@ export default function CustomersTab() {
       else                              s.open.push({ c, priority });
     });
     // Live work, oldest first — the deal closest to going cold sits on top.
-    s.sourcing.sort((a, b) =>
-      new Date(a.priority.deal?.sourcing_started_at || 0) - new Date(b.priority.deal?.sourcing_started_at || 0));
+    s.sourcing = s.sourcing
+      .filter(({ priority }) => dealVisible(priority.deal))
+      .sort((a, b) =>
+        new Date(a.priority.deal?.sourcing_started_at || 0) - new Date(b.priority.deal?.sourcing_started_at || 0));
     return s;
-  }, [queueClients]);
+  }, [queueClients, dealVisible]);
 
   // PARKED lives at the very bottom, collapsed. Role decides scope — a
   // salesperson sees only what he parked; an owner or manager sees everyone's.
   const parkedClients = useMemo(() => {
     const inQueue = new Set(queueClients.map(({ c }) => c.id));
-    const mine = (d) => isOwner || !currentProfile?.id || d.created_by === currentProfile.id;
     return allClients
       .map(c => {
-        const parked = (c.deals || []).filter(d => d.stage === "parked" && mine(d));
+        const parked = (c.deals || []).filter(d => d.stage === "parked" && dealVisible(d));
         if (!parked.length) return null;
         const oldest = parked.reduce((acc, d) =>
           !acc || (d.parked_at && new Date(d.parked_at) < new Date(acc)) ? (d.parked_at || acc) : acc, null);
         return { c, parkedAt: oldest, deals: parked };
       })
       .filter(Boolean)
+      // No duplicates: anything already rendered in a live section stays there.
       .filter(({ c }) => !inQueue.has(c.id))
       .sort((a, b) => new Date(a.parkedAt || 0) - new Date(b.parkedAt || 0));
-  }, [allClients, queueClients, isOwner, currentProfile?.id]);
+  }, [allClients, queueClients, dealVisible]);
+
+  // Owner-only: one line per active salesperson, and the chip filter.
+  const activeAgents = useMemo(
+    () => (profiles || []).filter(p => p.active !== false),
+    [profiles]
+  );
+
+  const parkedByAgent = useMemo(() => {
+    const map = new Map();
+    parkedClients.forEach(({ deals }) => deals.forEach(d => {
+      const id = d.created_by || "unassigned";
+      const row = map.get(id) || { id, count: 0, units: 0, totalDays: 0, dated: 0 };
+      row.count += 1;
+      row.units += dealQty(d);
+      if (d.parked_at) {
+        const days = Math.floor((Date.now() - new Date(d.parked_at).getTime()) / 86400000);
+        if (Number.isFinite(days)) { row.totalDays += Math.max(0, days); row.dated += 1; }
+      }
+      map.set(id, row);
+    }));
+    return [...map.values()]
+      .map(r => ({ ...r, avgDays: r.dated ? Math.round(r.totalDays / r.dated) : null }))
+      .sort((a, b) => b.count - a.count);
+  }, [parkedClients]);
+
+  const agentName = useCallback((id) => {
+    if (id === "unassigned") return "Unattributed";
+    const p = (profiles || []).find(x => x.id === id);
+    return p ? (p.full_name || p.name || "Agent") : "Agent";
+  }, [profiles]);
+
+  const visibleParked = useMemo(() => {
+    if (!canSeeAll || !ownerFilter) return parkedClients;
+    return parkedClients
+      .map(({ c, parkedAt, deals }) => {
+        const filtered = deals.filter(d => (d.created_by || "unassigned") === ownerFilter);
+        return filtered.length ? { c, parkedAt, deals: filtered } : null;
+      })
+      .filter(Boolean);
+  }, [parkedClients, canSeeAll, ownerFilter]);
+
+  async function handleUnpark(dealId) {
+    const res = await unparkDeal(dealId, "new_inquiry");
+    if (!res.ok) { window.alert("Could not un-park: " + (res.error || "unknown error")); return; }
+    await loadCustomers();
+  }
 
   const filteredAll = useMemo(() => {
     return allClients.filter(c => {
@@ -425,7 +484,10 @@ export default function CustomersTab() {
                   onSelect={isMobile ? null : () => openClient(c)}
                   isSelected={selectedClient?.id === c.id}
                   lastActivityMap={lastActivityMap} pendingFollowUpMap={pendingFollowUpMap}
-                  queuePriority={priority} stock={stock} />
+                  queuePriority={priority} stock={stock}
+                  reasonOverride={s.label === "SOURCING" && priority.deal
+                    ? `Looking for ${[priority.deal.brand, priority.deal.model].filter(Boolean).join(" ") || "a device"} × ${dealQty(priority.deal)}`
+                    : null} />
               ))}
             </div>
           </div>
@@ -450,29 +512,100 @@ export default function CustomersTab() {
             </button>
 
             {parkedOpen && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-                {parkedClients.map(({ c, parkedAt, deals }) => (
-                  <div key={c.id} onClick={() => openClient(c)}
-                    style={{
-                      background: "#fff", borderRadius: 12, padding: "10px 13px",
-                      border: "1px solid #F1F5F9", cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 10,
-                    }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {c.name}
+              <div style={{ marginTop: 8 }}>
+
+                {/* Owner/manager only — what each person is sitting on. */}
+                {canSeeAll && parkedByAgent.length > 0 && (
+                  <div style={{ background: "#fff", border: "1px solid #F1F5F9", borderRadius: 12, padding: "8px 12px", marginBottom: 8 }}>
+                    {parkedByAgent.map(r => (
+                      <div key={r.id}
+                        onClick={() => setOwnerFilter(f => f === r.id ? null : r.id)}
+                        style={{
+                          display: "flex", alignItems: "baseline", gap: 8, padding: "3px 0", cursor: "pointer",
+                          fontVariantNumeric: "tabular-nums",
+                          opacity: ownerFilter && ownerFilter !== r.id ? 0.45 : 1,
+                        }}>
+                        <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {agentName(r.id)}
+                        </span>
+                        <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>{r.count} parked</span>
+                        <span style={{ fontSize: 11, color: "#CBD5E1" }}>·</span>
+                        <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>{r.units} units</span>
+                        {r.avgDays !== null && (
+                          <>
+                            <span style={{ fontSize: 11, color: "#CBD5E1" }}>·</span>
+                            <span style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>avg {r.avgDays}d</span>
+                          </>
+                        )}
                       </div>
-                      <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {[deals[0]?.brand, deals[0]?.model].filter(Boolean).join(" ") || "Parked deal"}
-                        {deals[0]?.parked_reason ? ` · ${PARK_REASON_LABEL[deals[0].parked_reason] || deals[0].parked_reason}` : ""}
-                        {deals[0]?.target_unit_price ? ` · offered AED ${Number(deals[0].target_unit_price).toLocaleString()}/unit` : ""}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 10, color: "#CBD5E1", flexShrink: 0, whiteSpace: "nowrap" }}>
-                      {parkedAt ? timeAgo(parkedAt) : ""}
-                    </span>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {/* Owner/manager only — narrow to one person. */}
+                {canSeeAll && activeAgents.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", marginBottom: 8, paddingBottom: 2 }}>
+                    {[{ id: null, label: "Everyone" },
+                      ...activeAgents.map(p => ({ id: p.id, label: p.full_name || p.name || "Agent" }))
+                    ].map(chip => (
+                      <button key={chip.id || "all"} onClick={() => setOwnerFilter(chip.id)}
+                        style={{
+                          padding: "4px 12px", borderRadius: 16, cursor: "pointer", flexShrink: 0,
+                          fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
+                          border: `1.5px solid ${ownerFilter === chip.id ? "#6366F1" : "#E2E8F0"}`,
+                          background: ownerFilter === chip.id ? "#EEF2FF" : "#fff",
+                          color: ownerFilter === chip.id ? "#6366F1" : "#94A3B8",
+                        }}>
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {visibleParked.length === 0 && (
+                    <div style={{ fontSize: 12, color: "#CBD5E1", textAlign: "center", padding: "14px 0" }}>
+                      Nothing parked for that person.
+                    </div>
+                  )}
+                  {visibleParked.map(({ c, parkedAt, deals }) => {
+                    const d = deals[0];
+                    return (
+                      <div key={c.id} onClick={() => openClient(c)}
+                        style={{
+                          background: "#fff", borderRadius: 12, padding: "10px 13px",
+                          border: "1px solid #F1F5F9", cursor: "pointer",
+                        }}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {c.name}
+                          </span>
+                          <span style={{ fontSize: 10, color: "#CBD5E1", flexShrink: 0, whiteSpace: "nowrap" }}>
+                            {agoPhrase(parkedAt)}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "#64748B", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                          {[d?.brand, d?.model].filter(Boolean).join(" ") || "Parked deal"} · × {dealQty(d)}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {parkedReasonLine(d)}
+                          </span>
+                          {canSeeAll && d?.created_by && (
+                            <span style={{ fontSize: 10, color: "#CBD5E1", flexShrink: 0, whiteSpace: "nowrap" }}>
+                              {agentName(d.created_by)}
+                            </span>
+                          )}
+                          <button
+                            onClick={e => { e.stopPropagation(); handleUnpark(d.id); }}
+                            style={{ padding: "3px 10px", borderRadius: 7, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                            Unpark
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

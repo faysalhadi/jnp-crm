@@ -733,6 +733,7 @@ export default function ChatHeader() {
       <ParkSheet
         open={showParkPrompt}
         deal={activeDeal}
+        customer={activeCustomer}
         onClose={() => setShowParkPrompt(false)}
         onParked={() => loadCustomers()}
       />
