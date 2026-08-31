@@ -1,297 +1,149 @@
-NP CRM — Bulk Foundation (quantity, pools, parked)
+JNP CRM — Restore "New requirement", bulk-native
  
-THIS SUPERSEDES the earlier "Fork + Soft Hold" and "Requirements Board" prompts.
-Do NOT run those. They were written for single units and model the business wrong.
+CONTEXT
+Commit 6293373 added DealForkModal with a "+ New requirement" button.
+Commit a684880 (bulk foundation) correctly removed it — it was built on
+stock_item_id and per-unit holds, which the quantity-pool model replaced.
  
-WHY
-This is a B2B wholesale business. Deals are 20–100 units, not one laptop.
-Stock has no serial numbers. Clients are recurring — a deal that doesn't close
-is parked, never lost.
- 
-The app currently has no quantity anywhere. That is the foundation problem;
-everything else waits on it.
+But nothing replaced it, so there is now no way to record a new requirement.
+This prompt restores that entry point, built for quantity.
  
 Read every file fully before editing. Targeted edits only — do NOT rewrite
 whole files. Run `npm run build` at the end and fix all ESLint errors.
  
-Build the steps IN ORDER. Each leaves working software.
- 
 ════════════════════════════════════════════════════════════════════════
-STEP 0 — INSPECT FIRST, REPORT BEFORE CHANGING ANYTHING
+STEP 0 — CONFIRM WHAT'S THERE
 ════════════════════════════════════════════════════════════════════════
  
-Before writing any code, read and report:
+Report before changing anything:
+  1. Does src/components/modals/DealForkModal.js still exist, or was it deleted?
+  2. What deal-creation paths exist right now? grep for deals insert.
+  3. Confirm these exist from the bulk foundation commit:
+       src/utils/bulk.js — modelKey, buildStockPools, dealTotal
+       src/services/holdService.js — placeHold
+       src/services/parkService.js — parkDeal
+       constants: STAGES including 'sourcing' and 'parked', PARK_REASONS
+  4. Where the client detail / right panel renders its action buttons.
  
-  1. How src/context/StockContext.js loads and shapes stock rows.
-  2. Whether a stock row currently represents ONE laptop or a model line.
-     Look at how DevicesView.js, LotsView.js and QuickSaleModal.js treat rows.
-  3. Every place a deal is created (grep for deals insert).
-  4. Whether stock.status has a CHECK constraint.
-  5. Whether deals.stage has a CHECK constraint.
- 
-Print this before proceeding. If anything contradicts the plan below, say so
-and stop rather than guessing.
- 
-════════════════════════════════════════════════════════════════════════
-STEP 1 — SQL  (print for Faisal at the end; do not run it)
-════════════════════════════════════════════════════════════════════════
- 
--- identity (holds and parking must name a person)
-CREATE TABLE IF NOT EXISTS profiles (
-  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  full_name text,
-  role text DEFAULT 'salesperson' CHECK (role IN ('owner','manager','salesperson')),
-  active boolean DEFAULT true,
-  created_at timestamptz DEFAULT now()
-);
-ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
- 
--- QUANTITY: the core change
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS quantity      integer DEFAULT 1;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS unit_price    numeric;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS target_unit_price numeric;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by    uuid;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS parked_reason text;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS parked_at     timestamptz;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS sourcing_started_at timestamptz;
- 
-ALTER TABLE stock ADD COLUMN IF NOT EXISTS quantity integer DEFAULT 1;
-ALTER TABLE stock ADD COLUMN IF NOT EXISTS added_by uuid;
- 
--- holds are on QUANTITY of a model, never on a row
-CREATE TABLE IF NOT EXISTS stock_holds (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  model_key   text NOT NULL,
-  brand       text,
-  model       text,
-  quantity    integer NOT NULL,
-  deal_id     uuid,
-  customer_id uuid,
-  held_by     uuid,
-  created_at  timestamptz DEFAULT now(),
-  expires_at  timestamptz,
-  released_at timestamptz
-);
-ALTER TABLE stock_holds DISABLE ROW LEVEL SECURITY;
- 
--- backfill existing deals: value becomes unit_price at quantity 1
-UPDATE deals SET unit_price = value WHERE unit_price IS NULL AND value IS NOT NULL;
- 
--- lost becomes parked
-UPDATE deals SET stage = 'parked',
-                 parked_reason = COALESCE(loss_reason, 'bought_elsewhere'),
-                 parked_at = COALESCE(closed_at, now())
-WHERE stage = 'lost';
- 
-Keep the old loss_reason column — do not drop it.
-If deals.stage or stock.status has a CHECK constraint, print the exact ALTER
-needed to allow 'parked' and 'sourcing'.
- 
-ALL code must degrade safely if this SQL has not run yet.
+If DealForkModal still exists, DELETE it — it is unit-based and wrong.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 2 — STAGES
+STEP 1 — NEW FILE: src/components/modals/NewRequirementModal.js
 ════════════════════════════════════════════════════════════════════════
  
-In src/constants/index.js, STAGES becomes:
+Props: { customer, open, onClose, onSaved }
  
-  new_inquiry              "New inquiry"     just asked
-  sourcing                 "Sourcing"        we don't have it, actively looking
-  device_found             "Found"           we have it / found it, quoted
-  negotiation              "Negotiation"     discussing price
-  confirmed_pending_pickup "Confirmed"       agreed, awaiting collection
-  closed                   "Closed"          paid in full
-  parked                   "Parked"          not now, still alive
+── SCREEN 1: what do they want ─────────────────────────────────────────
  
-REMOVE 'lost' from STAGES. Parked replaces it entirely.
+  Brand      (required)
+  Model      (required)
+  Quantity   (required, integer, default 1)
  
-Add PARK_REASONS, exported:
-  price_too_high    "Price too high"
-  not_sourced       "Couldn't source it"
-  bought_elsewhere  "Bought elsewhere"
-  went_quiet        "Went quiet"
-  not_needed_now    "Not needed now"
+  Brand and model are REQUIRED. Block save and explain why:
+    "Without brand and model we can't match this when stock arrives."
  
-Search for every 'lost' reference in src/ and route it to 'parked'. Anywhere
-filtering open deals as `stage !== 'closed' && stage !== 'lost'` must become
-`stage !== 'closed' && stage !== 'parked'`.
+  As soon as brand + model are filled, compute the pool live using
+  modelKey() + buildStockPools() and show it under the fields:
  
-'sourcing' and 'parked' are BOTH open stages, but they behave differently:
-sourcing is live work and belongs in the queue; parked is out of the queue.
+      You have 130 free · 50 held · 20 sold
  
-════════════════════════════════════════════════════════════════════════
-STEP 3 — NEW FILE: src/utils/bulk.js
-════════════════════════════════════════════════════════════════════════
+  If there is no pool for that model, show "None in stock".
  
-Pure helpers. No React, no supabase.
+  [ Next ]
  
-  export function modelKey(brand, model)
-    lowercase, trim, collapse whitespace, strip punctuation ( / - , " ' )
-    return `${brand}|${model}`, or null if either is missing.
-    Do NOT fuzzy-match. Predictable grouping beats clever grouping.
+── SCREEN 2: the fork — DERIVED, not asked blindly ─────────────────────
  
-  export function dealTotal(deal)
-    (deal.unit_price || 0) * (deal.quantity || 1)
-    Use this everywhere a deal value is displayed. Never read `value` directly
-    for new code.
+  Compare quantity wanted against pool.free and show ONLY the doors that
+  make sense. Do not offer "allocate all" when there is nothing to allocate.
  
-  export function buildStockPools(stockRows, holds)
-    Group available stock by modelKey. For each pool return:
-      { key, brand, model, label,
-        total,      // sum of quantity across rows in this group
-        held,       // sum of quantity across ACTIVE holds for this key
-        sold,       // sum of quantity where status === 'sold'
-        free,       // total - held  (never below 0)
-        minPrice, maxPrice }  // from the rows
+  Header:  "They want 60 · you have 130 free"
  
-    IMPORTANT: some rows will have quantity 1 (older per-unit entries) and some
-    will have quantity 50. Summing handles both. Do NOT try to consolidate or
-    rewrite existing rows — group on read.
+  free >= wanted        → show doors A and C
+  0 < free < wanted     → show doors B and C
+  free === 0            → show door C only, and skip straight to it
  
-  export function isHoldActive(hold)
-    released_at is null AND expires_at is in the future.
-    Expiry is COMPUTED, never stored. There is no cron and no background job.
-    A hold past its expiry is simply treated as released everywhere.
+  DOOR A — "Allocate all 60"        (green)
+    stage = 'device_found'
+    Then reveal:
+      Unit price   (AED, required)
+      [ ] Hold 60 units for 48h      ← UNCHECKED BY DEFAULT
+    Live total under the price field: 60 × 800 = AED 48,000
  
-  export function holdRemaining(hold)
-    "31h left" · "4h left" · "42m left" · "" when inactive.
+    The hold checkbox is MANUAL and off by default. Only pre-check nothing,
+    ever. But when wanted > 50% of free, show an amber nudge above it:
+      "You're quoting 60 of 130 free. Worth holding."
  
-  export function sourcingAge(deal)
-    Hours since sourcing_started_at.
-    Return { hours, level } where level is:
-      'ok'      under 24h
-      'warn'    24–48h
-      'late'    over 48h
-    Faisal loses the customer after about two days — these thresholds encode that.
+  DOOR B — "Allocate 30, source 30"  (amber)
+    stage = 'sourcing'
+    Fields: Unit price (optional), same manual hold checkbox for the
+    portion you have.
+    Note on the deal records the split.
+    Reason it is 'sourcing' not 'device_found': the job isn't done until
+    the remainder is found.
  
-════════════════════════════════════════════════════════════════════════
-STEP 4 — NEW FILE: src/services/holdService.js
-════════════════════════════════════════════════════════════════════════
+  DOOR C — "Not in stock — go looking"  (purple)
+    stage = 'sourcing'
+    sourcing_started_at = now()
+    Field: "What would he pay per unit" (optional) → target_unit_price
+    NO hold, NO unit price required.
  
-  import { supabase } from "../supabase";
+  Every door writes: customer_id, brand, model, quantity, created_by,
+  and creates an activity_log note describing what was recorded.
  
-  export async function placeHold({ brand, model, quantity, dealId, customerId, hours = 48 })
-    Compute free for that modelKey first. If quantity > free, return
-    { ok:false, insufficient:true, free }. Otherwise insert into stock_holds
-    with held_by = current user and expires_at = now + hours.
+  Doors A and B create a 24h follow_up. Door C does NOT — sourcing is
+  tracked by its own clock in the queue, not by a follow-up.
  
-  export async function releaseHold(holdId)
-    Set released_at = now().
+  A summary block before saving, listing exactly what will happen. Same
+  pattern as the park sheet.
  
-  export async function releaseHoldsForDeal(dealId)
-    Release every active hold attached to that deal.
+  A Back link returns to screen 1 and keeps everything typed.
  
-  export async function extendHold(holdId, hours = 48)
-    Push expires_at out from now.
- 
-  export async function getHolds(modelKeys)
-    Fetch active holds for a set of model keys. Used by buildStockPools.
- 
-Current user: use the existing AuthContext if it exposes an id, otherwise
-supabase.auth.getUser(). Do NOT add a new auth mechanism.
- 
-Every function returns { ok:true, ... } or { ok:false, error }. Never throws.
+IMPORTANT: parking is NOT a door here. Parking is a later decision made on
+an existing deal when it stops progressing. Do not offer it at creation.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 5 — NEW FILE: src/services/parkService.js
+STEP 2 — THE ENTRY POINT
 ════════════════════════════════════════════════════════════════════════
  
-  export async function parkDeal(dealId, { reason, targetUnitPrice, note })
+Add a clearly visible "+ New requirement" button:
  
-  Does all of this, in order:
-    1. deals: stage='parked', parked_reason=reason, parked_at=now(),
-       target_unit_price = targetUnitPrice (when given)
-    2. releaseHoldsForDeal(dealId) — parked deals never hold inventory
-    3. follow_ups: mark any pending row for this customer status='done'
-    4. activity_log: activity_type='note',
-       note = "Parked: <reason label>" + (targetUnitPrice ? " — offered AED x/unit" : "")
-                                       + (note ? " · " + note : "")
+  · in the client detail view / right panel, near the open-deals section
+  · and in the mobile client detail view
  
-  export async function unparkDeal(dealId, newStage = 'new_inquiry')
-    Clear parked_reason and parked_at. KEEP target_unit_price — that number
-    stays valuable history.
+Opens NewRequirementModal for that customer. On save, refresh the customer
+list so the new deal appears immediately.
  
-Returns { ok } shape. Never throws.
+Check whether any OTHER deal-creation path still exists (an old inline form,
+ContactModal, etc). If one does, route it through this modal too — there
+should be exactly one way to record a requirement.
+ 
+Do NOT touch QuickSaleModal or the walk-in flow. Those are already-closed
+sales with no fork.
  
 ════════════════════════════════════════════════════════════════════════
-STEP 6 — QUANTITY IN THE UI
+STEP 3 — CHECK THE SOURCING SECTION IS WIRED
 ════════════════════════════════════════════════════════════════════════
  
-Everywhere a deal is shown or edited, it is quantity + unit price.
+Door B and C create deals at stage 'sourcing'. Confirm the bulk foundation
+commit actually built the SOURCING queue section, and that:
  
-6a. DEAL DISPLAY — client cards, client detail, anywhere a deal appears:
+  · it sits directly under ACT NOW, never collapsed
+  · sourcingAge() drives the chip — day 1 amber, day 2 red
+  · deals created by doors B and C appear there immediately
  
-      Dell 7490 · × 50 @ 850
-      AED 42,500 total
- 
-    Quantity in the display face, bold. Total computed via dealTotal().
-    Never show a bare total without the quantity and unit price beside it.
- 
-6b. DEAL CREATE / EDIT — the form gains two fields:
-      Quantity   (integer, required, default 1)
-      Unit price (AED, required to quote)
-    Show the computed total live under them as the user types.
- 
-6c. Anywhere `deal.value` or `deal.budget` is currently displayed, switch to
-    dealTotal(). Leave the columns in the database.
- 
-════════════════════════════════════════════════════════════════════════
-STEP 7 — STOCK POOL VIEW
-════════════════════════════════════════════════════════════════════════
- 
-In src/components/stock/DevicesView.js, group by pool using buildStockPools():
- 
-    Dell Latitude 7490                          200 units
-    [████████████░░░░░░]  130 free · 50 held · 20 sold
-    Floor 750/unit                            [ Hold units ]
- 
-  · The bar is three segments with a 2px gap between them.
-  · "Hold units" opens a sheet: quantity, duration (default 48h), confirm.
-    Holds are MANUAL — never place one automatically, ever.
-  · When a hold is active, show who holds it and the time remaining, with a
-    Release button for the holder or an owner.
-  · Add a soft signal above the actions when open quotes exist:
-      "⚠ 3 open quotes · 90 units — no hold placed"
-    Open quotes = deals at device_found or negotiation for this modelKey with
-    no active hold. It informs; it reserves nothing.
- 
-════════════════════════════════════════════════════════════════════════
-STEP 8 — QUEUE CHANGES
-════════════════════════════════════════════════════════════════════════
- 
-8a. NEW SECTION "SOURCING", placed directly under ACT NOW.
-    Every deal at stage 'sourcing'. Sort oldest first.
-    Chip from sourcingAge(): "day 1" amber, "day 2 — closing out" red.
-    This is live work. It must NEVER be hidden or collapsed.
- 
-8b. "PARKED" — a collapsed row at the very bottom.
-      👁  PARKED                                   14 ▸
-    Expands to parked clients, oldest parked first.
-    Excludes anyone already shown in a higher section.
-    A salesperson sees only deals where created_by is himself.
-    An owner or manager sees everyone's. Role decides the default scope —
-    do not build a separate owner screen.
- 
-8c. In getQueuePriority (src/context/CustomerContext.js):
-    'sourcing' ranks just below urgent — it is time-critical.
-    'parked' returns null so a parked deal never creates a queue entry.
- 
-8d. Add a "Park" button on every open deal. Opens a sheet with the five
-    PARK_REASONS as large tap targets. Choosing "Price too high" reveals a
-    required "What did he offer (per unit)" field. Then calls parkDeal().
+If the section is missing or not wired, build it now per that spec.
  
 ════════════════════════════════════════════════════════════════════════
 DO NOT
 ════════════════════════════════════════════════════════════════════════
-  · Do NOT consolidate, merge or rewrite existing stock rows. Group on read.
-  · Do NOT place a hold automatically under any circumstance.
-  · Do NOT write a cron, timer or background job for hold expiry.
-  · Do NOT keep 'lost' as a stage.
-  · Do NOT enable RLS on any table.
-  · Do NOT auto-message anyone.
+  · Do NOT pre-check the hold checkbox under any circumstance.
+  · Do NOT place a hold automatically.
+  · Do NOT offer "park" as a creation option.
+  · Do NOT allow save without brand AND model.
+  · Do NOT reintroduce stock_item_id or per-unit holds.
+  · Do NOT enable RLS.
   · Do NOT add npm dependencies.
   · Do NOT rewrite whole files.
-  · Do NOT restore the Pipeline view.
  
 ════════════════════════════════════════════════════════════════════════
 FINISH
@@ -299,15 +151,13 @@ FINISH
   1. npm run build
   2. Fix every ESLint error and unused-variable warning
   3. Verify by reading the code back:
-       - free never goes below zero
-       - a hold past expires_at reads as released everywhere
-       - parked deals produce no queue entry
-       - sourcing deals appear high in the queue, never collapsed
-       - pools sum correctly when some rows are quantity 1 and others 50
-       - nothing crashes if the step-1 SQL has not run
+       - free === 0 shows only door C
+       - free >= wanted never shows door B
+       - the hold checkbox starts unchecked in every case
+       - door C creates no follow-up but does set sourcing_started_at
+       - brand/model cannot be empty on save
   4. Print:
-       - your step-0 findings
-       - the full step-1 SQL plus any CHECK-constraint ALTERs needed
-       - files created / edited
-       - every deal-creation point you found and how you handled quantity
+       - step 0 findings
+       - files created / edited / deleted
+       - every deal-creation path found and how you handled it
        - anything you did differently, and why

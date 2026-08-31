@@ -22,18 +22,27 @@ export function modelKey(brand, model) {
 
 // The only correct way to read a deal's money. `value` is legacy: it holds a
 // single-unit total and says nothing about how many units were involved.
+// Number(null) is 0 and Number("") is 0, so "missing" has to be tested before
+// coercion — otherwise a NULL unit_price reads as a real price of zero and the
+// fallback below never fires.
+function numOrNull(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function dealQty(deal) {
-  const q = Number(deal?.quantity);
-  return Number.isFinite(q) && q > 0 ? q : 1;
+  const q = numOrNull(deal?.quantity);
+  return q !== null && q > 0 ? q : 1;
 }
 
 export function dealUnitPrice(deal) {
-  const unit = Number(deal?.unit_price);
-  if (Number.isFinite(unit)) return unit;
+  const unit = numOrNull(deal?.unit_price);
+  if (unit !== null) return unit;
   // Legacy row, or the step-1 backfill has not run: `value` held a single-unit
   // total, so it is the unit price. Without this every total reads 0 pre-SQL.
-  const v = Number(deal?.value);
-  return Number.isFinite(v) ? v : 0;
+  const v = numOrNull(deal?.value);
+  return v !== null ? v : 0;
 }
 
 export function dealTotal(deal) {

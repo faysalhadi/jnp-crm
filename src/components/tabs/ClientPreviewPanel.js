@@ -6,6 +6,7 @@ import { TagStrip } from "../chat/TagEditor";
 import { STAGES, getRecommendation, customerStockMatch } from "../../constants";
 import { formatWhatsAppNumber } from "../../utils/helpers";
 import { dealTotal, dealUnitLine } from "../../utils/bulk";
+import NewRequirementModal from "../modals/NewRequirementModal";
 
 const ACT_ICON = {
   called: "📞", no_answer: "📵", messaged: "💬", met: "🤝",
@@ -36,11 +37,12 @@ const SH = {
 
 export default function ClientPreviewPanel({ client, onOpenChat }) {
   const { loadCustomers, pendingFollowUpMap, lastActivityMap } = useCustomers();
-  const { stock } = useStock();
+  const { stock, loadStock, refreshCachedStock } = useStock();
 
   const [activities, setActivities]     = useState([]);
   const [followUps, setFollowUps]       = useState([]);
   const [historyOpen, setHistoryOpen]   = useState(false);
+  const [showNewReq, setShowNewReq]     = useState(false);
 
   // D1 — customers.notes editing
   const [editingNotes, setEditingNotes] = useState(false);
@@ -290,7 +292,19 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </div>
         )}
 
-        {/* 5. OPEN DEALS */}
+        {/* 5. NEW REQUIREMENT */}
+        <div style={{ marginTop: 18 }}>
+          <button onClick={() => setShowNewReq(true)}
+            style={{
+              width: "100%", padding: "10px 0", borderRadius: 10,
+              border: "1.5px solid #C7D2FE", background: "#EEF2FF",
+              color: "#6366F1", fontSize: 13, fontWeight: 800, cursor: "pointer",
+            }}>
+            + New requirement
+          </button>
+        </div>
+
+        {/* 6. OPEN DEALS */}
         {openDeals.length > 0 && (
           <>
             <div style={SH}>OPEN DEALS</div>
@@ -464,6 +478,18 @@ export default function ClientPreviewPanel({ client, onOpenChat }) {
           </button>
         </div>
       </div>
+
+      <NewRequirementModal
+        open={showNewReq}
+        customer={client}
+        onClose={() => setShowNewReq(false)}
+        onSaved={() => {
+          loadCustomers();
+          loadStock();
+          refreshCachedStock();
+          fetchPanelData(client.id);
+        }}
+      />
     </div>
   );
 }

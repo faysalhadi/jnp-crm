@@ -12,6 +12,7 @@ import { useChatActions } from "../../hooks/useChatActions";
 import TagEditor, { TagPill } from "./TagEditor";
 import BulkQuoteModal from "../modals/BulkQuoteModal";
 import ParkSheet from "../modals/ParkSheet";
+import NewRequirementModal from "../modals/NewRequirementModal";
 import { dealTotal, dealUnitLine, dealQty } from "../../utils/bulk";
 import { useBroadcast } from "../../hooks/useBroadcast";
 import ContactSheet from "./ContactSheet";
@@ -27,19 +28,16 @@ export default function ChatHeader() {
     activeCustomerId, setActiveCustomerId,
     setView,
     pendingSuggestion, setPendingSuggestion,
-    showAddDeal, setShowAddDeal,
     showDeleteConfirm, setShowDeleteConfirm,
-    newDeal, setNewDeal,
     loadCustomers,
     updateCustomer: _updateCustomer,
     updateDeal: _updateDeal,
     deleteCustomer: _deleteCustomer,
-    addDeal: _addDeal,
     showParkSheet, setShowParkSheet,
     pendingFollowUpMap,
     lastActivityMap,
   } = useCustomers();
-  const { stock } = useStock();
+  const { stock, loadStock, refreshCachedStock } = useStock();
   const {
     editingName, setEditingName,
     nameInput, setNameInput,
@@ -72,6 +70,7 @@ export default function ChatHeader() {
   const [quoteText, setQuoteText] = useState("");
   const [quoteSaving, setQuoteSaving] = useState(false);
   const [showParkPrompt, setShowParkPrompt] = useState(false);
+  const [showNewReq, setShowNewReq] = useState(false);
   const [showTagEditor, setShowTagEditor] = useState(false);
 
   // Watch for showParkSheet from context (triggered by moveStage)
@@ -85,7 +84,6 @@ export default function ChatHeader() {
   const updateCustomer = (fields) => _updateCustomer(activeCustomerId, fields);
   const updateDeal = (fields) => _updateDeal(activeDealId, fields);
   const deleteCustomer = () => _deleteCustomer(activeCustomerId);
-  const addDeal = () => _addDeal(activeCustomerId, newDeal);
 
   const tier = TIERS[activeCustomer?.tier] || TIERS.cold;
   const overdue = daysSince(activeCustomer?.last_active) >= 1 && (activeCustomer?.deals || []).some(d => d.stage !== "closed" && d.stage !== "parked");
@@ -285,7 +283,7 @@ export default function ChatHeader() {
               💬 WhatsApp
             </a>
           )}
-          <button onClick={() => setShowAddDeal(true)}
+          <button onClick={() => setShowNewReq(true)} title="New requirement"
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#6366F1" }}>+</button>
           <button onClick={() => setShowSideDrawer(true)}
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>📊</button>
@@ -297,6 +295,16 @@ export default function ChatHeader() {
             style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #FEE2E2", background: "#FFF5F5", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>🗑</button>
         </div>
       </div>
+
+      {/* NEW REQUIREMENT — the only way to record one */}
+      {(!activeCustomer.contact_type || activeCustomer.contact_type === "client" || activeCustomer.contact_type === "walkin") && !isViewingAs && (
+        <div style={{ padding: "0 14px 10px" }}>
+          <button onClick={() => setShowNewReq(true)}
+            style={{ width: "100%", padding: "9px 0", borderRadius: 10, border: "1.5px solid #C7D2FE", background: "#EEF2FF", color: "#6366F1", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+            + New requirement
+          </button>
+        </div>
+      )}
 
       {/* DEAL TABS */}
       {(activeCustomer.deals || []).length > 0 && (
@@ -839,46 +847,6 @@ export default function ChatHeader() {
         </div>
       )}
 
-      {/* ADD DEAL FORM */}
-      {showAddDeal && (
-        <div style={{ margin: "0 14px 12px", background: "#fff", borderRadius: 14, padding: 14, border: "1px solid #E2E8F0" }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10, color: "#0F172A" }}>New Deal</div>
-          <select value={newDeal.brand} onChange={e => setNewDeal(p => ({ ...p, brand: e.target.value }))}
-            style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, marginBottom: 8, outline: "none" }}>
-            <option value="">Select brand</option>
-            {BRANDS.map(b => <option key={b}>{b}</option>)}
-          </select>
-          <input placeholder="Model (e.g. Air M2)" value={newDeal.model} onChange={e => setNewDeal(p => ({ ...p, model: e.target.value }))}
-            style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, marginBottom: 8, outline: "none", boxSizing: "border-box" }} />
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 3, letterSpacing: 0.5 }}>QUANTITY</div>
-              <input type="number" min={1} inputMode="numeric" value={newDeal.quantity ?? 1}
-                onChange={e => setNewDeal(p => ({ ...p, quantity: e.target.value }))}
-                style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
-            </div>
-            <div style={{ flex: 2 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", marginBottom: 3, letterSpacing: 0.5 }}>UNIT PRICE (AED)</div>
-              <input type="number" inputMode="numeric" placeholder="per unit" value={newDeal.unit_price ?? ""}
-                onChange={e => setNewDeal(p => ({ ...p, unit_price: e.target.value }))}
-                style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 13, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
-            </div>
-          </div>
-          <div style={{ fontSize: 12, color: "#64748B", marginBottom: 12, fontWeight: 700 }}>
-            {(() => {
-              const t = dealTotal({ quantity: newDeal.quantity, unit_price: newDeal.unit_price });
-              return t > 0
-                ? `AED ${t.toLocaleString()} total · ${dealQty({ quantity: newDeal.quantity })} unit${dealQty({ quantity: newDeal.quantity }) !== 1 ? "s" : ""}`
-                : "Enter a unit price to see the total";
-            })()}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={addDeal} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "#6366F1", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Add Deal</button>
-            <button onClick={() => setShowAddDeal(false)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
       {/* DELETE CONFIRM */}
       {showDeleteConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
@@ -896,6 +864,13 @@ export default function ChatHeader() {
     </div>
 
     {showContactSheet && <ContactSheet onClose={() => setShowContactSheet(false)} />}
+
+    <NewRequirementModal
+      open={showNewReq}
+      customer={activeCustomer}
+      onClose={() => setShowNewReq(false)}
+      onSaved={() => { loadCustomers(); loadStock(); refreshCachedStock(); }}
+    />
 
     {showTagEditor && (
       <TagEditor

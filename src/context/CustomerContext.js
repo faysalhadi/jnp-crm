@@ -102,10 +102,6 @@ export function CustomerProvider({ children }) {
   const [newCustomer, setNewCustomer] = useState({
     name: "", number: "", notes: ""
   });
-  const [newDeal, setNewDeal] = useState({
-    brand: "", model: "", quantity: 1, unit_price: ""
-  });
-  const [showAddDeal, setShowAddDeal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showParkSheet, setShowParkSheet] = useState(false);
 
@@ -262,30 +258,6 @@ export function CustomerProvider({ children }) {
     await loadCustomers();
   }
 
-  async function addDeal(customerId, dealData) {
-    const qty  = Math.max(1, parseInt(dealData.quantity, 10) || 1);
-    const unit = dealData.unit_price ? parseFloat(dealData.unit_price) : null;
-    const { data: d } = await supabase
-      .from("deals")
-      .insert({
-        customer_id: customerId,
-        brand: dealData.brand,
-        model: dealData.model,
-        quantity:   qty,
-        unit_price: unit,
-        // `value` stays written so anything still reading the legacy column
-        // sees a sane single-unit figure.
-        value: unit,
-        stage: "new_inquiry",
-      })
-      .select()
-      .single();
-    await loadCustomers();
-    setActiveDealId(d?.id);
-    setShowAddDeal(false);
-    setNewDeal({ brand: "", model: "", quantity: 1, unit_price: "" });
-  }
-
   return (
     <CustomerContext.Provider value={{
       customers, setCustomers,
@@ -304,8 +276,6 @@ export function CustomerProvider({ children }) {
       showContactModal, setShowContactModal,
       contactModalPreType, setContactModalPreType,
       newCustomer, setNewCustomer,
-      newDeal, setNewDeal,
-      showAddDeal, setShowAddDeal,
       showDeleteConfirm, setShowDeleteConfirm,
       showParkSheet, setShowParkSheet,
       openDeals,
@@ -317,7 +287,6 @@ export function CustomerProvider({ children }) {
       deleteCustomer,
       updateCustomer,
       updateDeal,
-      addDeal,
     }}>
       {children}
     </CustomerContext.Provider>
