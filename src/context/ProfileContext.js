@@ -13,14 +13,21 @@ export function ProfileProvider({ children }) {
   const [profileError, setProfileError] = useState(null);
   const [viewingAs, setViewingAsState] = useState(null);
 
+  // Depend on user.id (a stable string), not the whole `user` object.
+  // Supabase hands back a brand-new session/user object on every silent
+  // background token refresh (normal, happens periodically) even though
+  // it's the same person — depending on the object reference made this
+  // effect re-fire on every refresh, flipping profileLoading back to
+  // true and re-showing the loading spinner / causing a full-page flash.
+  const userId = user?.id;
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       setCurrentProfile(null);
       setProfileLoading(false);
       return;
     }
     fetchCurrentProfile();
-  }, [user]); // eslint-disable-line
+  }, [userId]); // eslint-disable-line
 
   async function fetchCurrentProfile() {
     setProfileLoading(true);
